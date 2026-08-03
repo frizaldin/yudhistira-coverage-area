@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "system": { "type": "object" },
+    "layers": { "type": "array", "items": { "type": "string" } },
+    "flows": { "type": "array" },
+    "dependencies": { "type": "array" },
+    "evidence": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["system", "layers", "flows", "dependencies", "evidence"]
+}

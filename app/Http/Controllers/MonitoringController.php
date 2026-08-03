@@ -68,6 +68,14 @@ class MonitoringController extends Controller
         $isSales = $overrideSalesId || ($user && $user->level === 'sales' && $user->sales_id);
 
         $customerQuery = \App\Models\Customer::query();
+
+        $sumberDana = request('sumber_dana');
+        if ($sumberDana === 'BOS') {
+            $customerQuery->where('sumber_dana', 'like', '%BOS%');
+        } elseif ($sumberDana === 'SWA' || $sumberDana === 'SWADANA') {
+            $customerQuery->where('sumber_dana', 'like', '%SWA%');
+        }
+
         if ($scope === 'CABANG' && $scopeId) {
             $customerQuery->where('cabang_id', $scopeId);
             $cabangIds = [$scopeId];
@@ -145,20 +153,35 @@ class MonitoringController extends Controller
             ->get()
             ->keyBy('sales_id');
 
+        $salesPlanByJenjang = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)
+            ->whereNotNull('jenjang')
+            ->selectRaw('sales_id, jenjang, SUM(real_exemplar) as real_eks, SUM(tahan_customer) as tahan, SUM(rebut_customer) as rebut')
+            ->groupBy('sales_id', 'jenjang')
+            ->get()
+            ->groupBy('sales_id');
+
         $targetAgg = \App\Models\SalesAreaCover::whereIn('sales_id', $salesIds)
             ->selectRaw('sales_id, SUM(target_exemplar) as target_eks')
             ->groupBy('sales_id')
             ->pluck('target_eks', 'sales_id');
 
-        $timSalesPerformance = $mySalesList->map(function ($sales) use ($targetAgg, $salesPlanAgg2, $scope, $scopeId) {
-            $q = \App\Models\Customer::where('sales_id', $sales->id);
-            if ($scope === 'CABANG') $q->where('cabang_id', $scopeId);
-            elseif ($scope === 'AREA') $q->where('area_id', $scopeId);
+        $timSalesData = ['all' => [], 'sd' => [], 'smp' => [], 'sma' => []];
 
-            $ts = (clone $q)->count();
-            $ak = (clone $q)->where('is_active', 1)->count();
+        foreach ($mySalesList as $sales) {
+            $qBase = \App\Models\Customer::where('sales_id', $sales->id);
+            
+            if ($sumberDana === 'BOS') {
+                $qBase->where('sumber_dana', 'like', '%BOS%');
+            } elseif ($sumberDana === 'SWA' || $sumberDana === 'SWADANA') {
+                $qBase->where('sumber_dana', 'like', '%SWA%');
+            }
+
+            if ($scope === 'CABANG') $qBase->where('cabang_id', $scopeId);
+            elseif ($scope === 'AREA') $qBase->where('area_id', $scopeId);
+
+            $ts = (clone $qBase)->count();
+            $ak = (clone $qBase)->where('is_active', 1)->count();
             $coverage = $ts > 0 ? round(($ak / $ts) * 100, 2) : 0;
-
             $status = 'Kurang';
             if ($coverage >= 70) $status = 'Sangat Baik';
             elseif ($coverage >= 40) $status = 'Baik';
@@ -170,7 +193,7 @@ class MonitoringController extends Controller
             $rebut = $planAgg ? $planAgg->rebut : 0;
             $pencapaian = $target_eksemplar > 0 ? round(($real_eksemplar / $target_eksemplar) * 100, 2) : 0;
 
-            return [
+            $timSalesData['all'][] = [
                 'id' => $sales->id,
                 'name' => $sales->name,
                 'total_sekolah' => $ts,
@@ -184,13 +207,48 @@ class MonitoringController extends Controller
                 'status' => $status,
                 'score' => $ak
             ];
-        })->toArray();
 
-        usort($timSalesPerformance, function ($a, $b) {
-            return $b['score'] <=> $a['score'];
-        });
-        $timSalesPerformanceWorst = array_slice(array_reverse($timSalesPerformance), 0, 5);
-        $timSalesPerformance = array_slice($timSalesPerformance, 0, 10);
+            foreach (['SD', 'SMP', 'SMA'] as $j) {
+                $qJ = (clone $qBase)->where('jenjang', $j);
+                $tsJ = $qJ->count();
+                $akJ = (clone $qJ)->where('is_active', 1)->count();
+                $covJ = $tsJ > 0 ? round(($akJ / $tsJ) * 100, 2) : 0;
+                $stJ = 'Kurang';
+                if ($covJ >= 70) $stJ = 'Sangat Baik';
+                elseif ($covJ >= 40) $stJ = 'Baik';
+                
+                $pAggJ = null;
+                if ($salesPlanByJenjang->has($sales->id)) {
+                    $pAggJ = $salesPlanByJenjang->get($sales->id)->firstWhere('jenjang', $j);
+                }
+
+                $timSalesData[strtolower($j)][] = [
+                    'id' => $sales->id,
+                    'name' => $sales->name,
+                    'total_sekolah' => $tsJ,
+                    'aktif' => $akJ,
+                    'coverage' => $covJ,
+                    'target_eksemplar' => 0,
+                    'real_eksemplar' => (int)($pAggJ ? $pAggJ->real_eks : 0),
+                    'pencapaian' => 0,
+                    'tahan' => (int)($pAggJ ? $pAggJ->tahan : 0),
+                    'rebut' => (int)($pAggJ ? $pAggJ->rebut : 0),
+                    'status' => $stJ,
+                    'score' => $akJ
+                ];
+            }
+        }
+
+        $timSalesPerformance = [];
+        $timSalesPerformanceWorst = [];
+        
+        foreach (['all', 'sd', 'smp', 'sma'] as $key) {
+            usort($timSalesData[$key], function ($a, $b) {
+                return $b['score'] <=> $a['score'];
+            });
+            $timSalesPerformance[$key] = array_slice($timSalesData[$key], 0, 10);
+            $timSalesPerformanceWorst[$key] = array_slice(array_reverse($timSalesData[$key]), 0, 5);
+        }
 
         $bosValue = \App\Models\SalesCityPlan::whereIn('sales_id', $salesIds)->where('sumber_dana', 'BOS')->sum('target_customer');
         $swadanaValue = \App\Models\SalesCityPlan::whereIn('sales_id', $salesIds)->where('sumber_dana', 'SWADANA')->sum('target_customer');
@@ -266,20 +324,34 @@ class MonitoringController extends Controller
             ->groupBy('jenjang')
             ->get();
 
+        $realisasiJenjangRaw = \DB::table('customer_plans')
+            ->join('customers', 'customer_plans.customer_id', '=', 'customers.id')
+            ->whereIn('customers.sales_id', $salesIds)
+            ->select('customers.jenjang', \DB::raw('COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as total_real_customer'))
+            ->groupBy('customers.jenjang')
+            ->get()
+            ->keyBy('jenjang');
+
         $salesJenjangColors = ['SD' => '#1d4ed8', 'SMP' => '#60a5fa', 'SMA' => '#fbbf24', 'SMK' => '#fb923c', 'DLL' => '#10b981'];
         $salesJenjangData = [];
         $totalSalesJenjang = $salesJenjangRaw->sum('total');
+        $totalRealisasiJenjang = 0;
 
         foreach (['SD', 'SMP', 'SMA', 'SMK', 'DLL'] as $j) {
             $count = $salesJenjangRaw->firstWhere('jenjang', $j)->total ?? 0;
+            $realisasi = $realisasiJenjangRaw->has($j) ? $realisasiJenjangRaw->get($j)->total_real_customer : 0;
+            $totalRealisasiJenjang += $realisasi;
+            
             $salesJenjangData[] = [
                 'label' => $j,
                 'total' => number_format($count, 0, ',', '.'),
                 'pct'   => $totalSalesJenjang > 0 ? number_format(($count / $totalSalesJenjang) * 100, 2, ',', '.') : '0,00',
+                'realisasi' => number_format($realisasi, 0, ',', '.'),
                 'color' => $salesJenjangColors[$j] ?? '#cbd5e1',
             ];
         }
         $salesJenjangTotal = number_format($totalSalesJenjang, 0, ',', '.');
+        $salesJenjangTotalRealisasi = number_format($totalRealisasiJenjang, 0, ',', '.');
 
         $rankingKecamatanQuery = \App\Models\Kecamatan::query();
         if ($scope !== 'NASIONAL') {
@@ -378,7 +450,7 @@ class MonitoringController extends Controller
                 'score' => $s['score'],
                 'coverage' => $s['coverage'],
             ];
-        }, $timSalesPerformance, array_keys($timSalesPerformance));
+        }, $timSalesPerformance['all'], array_keys($timSalesPerformance['all']));
 
         $uncoveredQuery = \App\Models\Kecamatan::query();
         if ($scope !== 'NASIONAL') {
@@ -402,6 +474,25 @@ class MonitoringController extends Controller
             ->map(function ($c, $idx) {
                 $c['no'] = $idx + 1;
                 unset($c['_opp_val']);
+                return $c;
+            })
+            ->toArray();
+
+        $potensiKecamatan = $uncoveredQuery->get()
+            ->map(function ($kec) {
+                $siswa = $kec->dapodik_student ?? 0;
+                $potensi = ceil($siswa * 1.5);
+                return [
+                    'kecamatan' => $kec->camat_name,
+                    'siswa' => $siswa,
+                    'potensi_eks' => $potensi
+                ];
+            })
+            ->sortByDesc('potensi_eks')
+            ->values()
+            ->take(10)
+            ->map(function ($c, $idx) {
+                $c['no'] = $idx + 1;
                 return $c;
             })
             ->toArray();
@@ -445,8 +536,10 @@ class MonitoringController extends Controller
             'competitors' => $competitors,
             'leaderboard' => $leaderboard,
             'uncovered' => $uncovered,
+            'potensiKecamatan' => $potensiKecamatan,
             'salesJenjangData' => $salesJenjangData,
             'salesJenjangTotal' => $salesJenjangTotal,
+            'salesJenjangTotalRealisasi' => $salesJenjangTotalRealisasi,
             // also need uncoveredAnalysis as a fallback? In new component, we just use uncovered?
             // Actually the components in Area.jsx expect "top10Schools" for schools, or "schools".
             // It expects "salesPerformance" instead of "timSalesPerformance" or they are mapped?
@@ -1111,6 +1204,7 @@ class MonitoringController extends Controller
                     'cabangCode'   => $cabangObj->id,
                     'areas'        => \App\Models\Area::orderBy('name')->get(),
                     'cabangs'      => $cabangs,
+                    'filters'      => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
                 ]));
             }
         }
@@ -1238,7 +1332,16 @@ class MonitoringController extends Controller
         $configYear = optional(\App\Models\Configuration::first())->target_year;
         $targetYear = (int) ($request->query('tahun') ?: ($configYear ?: date('Y')));
         $prevY = $targetYear - 1;
-        $customerIds = Customer::where('area_id', $area->id)->pluck('id');
+        
+        $customerAreaQuery = Customer::where('area_id', $area->id);
+        if ($sumberDana = $request->query('sumber_dana')) {
+            if ($sumberDana === 'BOS') {
+                $customerAreaQuery->where('sumber_dana', 'like', '%BOS%');
+            } elseif ($sumberDana === 'SWA' || $sumberDana === 'SWADANA') {
+                $customerAreaQuery->where('sumber_dana', 'like', '%SWA%');
+            }
+        }
+        $customerIds = (clone $customerAreaQuery)->pluck('id');
 
         $planAgg = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
             ->whereIn('year', [$targetYear, $prevY])
@@ -1263,7 +1366,7 @@ class MonitoringController extends Controller
             ->distinct('customer_id')
             ->count('customer_id');
 
-        $salesIdsInArea = Customer::where('area_id', $area->id)
+        $salesIdsInArea = (clone $customerAreaQuery)
             ->whereNotNull('sales_id')
             ->distinct()
             ->pluck('sales_id');
@@ -1273,12 +1376,12 @@ class MonitoringController extends Controller
         $segmenBreakdown = [
             [
                 'label' => 'Negeri (BOS)',
-                'value' => (int) Customer::where('area_id', $area->id)->where('sumber_dana', 'BOS')->count(),
+                'value' => (int) (clone $customerAreaQuery)->where('sumber_dana', 'like', '%BOS%')->count(),
                 'color' => '#1d4ed8',
             ],
             [
                 'label' => 'Swasta',
-                'value' => (int) Customer::where('area_id', $area->id)->where('sumber_dana', 'like', 'SWA%')->count(),
+                'value' => (int) (clone $customerAreaQuery)->where('sumber_dana', 'like', '%SWA%')->count(),
                 'color' => '#f59e0b',
             ],
         ];
@@ -1351,6 +1454,7 @@ class MonitoringController extends Controller
                 'activityCount' => $activityCount,
                 'totalSekolah' => $data['realStats']['total_sekolah'] ?? 0,
             ],
+            'filters' => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
         ]));
     }
 
@@ -1420,6 +1524,7 @@ class MonitoringController extends Controller
             'provinceCode' => null,
             'cities'       => collect([]),
             'mapMarkers'   => $mapMarkers,
+            'filters'      => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
         ]));
     }
 
@@ -2617,7 +2722,7 @@ class MonitoringController extends Controller
             'resultBreakdown' => $resultBreakdown,
             'insights'     => $insights,
             'filterOptions' => $filterOptions,
-            'filters'      => $request->only(['kecamatan', 'tahun']),
+            'filters'      => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
         ]));
     }
 
@@ -3370,9 +3475,9 @@ class MonitoringController extends Controller
                 'resultBreakdown' => $resultBreakdown,
                 'salesProfile' => $sales,
                 'salesPerformanceFilterOptions' => $filterOptions,
-                'salesPerformanceFilters' => $request->only(['area_id', 'cabang_id', 'sales_id', 'kecamatan', 'tahun']),
+                'salesPerformanceFilters' => $request->only(['area_id', 'cabang_id', 'sales_id', 'kecamatan', 'tahun', 'sumber_dana']),
                 'filterOptions' => $filterOptions,
-                'filters' => $request->only(['kecamatan', 'tahun']),
+                'filters' => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
                 'insights' => [
                     'totalAreaCover' => $totalAreaCoverTargetYear,
                     'totalRealisasiTargetYear' => $totalRealisasiTargetYear ?? 0,

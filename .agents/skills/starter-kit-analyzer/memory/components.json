@@ -1,0 +1,12 @@
+{
+  "reusable": [
+    "Card",
+    "Button",
+    "ConfirmModal",
+    "Pagination",
+    "PageHeader",
+    "DashboardLayout"
+  ],
+  "path": "resources/js/Components/UI",
+  "rules": "Must be used for all interfaces. Do not build custom HTML tables/buttons if available here."
+}

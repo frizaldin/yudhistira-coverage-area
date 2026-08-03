@@ -1,0 +1,13 @@
+renderers:
+  markdown-renderer:
+    type: markdown
+    purpose: Transform structured engine objects into human-readable documentation.
+  json-renderer:
+    type: json
+    purpose: Transform structured engine objects into machine-readable memory state.
+  mermaid-renderer:
+    type: diagram
+    purpose: Transform dependency/relationship graphs into visual mermaid syntax.
+  report-renderer:
+    type: summary
+    purpose: Output validation and review results for developer consumption.

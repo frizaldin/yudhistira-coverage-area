@@ -1,0 +1,196 @@
+name: starter-kit-analyzer
+
+version: 2.0.0
+
+author: AkbrrID
+
+description: >
+  Reverse engineer any software starter kit into a reusable engineering
+  knowledge base and generate repository-native code.
+
+language: auto
+
+execution:
+
+  mode: automatic
+  incremental: true
+  evidence_required: true
+  allow_assumptions: false
+  confidence_threshold: 0.90
+
+  workflow:
+
+    discover: workflows/discover.md
+    analyze: workflows/analyze.md
+    learn: workflows/learn.md
+    generate: workflows/generate.md
+    review: workflows/review.md
+    update: workflows/update.md
+
+analysis:
+
+  repository: true
+
+  architecture: true
+  dependency_graph: true
+  import_graph: true
+  call_graph: true
+  route_graph: true
+  state_graph: true
+  permission_graph: true
+  component_graph: true
+  database_graph: true
+
+  modules: true
+  controllers: true
+  services: true
+  repositories: true
+  models: true
+  layouts: true
+  components: true
+  hooks: true
+  contexts: true
+  middleware: true
+  providers: true
+  commands: true
+  events: true
+  jobs: true
+  policies: true
+  traits: true
+  helpers: true
+
+  conventions: true
+  extension_points: true
+
+knowledge:
+
+  persistent_memory: true
+  incremental_update: true
+
+  load_before_generate: true
+  load_before_review: true
+
+  relationship_engine: true
+  architecture_engine: true
+  convention_engine: true
+  reuse_engine: true
+  pattern_engine: true
+  compliance_engine: true
+  drift_engine: true
+  precedent_engine: true
+
+generation:
+
+  reuse_first: true
+
+  search_existing_before_generate: true
+
+  follow_architecture: true
+  follow_conventions: true
+  follow_repository_patterns: true
+
+  extend_existing_modules: true
+  avoid_duplicate_logic: true
+
+review:
+
+  compare_against_repository: true
+
+  architecture_check: true
+  dependency_check: true
+  convention_check: true
+  duplication_check: true
+  security_check: true
+  maintainability_check: true
+  scalability_check: true
+  reuse_check: true
+
+memory:
+
+  folder: memory
+
+  format: json
+
+  auto_load: true
+  auto_update: true
+
+  files:
+
+    manifest: manifest.json
+    architecture: architecture.json
+    graph: graph.json
+    conventions: conventions.json
+    components: components.json
+    services: services.json
+    routes: routes.json
+    modules: modules.json
+    ai_context: ai-context.md
+
+output:
+
+  folder: output
+
+  markdown: true
+  json: true
+  mermaid: true
+
+  files:
+
+    architecture: architecture.md
+    graph: graph.md
+    conventions: conventions.md
+    extensions: extensions.md
+    review: review.md
+    generator: generator.md
+    ai_context: ai-context.md
+    summary: summary.md
+
+templates:
+
+  folder: templates
+
+engines:
+
+  repository: engines/repository-engine.md
+  architecture: engines/architecture-engine.md
+  relationship: engines/relationship-engine.md
+  convention: engines/convention-engine.md
+  reuse: engines/reuse-engine.md
+  generation: engines/generation-engine.md
+  review: engines/review-engine.md
+  update: engines/update-engine.md
+  pattern: engines/pattern-engine.md
+  compliance: engines/compliance-engine.md
+  drift: engines/drift-engine.md
+  precedent: engines/precedent-engine.md
+
+logging:
+
+  enabled: true
+
+  verbose: true
+
+  save_analysis: true
+  save_review: true
+
+rules:
+
+  source_code_first: true
+  evidence_first: true
+  implementation_first: true
+  relationship_first: true
+  reuse_first: true
+
+  never_invent_architecture: true
+  never_invent_conventions: true
+  never_duplicate_logic: true
+  never_replace_existing_patterns: true
+
+repository_states:
+
+  - UNKNOWN
+  - DISCOVERED
+  - ANALYZED
+  - LEARNED
+  - READY
+  - UPDATED

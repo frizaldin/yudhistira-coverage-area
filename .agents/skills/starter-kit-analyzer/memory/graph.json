@@ -1,0 +1,32 @@
+{
+  "nodes": [
+    "Controller",
+    "Model",
+    "Service",
+    "Inertia",
+    "Page",
+    "UI Component"
+  ],
+  "edges": [
+    {
+      "from": "Controller",
+      "to": "Model"
+    },
+    {
+      "from": "Controller",
+      "to": "Service"
+    },
+    {
+      "from": "Controller",
+      "to": "Inertia"
+    },
+    {
+      "from": "Inertia",
+      "to": "Page"
+    },
+    {
+      "from": "Page",
+      "to": "UI Component"
+    }
+  ]
+}

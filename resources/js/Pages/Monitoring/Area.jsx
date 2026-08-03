@@ -46,17 +46,18 @@ function FitBounds({ markers }) {
 
 /* ── DESIGN TOKENS ── */
 const T = {
-    blue: "#1d4ed8",
-    blueSoft: "#3b82f6",
-    green: "#16a34a",
-    orange: "#d97706",
-    red: "#dc2626",
-    teal: "#0d9488",
-    purple: "#7c3aed",
-    slate: "#64748b",
+    blue: "#2563eb",
+    blueSoft: "#60a5fa",
+    green: "#10b981",
+    orange: "#f59e0b",
+    red: "#ef4444",
+    teal: "#14b8a6",
+    purple: "#8b5cf6",
+    slate: "#475569",
+    slateLight: "#94a3b8",
     text: "#0f172a",
     border: "#e2e8f0",
-    bg: "#f1f5f9",
+    bg: "#f8fafc",
     card: "#ffffff",
 };
 
@@ -64,24 +65,26 @@ const S = {
     card: {
         background: T.card,
         borderRadius: 12,
-        boxShadow: "0 1px 6px rgba(15,23,42,0.06)",
+        boxShadow: "0 2px 8px -2px rgba(15,23,42,0.06), 0 0 2px rgba(15,23,42,0.03)",
         border: `1px solid ${T.border}`,
+        transition: "box-shadow 0.2s ease",
     },
     th: {
-        fontSize: 10,
+        fontSize: 10.5,
         fontWeight: 700,
         color: T.slate,
-        padding: "8px 10px",
+        padding: "8px 12px",
         background: "#f8fafc",
-        borderBottom: `1px solid ${T.border}`,
-        letterSpacing: "0.3px",
+        borderBottom: `1.5px solid ${T.border}`,
+        letterSpacing: "0.4px",
         textTransform: "uppercase",
+        whiteSpace: "nowrap",
     },
     td: {
-        fontSize: 11.5,
+        fontSize: 12,
         color: T.text,
-        padding: "7px 10px",
-        borderBottom: `1px solid #f4f6f8`,
+        padding: "9px 12px",
+        borderBottom: `1px solid #f1f5f9`,
     },
 };
 
@@ -174,7 +177,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                 >
                     <div
                         style={{
-                            fontSize: 13,
+                            fontSize: 16,
                             fontWeight: 800,
                             color: T.text,
                             lineHeight: 1,
@@ -185,9 +188,9 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     {sub && (
                         <div
                             style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 color: T.slate,
-                                marginTop: 2,
+                                marginTop: 4,
                             }}
                         >
                             {sub}
@@ -213,10 +216,10 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                 >
                     <div
                         style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: 700,
                             color: hoveredInfo.color,
-                            marginBottom: 2,
+                            marginBottom: 4,
                             lineHeight: 1.1,
                             display: "-webkit-box",
                             WebkitLineClamp: 2,
@@ -229,7 +232,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     </div>
                     <div
                         style={{
-                            fontSize: 14,
+                            fontSize: 18,
                             fontWeight: 800,
                             color: T.text,
                             lineHeight: 1,
@@ -237,7 +240,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     >
                         {hoveredInfo.percent}%
                     </div>
-                    <div style={{ fontSize: 9, color: T.slate, marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: T.slate, marginTop: 4 }}>
                         {hoveredInfo.value.toLocaleString("id-ID")}
                     </div>
                 </div>
@@ -425,13 +428,13 @@ function MultiBarChart({ data }) {
                             width={barW}
                             height={sy(0) - sy(d.target)}
                             fill={T.teal}
-                            rx={2}
+                            rx={4}
                         />
                         <text
                             x={cx - barW - gap}
                             y={sy(d.target) - 5}
                             textAnchor="middle"
-                            fontSize={9}
+                            fontSize={10}
                             fill={T.teal}
                             fontWeight="bold"
                         >
@@ -445,13 +448,13 @@ function MultiBarChart({ data }) {
                             width={barW}
                             height={sy(0) - sy(d.real)}
                             fill={T.green}
-                            rx={2}
+                            rx={4}
                         />
                         <text
                             x={cx}
                             y={sy(d.real) - 5}
                             textAnchor="middle"
-                            fontSize={9}
+                            fontSize={10}
                             fill={T.green}
                             fontWeight="bold"
                         >
@@ -465,13 +468,13 @@ function MultiBarChart({ data }) {
                             width={barW}
                             height={sy(0) - sy(d.uncov)}
                             fill={T.red}
-                            rx={2}
+                            rx={4}
                         />
                         <text
                             x={cx + barW + gap}
                             y={sy(d.uncov) - 5}
                             textAnchor="middle"
-                            fontSize={9}
+                            fontSize={10}
                             fill={T.red}
                             fontWeight="bold"
                         >
@@ -536,8 +539,11 @@ function LeafletMap({ markers = [] }) {
             style={{
                 height: 285,
                 width: "100%",
-                borderRadius: 10,
+                borderRadius: 16,
                 overflow: "hidden",
+                border: `1px solid ${T.border}`,
+                boxShadow: "inset 0 2px 10px rgba(0,0,0,0.03)",
+                position: "relative",
             }}
         >
             <MapContainer
@@ -570,11 +576,13 @@ function LeafletMap({ markers = [] }) {
                             <div style={{ minWidth: "180px" }}>
                                 <strong
                                     style={{
-                                        fontSize: "14px",
-                                        borderBottom: "1px solid #e2e8f0",
+                                        fontSize: 13,
+                                        fontWeight: 800,
+                                        color: T.text,
+                                        borderBottom: `1px solid ${T.border}`,
                                         display: "block",
-                                        paddingBottom: "4px",
-                                        marginBottom: "8px",
+                                        paddingBottom: 6,
+                                        marginBottom: 10,
                                     }}
                                 >
                                     {r.label}
@@ -655,10 +663,12 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
         <div
             style={{
                 ...S.card,
-                padding: "16px",
+                padding: "12px 14px",
                 flex: 1,
+                minWidth: 140,
                 display: "flex",
                 flexDirection: "column",
+                gap: 8,
             }}
         >
             <div
@@ -668,7 +678,6 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                     color: T.slate,
                     letterSpacing: "0.5px",
                     textTransform: "uppercase",
-                    marginBottom: 12,
                 }}
             >
                 {label}
@@ -678,14 +687,13 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
-                    flex: 1,
                 }}
             >
                 <div
                     style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 10,
+                        width: 36,
+                        height: 36,
+                        borderRadius: 9,
                         flexShrink: 0,
                         background: `${color}18`,
                         display: "flex",
@@ -695,7 +703,7 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                 >
                     <i
                         className={`bi ${icon}`}
-                        style={{ fontSize: 18, color }}
+                        style={{ fontSize: 16, color }}
                     />
                 </div>
                 <div>
@@ -713,7 +721,7 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                     {unit && (
                         <div
                             style={{
-                                fontSize: 10.5,
+                                fontSize: 10,
                                 color: T.slate,
                                 marginTop: 1,
                             }}
@@ -723,70 +731,63 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                     )}
                 </div>
             </div>
-            <div style={{ marginTop: 10 }}>
-                {sub && (
-                    <div style={{ fontSize: 10.5, color: T.slate }}>{sub}</div>
-                )}
-                {trend && (
-                    <div
-                        style={{
-                            fontSize: 10.5,
-                            color: T.green,
-                            fontWeight: 600,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                            marginTop: 2,
-                        }}
-                    >
-                        <i
-                            className="bi bi-arrow-up-short"
-                            style={{ fontSize: 13 }}
-                        />
-                        {trend}
-                    </div>
-                )}
-            </div>
             <div
                 style={{
-                    marginTop: 10,
-                    paddingTop: 10,
+                    paddingTop: 8,
                     borderTop: `1px solid ${T.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 4,
                 }}
             >
+                <div>
+                    {sub && (
+                        <div style={{ fontSize: 10, color: T.slate }}>{sub}</div>
+                    )}
+                    {trend && (
+                        <div
+                            style={{
+                                fontSize: 10,
+                                color: T.green,
+                                fontWeight: 600,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1,
+                                marginTop: 1,
+                            }}
+                        >
+                            <i
+                                className="bi bi-arrow-up-short"
+                                style={{ fontSize: 12 }}
+                            />
+                            {trend}
+                        </div>
+                    )}
+                </div>
                 {detailHref ? (
                     <a
                         href={detailHref}
                         style={{
-                            fontSize: 10.5,
-                            color: T.blueSoft,
+                            fontSize: 10,
+                            color: T.blue,
                             textDecoration: "none",
                             fontWeight: 600,
+                            whiteSpace: "nowrap",
                         }}
                     >
-                        Detail{" "}
-                        <i
-                            className="bi bi-chevron-right"
-                            style={{ fontSize: 9 }}
-                        />
+                        Detail <i className="bi bi-chevron-right" style={{ fontSize: 9 }} />
                     </a>
                 ) : (
-                    <a
-                        href="#"
+                    <span
                         style={{
-                            fontSize: 10.5,
+                            fontSize: 10,
                             color: T.slate,
-                            textDecoration: "none",
-                            fontWeight: 600,
-                            opacity: 0.5,
+                            opacity: 0.4,
                         }}
                     >
-                        Detail{" "}
-                        <i
-                            className="bi bi-chevron-right"
-                            style={{ fontSize: 9 }}
-                        />
-                    </a>
+                        Detail <i className="bi bi-chevron-right" style={{ fontSize: 9 }} />
+                    </span>
                 )}
             </div>
         </div>
@@ -817,20 +818,22 @@ function Card({
             {(title || sub || headerAction) && (
                 <div
                     style={{
-                        padding: "12px 16px",
+                        padding: "10px 14px",
                         borderBottom: `1px solid ${T.border}`,
                         flexShrink: 0,
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "flex-start",
+                        background: "#fafbfc",
                     }}
                 >
                     <div>
                         <div
                             style={{
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: 700,
                                 color: T.text,
+                                letterSpacing: "-0.1px",
                             }}
                         >
                             {title}
@@ -838,9 +841,9 @@ function Card({
                         {sub && (
                             <div
                                 style={{
-                                    fontSize: 10,
+                                    fontSize: 10.5,
                                     color: T.slate,
-                                    marginTop: 2,
+                                    marginTop: 1,
                                 }}
                             >
                                 {sub}
@@ -850,15 +853,16 @@ function Card({
                     {headerAction && <div>{headerAction}</div>}
                 </div>
             )}
-            <div style={{ padding: noPad ? 0 : "14px 16px", flex: 1 }}>
+            <div style={{ padding: noPad ? 0 : "12px 14px", flex: 1 }}>
                 {children}
             </div>
             {footer && (
                 <div
                     style={{
-                        padding: "9px 16px",
+                        padding: "7px 14px",
                         borderTop: `1px solid ${T.border}`,
                         textAlign: "center",
+                        background: "#fafbfc",
                     }}
                 >
                     <a
@@ -869,7 +873,7 @@ function Card({
                         }}
                         style={{
                             fontSize: 10.5,
-                            color: T.blueSoft,
+                            color: T.blue,
                             textDecoration: "none",
                             fontWeight: 600,
                         }}
@@ -1014,6 +1018,7 @@ export default function Area({
     const [filterData, setFilterData] = useState({
         kecamatan: filters.kecamatan || "",
         tahun: filters.tahun || "",
+        sumber_dana: filters.sumber_dana || "",
     });
 
     const activeFiltersCount = Object.values(filters).filter(
@@ -1022,7 +1027,13 @@ export default function Area({
 
     const applyFilter = (e) => {
         e.preventDefault();
-        router.get(route(route().current()), filterData, {
+        const urlParams = new URLSearchParams(window.location.search);
+        Object.entries(filterData).forEach(([key, value]) => {
+            if (value) urlParams.set(key, value);
+            else urlParams.delete(key);
+        });
+        
+        router.get(window.location.pathname, Object.fromEntries(urlParams.entries()), {
             preserveState: true,
             preserveScroll: true,
         });
@@ -1030,10 +1041,15 @@ export default function Area({
     };
 
     const resetFilter = () => {
-        setFilterData({ kecamatan: "", tahun: "" });
+        setFilterData({ kecamatan: "", tahun: "", sumber_dana: "" });
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.delete("kecamatan");
+        urlParams.delete("tahun");
+        urlParams.delete("sumber_dana");
+        
         router.get(
-            route(route().current()),
-            {},
+            window.location.pathname,
+            Object.fromEntries(urlParams.entries()),
             { preserveState: true, preserveScroll: true },
         );
         setIsFilterOpen(false);
@@ -1330,12 +1346,12 @@ export default function Area({
             <div
                 style={{
                     background: "white",
-                    padding: "14px 20px",
+                    padding: "10px 16px",
                     borderBottom: `1px solid ${T.border}`,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    gap: 16,
+                    gap: 12,
                     flexWrap: "wrap",
                 }}
             >
@@ -1353,7 +1369,7 @@ export default function Area({
                     </div>
                     <div
                         style={{
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: 900,
                             color: T.text,
                             letterSpacing: "-0.5px",
@@ -1433,11 +1449,14 @@ export default function Area({
                                             style={sel}
                                             value={provinceCode || ""}
                                             onChange={(e) => {
+                                                const urlParams = new URLSearchParams(window.location.search);
+                                                urlParams.delete('cabang');
                                                 router.get(
                                                     route(
                                                         "monitoring.area",
                                                         e.target.value,
                                                     ),
+                                                    Object.fromEntries(urlParams.entries())
                                                 );
                                             }}
                                         >
@@ -1478,16 +1497,22 @@ export default function Area({
                                             style={sel}
                                             value={selectedCabang || ""}
                                             onChange={(e) => {
+                                                const urlParams = new URLSearchParams(window.location.search);
+                                                if (e.target.value) {
+                                                    urlParams.set('cabang', e.target.value);
+                                                } else {
+                                                    urlParams.delete('cabang');
+                                                }
                                                 router.get(
                                                     route(
                                                         "monitoring.area",
                                                         provinceCode,
                                                     ),
-                                                    { cabang: e.target.value },
+                                                    Object.fromEntries(urlParams.entries()),
                                                     {
                                                         preserveState: true,
                                                         preserveScroll: true,
-                                                    },
+                                                    }
                                                 );
                                             }}
                                         >
@@ -1501,6 +1526,59 @@ export default function Area({
                                     </div>
                                 </div>
                             )}
+
+                            {/* Select Sumber Dana */}
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 7,
+                                }}
+                            >
+                                <i
+                                    className="bi bi-wallet2"
+                                    style={{ color: T.blue, fontSize: 14 }}
+                                />
+                                <div>
+                                    <div
+                                        style={{
+                                            fontSize: 9,
+                                            color: T.slate,
+                                            marginBottom: 2,
+                                        }}
+                                    >
+                                        Sumber Dana
+                                    </div>
+                                    <select
+                                        style={sel}
+                                        value={filterData.sumber_dana}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFilterData(prev => ({ ...prev, sumber_dana: val }));
+                                            
+                                            const urlParams = new URLSearchParams(window.location.search);
+                                            if (val) {
+                                                urlParams.set('sumber_dana', val);
+                                            } else {
+                                                urlParams.delete('sumber_dana');
+                                            }
+                                            
+                                            router.get(
+                                                window.location.pathname,
+                                                Object.fromEntries(urlParams.entries()),
+                                                {
+                                                    preserveState: true,
+                                                    preserveScroll: true,
+                                                }
+                                            );
+                                        }}
+                                    >
+                                        <option value="">Semua Dana</option>
+                                        <option value="BOS">BOS</option>
+                                        <option value="SWA">Swadana</option>
+                                    </select>
+                                </div>
+                            </div>
                         </>
                     )}
 
@@ -1539,8 +1617,8 @@ export default function Area({
             <div
                 style={{
                     display: "flex",
-                    gap: 24,
-                    padding: "0 20px",
+                    gap: 20,
+                    padding: "0 16px",
                     background: "white",
                     borderBottom: `1px solid ${T.border}`,
                     overflowX: "auto",
@@ -1565,7 +1643,7 @@ export default function Area({
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         style={{
-                            padding: "14px 0",
+                            padding: "10px 0",
                             fontSize: 12,
                             fontWeight: 700,
                             color: activeTab === tab.id ? T.blue : T.slate,
@@ -1585,10 +1663,10 @@ export default function Area({
             â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â” */}
             <div
                 style={{
-                    padding: "14px 16px",
+                    padding: "12px 16px",
                     display: "flex",
                     flexDirection: "column",
-                    gap: 12,
+                    gap: 10,
                 }}
             >
                 {activeTab === "dashboard" && (
@@ -1806,9 +1884,9 @@ export default function Area({
                         {/* ── R1: STATS ── */}
                         <div
                             style={{
-                                display: "flex",
-                                flexWrap: "wrap",
-                                gap: 10,
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                                gap: 8,
                             }}
                         >
                             {displayStats.map((s, i) => (
@@ -2175,7 +2253,11 @@ export default function Area({
                                                     color: T.text,
                                                 };
                                                 return (
-                                                    <tr key={row.sales_id || i}>
+                                                    <tr key={row.sales_id || i}
+                                                        style={{ transition: "background 0.2s ease" }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                    >
                                                         <td
                                                             style={{
                                                                 ...cell,
@@ -2313,19 +2395,20 @@ export default function Area({
                             </div>
                         )}
 
-                        {/* ── R2: RANKING KECAMATAN | PETA | TRL & SALES ── */}
+                        {/* ── R2: MAIN GRID — Left | Center | Right ── */}
                         <div
                             style={{
-                                display: "flex",
+                                display: "grid",
+                                gridTemplateColumns: isSalesDetail
+                                    ? "1fr 1.6fr"
+                                    : "minmax(240px, 1fr) minmax(300px, 1.6fr) minmax(240px, 1fr)",
                                 gap: 10,
-                                alignItems: "flex-start",
+                                alignItems: "start",
                             }}
                         >
-                            {/* Left col: Ranking + Area Cover per Jenjang */}
+                            {/* Left column: Ranking + Jenjang + Sales per Jenjang */}
                             <div
                                 style={{
-                                    flex: isSalesDetail ? 1 : 0.8,
-                                    minWidth: 280,
                                     display: "flex",
                                     flexDirection: "column",
                                     gap: 10,
@@ -2752,7 +2835,11 @@ export default function Area({
                                                     <tbody>
                                                         {salesJenjangData.map(
                                                             (j, i) => (
-                                                                <tr key={i}>
+                                                                <tr key={i}
+                                                                    style={{ transition: "background 0.2s ease" }}
+                                                                    onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                                >
                                                                     <td
                                                                         style={{
                                                                             ...S.td,
@@ -3060,10 +3147,9 @@ export default function Area({
                                 )}
                             </div>
 
-                            {/* Middle col: Peta + Sumber Dana */}
+                            {/* Center column: Peta + Sumber Dana + TRL (non-sales) */}
                             <div
                                 style={{
-                                    flex: 1.2,
                                     display: "flex",
                                     flexDirection: "column",
                                     gap: 10,
@@ -3432,7 +3518,7 @@ export default function Area({
                                                         <th
                                                             style={{
                                                                 ...S.th,
-                                                                paddingLeft: 16,
+                                                                paddingLeft: 12,
                                                             }}
                                                         >
                                                             Jenjang
@@ -3469,7 +3555,7 @@ export default function Area({
                                                                 ...S.th,
                                                                 textAlign:
                                                                     "right",
-                                                                paddingRight: 16,
+                                                                paddingRight: 12,
                                                             }}
                                                         >
                                                             Gagal
@@ -3482,7 +3568,7 @@ export default function Area({
                                                             <td
                                                                 style={{
                                                                     ...S.td,
-                                                                    paddingLeft: 16,
+                                                                    paddingLeft: 12,
                                                                     fontWeight: 700,
                                                                 }}
                                                             >
@@ -3529,7 +3615,7 @@ export default function Area({
                                                                     ...S.td,
                                                                     textAlign:
                                                                         "right",
-                                                                    paddingRight: 16,
+                                                                    paddingRight: 12,
                                                                     color: T.red,
                                                                 }}
                                                             >
@@ -3614,7 +3700,11 @@ export default function Area({
                                         </thead>
                                         <tbody>
                                             {OPP.slice(0, 5).map((r) => (
-                                                <tr key={r.no}>
+                                                <tr key={r.no}
+                                                    style={{ transition: "background 0.2s ease" }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                >
                                                     <td
                                                         style={{
                                                             ...S.td,
@@ -3855,7 +3945,11 @@ export default function Area({
                                             {(uncovered || [])
                                                 .slice(0, 8)
                                                 .map((r) => (
-                                                    <tr key={r.no || r.name}>
+                                                    <tr key={r.no || r.name}
+                                                        style={{ transition: "background 0.2s ease" }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                    >
                                                         <td
                                                             style={{
                                                                 ...S.td,
