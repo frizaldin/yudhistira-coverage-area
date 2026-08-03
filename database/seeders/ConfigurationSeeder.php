@@ -10,7 +10,8 @@ class ConfigurationSeeder extends Seeder
 {
     public function run(): void
     {
-        DB::table('configuration')->insert([
+        DB::table('configuration')->updateOrInsert(
+            ['id' => 1],
             [
                 'id' => 1,
 
@@ -113,7 +114,7 @@ class ConfigurationSeeder extends Seeder
 
                 'created_at' => Carbon::parse('2026-04-21 00:08:14'),
                 'updated_at' => Carbon::parse('2026-04-21 20:17:03'),
-            ],
-        ]);
+            ]
+        );
     }
 }

@@ -10,7 +10,8 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        DB::table('users')->insert([
+        DB::table('users')->updateOrInsert(
+            ['id' => 1],
             [
                 'id' => 1,
                 'name' => 'Applicator',
@@ -20,6 +21,6 @@ class UserSeeder extends Seeder
                 'created_at' => Carbon::parse('2026-04-09 21:28:02'),
                 'updated_at' => Carbon::parse('2026-04-21 01:59:52'),
             ]
-        ]);
+        );
     }
 }

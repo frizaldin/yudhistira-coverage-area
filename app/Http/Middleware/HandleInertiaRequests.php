@@ -32,7 +32,7 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $configuration = Configuration::orderBy('id', 'desc')
-            ->first();
+            ->first() ?? new Configuration();
 
         return [
             ...parent::share($request),
