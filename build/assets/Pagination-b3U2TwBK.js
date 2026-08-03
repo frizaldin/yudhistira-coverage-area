@@ -1,0 +1,1 @@
+import{i as e,t}from"./app-jkIHFFrY.js";var n=t();function r({collection:t}){return(0,n.jsx)(`div`,{className:`card-footer d-flex`,style:{gap:`10px`},children:t.links.map((t,r)=>(0,n.jsx)(`button`,{disabled:!t.url,onClick:()=>e.visit(t.url),dangerouslySetInnerHTML:{__html:t.label},className:`btn btn-sm ${t.active?`btn-primary`:`btn-light`}`},r))})}export{r as t};

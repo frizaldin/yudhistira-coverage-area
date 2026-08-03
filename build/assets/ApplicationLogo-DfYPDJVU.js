@@ -1,0 +1,1 @@
+import{o as e,t}from"./app-jkIHFFrY.js";var n=t();function r(t){let{configuration:r}=e().props;return(0,n.jsx)(`img`,{src:r.logo,alt:`logo`,...t})}export{r as t};

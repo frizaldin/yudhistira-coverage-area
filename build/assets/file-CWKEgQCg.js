@@ -1,0 +1,1 @@
+import{c as e,u as t}from"./app-jkIHFFrY.js";var n=t(e(),1);function r(){let[e,t]=(0,n.useState)(null);return(0,n.useEffect)(()=>()=>{e&&URL.revokeObjectURL(e)},[e]),{preview:e,setImage:e=>{e&&t(URL.createObjectURL(e))}}}export{r as t};

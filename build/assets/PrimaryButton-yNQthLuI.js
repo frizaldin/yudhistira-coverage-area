@@ -1,0 +1,1 @@
+import{t as e}from"./app-jkIHFFrY.js";var t=e();function n({className:e=``,disabled:n,children:r,...i}){return(0,t.jsx)(`button`,{...i,className:`inline-flex items-center rounded-md border-transparent btn-primary px-4 py-2 text-xs font-semibold uppercase tracking-widest transition duration-150 ease-in-out ${n&&`opacity-25`} `+e,disabled:n,children:r})}export{n as t};

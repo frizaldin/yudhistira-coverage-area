@@ -1,0 +1,41 @@
+/* ===================== ROOT VARIABLE — LIGHT (LBH Panglima) ===================== */
+:root {
+    --color-bg-main: #fdf8ef;
+    --color-bg-secondary: #f5edd8;
+    --color-bg-card: #ffffff;
+    --color-bg-card-inside: #fef3d8;
+    --color-bg-input: rgba(0, 0, 0, 0.04);
+
+    --color-border: rgba(0, 0, 0, 0.08);
+    --color-border-soft: rgba(0, 0, 0, 0.06);
+
+    --color-text-main: #1a1000;
+    --color-text-muted: rgba(0, 0, 0, 0.45);
+    --color-text-placeholder: rgba(26, 16, 0, 0.35);
+
+    --color-primary: #D4A017;
+    --color-primary-bg: rgba(212, 160, 23, 0.12);
+
+    --color-info: #0ea5e9;
+    --color-info-bg: rgba(14, 165, 233, 0.12);
+
+    --color-danger: #dc2626;
+    --color-danger-bg: rgba(220, 38, 38, 0.1);
+
+    --color-warning: #c4830f;
+    --color-warning-bg: #ffc10726;
+
+    --color-secondary: rgba(0, 0, 0, 0.45);
+    --color-secondary-bg: rgba(0, 0, 0, 0.05);
+
+    --color-sidebar-body: #f0e4c8;
+    --color-sidebar-text: #7a6030;
+    --color-text-nav-header: #7a6030;
+    --color-sidebar-active-bg: rgba(212, 160, 23, 0.15);
+    --color-sidebar-active-text: #000;
+
+    --radius-sm: 3px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 14px;
+}

@@ -1,0 +1,1 @@
+var e=(e,t,n=null)=>{if(!e)return!1;let r=t.replace(/^\/+/,``).split(`/`)[0];return e.some(e=>e.menu?.key===r?n?!!e.action.includes(n):!0:!1)};export{e as t};
