@@ -549,8 +549,16 @@ export default function SalesPerformanceDetail({
     filteredListSekolah.sort((a, b) => {
         let valA = a[sekolahSort.key];
         let valB = b[sekolahSort.key];
-        if (typeof valA === "string") valA = valA.toLowerCase();
-        if (typeof valB === "string") valB = valB.toLowerCase();
+        if (
+            sekolahSort.key === "real_exemplar_current" ||
+            sekolahSort.key === "total_student"
+        ) {
+            valA = Number(valA) || 0;
+            valB = Number(valB) || 0;
+        } else {
+            if (typeof valA === "string") valA = valA.toLowerCase();
+            if (typeof valB === "string") valB = valB.toLowerCase();
+        }
         if (valA < valB) return sekolahSort.dir === "asc" ? -1 : 1;
         if (valA > valB) return sekolahSort.dir === "asc" ? 1 : -1;
         return 0;

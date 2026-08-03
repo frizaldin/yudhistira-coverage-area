@@ -612,10 +612,10 @@ export default function Report({
                                                         tip={`Real ${tahun - 1}: ${Number(c.real_prev ?? 0).toLocaleString("id-ID")} → ${tahun}: ${Number(c.real_curr ?? 0).toLocaleString("id-ID")}`}
                                                     />
                                                     <KpiMini
-                                                        label="SP vs AC"
+                                                        label="Realisasi vs AC"
                                                         score={c.sp_vs_ac_score}
                                                         color="#f59e0b"
-                                                        tip={`SP ${c.sp_count ?? 0} vs AC ${c.ac_curr ?? 0}`}
+                                                        tip={`Customer Realisasi ${c.sp_count ?? 0} vs AC ${c.ac_curr ?? 0}`}
                                                     />
                                                     <KpiMini
                                                         label="Achievement"
@@ -624,22 +624,22 @@ export default function Report({
                                                         tip={`${Number(c.real_curr ?? 0).toLocaleString("id-ID")} / ${Number(c.target_curr ?? 0).toLocaleString("id-ID")} (${c.achievement_pct ?? 0}%)`}
                                                     />
                                                     <KpiMini
-                                                        label="AC Growth"
-                                                        score={c.ac_score}
-                                                        color="#0d9488"
-                                                        tip={`AC ${tahun - 1}: ${c.ac_prev ?? 0} → ${tahun}: ${c.ac_curr ?? 0}`}
+                                                        label="Tahan vs AC"
+                                                        score={c.tahan_vs_ac_score}
+                                                        color="#059669"
+                                                        tip={`Tahan ${c.tahan_count ?? 0} vs AC ${c.ac_curr ?? 0}`}
                                                     />
                                                     <KpiMini
-                                                        label="Intensitas"
-                                                        score={c.activity_score}
-                                                        color="#a855f7"
-                                                        tip={`${c.avg_per_month ?? 0} aktivitas/bulan`}
+                                                        label="Rebut vs AC"
+                                                        score={c.rebut_vs_ac_score}
+                                                        color="#2563eb"
+                                                        tip={`Rebut ${c.rebut_count ?? 0} vs AC ${c.ac_curr ?? 0}`}
                                                     />
                                                     <KpiMini
-                                                        label="Realisasi Sekolah"
-                                                        score={c.realisasi_score}
+                                                        label="Lepas vs AC (−)"
+                                                        score={c.lepas_vs_ac_score}
                                                         color="#ef4444"
-                                                        tip={`${c.sekolah_realisasi ?? 0}/${c.ac_curr ?? 0} Area Cover`}
+                                                        tip={`Lepas ${c.lepas_count ?? 0} vs AC ${c.ac_curr ?? 0} — mengurangi skor`}
                                                     />
                                                 </div>
                                             </td>

@@ -446,11 +446,23 @@ export default function DashboardTab(props) {
                                                     }}
                                                     title="Lihat detail skor"
                                                     onClick={() => {
-                                                        const renderItem = (c) => `
-                                                            <div style="padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;">
+                                                        const renderItem = (
+                                                            c,
+                                                        ) => {
+                                                            const isPenalty =
+                                                                !!c.is_penalty;
+                                                            const scoreLabel =
+                                                                isPenalty
+                                                                    ? `−${c.score}`
+                                                                    : `${c.score}`;
+                                                            const badge = isPenalty
+                                                                ? `<span style="margin-left:6px;font-size:9px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;padding:1px 5px;">PENGURANG</span>`
+                                                                : "";
+                                                            return `
+                                                            <div style="padding: 10px 12px; background: ${isPenalty ? "#fef2f2" : "#f8fafc"}; border: 1px solid ${isPenalty ? "#fecaca" : "#e2e8f0"}; border-radius: 10px;">
                                                                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-                                                                    <div style="font-weight: 700; color: #334155; font-size: 13px;">${c.label} <span style="color:#64748b; font-weight:600; font-size:11px;">(${Number(c.weight ?? 0).toFixed(2)}%)</span></div>
-                                                                    <div style="font-weight: 800; color: ${c.color || "#334155"}; font-size: 15px;">${c.score}</div>
+                                                                    <div style="font-weight: 700; color: #334155; font-size: 12px;">${c.label} <span style="color:#64748b; font-weight:600; font-size:11px;">(${Number(c.weight ?? 0).toFixed(2)}%)</span>${badge}</div>
+                                                                    <div style="font-weight: 800; color: ${c.color || "#334155"}; font-size: 15px;">${scoreLabel}</div>
                                                                 </div>
                                                                 <div style="height: 6px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-bottom: 6px;">
                                                                     <div style="height: 100%; width: ${Math.min(100, Math.max(0, Number(c.score) || 0))}%; background: ${c.color || "#3b82f6"}; border-radius: 99px;"></div>
@@ -458,48 +470,94 @@ export default function DashboardTab(props) {
                                                                 <div style="font-size: 11px; color: #64748b; line-height: 1.35;">${c.detail || ""}</div>
                                                             </div>
                                                         `;
+                                                        };
 
-                                                        const main = (kpiData?.components || [])
+                                                        const main = (
+                                                            kpiData?.components ||
+                                                            []
+                                                        )
                                                             .map(renderItem)
                                                             .join("");
 
-                                                        const weightSum = (kpiData?.components || []).reduce(
-                                                            (a, c) => a + (Number(c.weight) || 0),
-                                                            0,
-                                                        );
-                                                        const formulaParts = (kpiData?.components || [])
-                                                            .map(
-                                                                (c) =>
-                                                                    `(${c.score}×${Number(c.weight || 0).toFixed(2)}%)`,
-                                                            )
-                                                            .join(" + ");
+                                                        const comps =
+                                                            kpiData?.components ||
+                                                            [];
+                                                        const weightSum =
+                                                            comps
+                                                                .filter(
+                                                                    (c) =>
+                                                                        !c.is_penalty,
+                                                                )
+                                                                .reduce(
+                                                                    (a, c) =>
+                                                                        a +
+                                                                        (Number(
+                                                                            c.weight,
+                                                                        ) ||
+                                                                            0),
+                                                                    0,
+                                                                );
+                                                        const lepasWeight =
+                                                            comps
+                                                                .filter(
+                                                                    (c) =>
+                                                                        !!c.is_penalty,
+                                                                )
+                                                                .reduce(
+                                                                    (a, c) =>
+                                                                        a +
+                                                                        (Number(
+                                                                            c.weight,
+                                                                        ) ||
+                                                                            0),
+                                                                    0,
+                                                                );
+                                                        const formulaParts =
+                                                            comps
+                                                                .map((c) =>
+                                                                    c.is_penalty
+                                                                        ? `−(${c.score}×${Number(c.weight || 0).toFixed(2)}%÷100)`
+                                                                        : `(${c.score}×${Number(c.weight || 0).toFixed(2)}%)`,
+                                                                )
+                                                                .join(" ");
 
-                                                        const htmlContent =
-                                                            main
-                                                                ? `
+                                                        const htmlContent = main
+                                                            ? `
                                                             <div style="text-align: left;">
-                                                                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">Indikator Penilaian (bobot custom)</div>
+                                                                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom: 8px;">
+                                                                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px;">Indikator Penilaian (bobot custom)</div>
+                                                                    <div style="font-size: 10px; color: #64748b; text-align:right;">5 positif: ${weightSum.toFixed(2)}%<br/><span style="color:#b91c1c;">Lepas eksternal: ${lepasWeight.toFixed(2)}%</span></div>
+                                                                </div>
                                                                 <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px;">
                                                                     ${main}
                                                                 </div>
                                                                 <div style="padding: 10px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; font-size: 12px; color: #1e3a8a;">
                                                                     <strong>Total Score:</strong> ${kpiData?.totalScore ?? 0} / 100 · <strong>${kpiData?.grade ?? "-"}</strong>
                                                                     <span style="display:block; margin-top: 4px; color:#334155; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
-                                                                        [${formulaParts || "—"}] ÷ ${weightSum.toFixed(2)}% = ${kpiData?.totalScore ?? 0}
+                                                                        Rata-rata berbobot 5 indikator (100%), lalu dikurangi Lepas eksternal · = ${kpiData?.totalScore ?? 0}
                                                                     </span>
-                                                                    <span style="display:block; margin-top: 3px; color:#64748b; font-size: 11px;">Skor berbobot dari master Pengaturan. Total bobot: ${weightSum.toFixed(2)}%.</span>
+                                                                    <span style="display:block; margin-top: 2px; color:#64748b; font-size: 10.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+                                                                        ${formulaParts || "—"}
+                                                                    </span>
+                                                                    <span style="display:block; margin-top: 3px; color:#64748b; font-size: 11px;">Bobot 5 indikator + Lepas eksternal bisa diubah di menu Pengaturan (level nasional).</span>
                                                                 </div>
                                                             </div>
                                                         `
-                                                                : "Data skor tidak tersedia.";
+                                                            : "Data skor tidak tersedia.";
 
                                                         Swal.fire({
                                                             title: "Detail Sales Score (AI)",
                                                             html: htmlContent,
                                                             icon: "info",
-                                                            width: 760,
-                                                            confirmButtonText:
-                                                                "Tutup",
+                                                            width: 900,
+                                                            showCancelButton: true,
+                                                            confirmButtonText: "Tutup",
+                                                            cancelButtonText: "Atur Bobot",
+                                                            reverseButtons: true,
+                                                        }).then((result) => {
+                                                            if (result.dismiss === Swal.DismissReason.cancel) {
+                                                                router.visit(route("monitoring.pengaturan"));
+                                                            }
                                                         });
                                                     }}
                                                 ></i>
@@ -1160,18 +1218,28 @@ export default function DashboardTab(props) {
                                                                                         color: "#e2e8f0",
                                                                                     }}
                                                                                 >
-                                                                                    {m.month}
+                                                                                    {
+                                                                                        m.month
+                                                                                    }
                                                                                     {m.year
                                                                                         ? ` ${m.year}`
                                                                                         : ""}{" "}
-                                                                                    · Total{" "}
-                                                                                    {m.count}
+                                                                                    ·
+                                                                                    Total{" "}
+                                                                                    {
+                                                                                        m.count
+                                                                                    }
                                                                                 </div>
-                                                                                {(m.breakdown ||
-                                                                                    [])
+                                                                                {(
+                                                                                    m.breakdown ||
+                                                                                    []
+                                                                                )
                                                                                     .length >
                                                                                 0 ? (
-                                                                                    (m.breakdown || []).map(
+                                                                                    (
+                                                                                        m.breakdown ||
+                                                                                        []
+                                                                                    ).map(
                                                                                         (
                                                                                             b,
                                                                                             bi,
@@ -1234,7 +1302,8 @@ export default function DashboardTab(props) {
                                                                                             color: "#94a3b8",
                                                                                         }}
                                                                                     >
-                                                                                        Tidak ada
+                                                                                        Tidak
+                                                                                        ada
                                                                                         aktivitas
                                                                                     </div>
                                                                                 )}
@@ -1422,7 +1491,8 @@ export default function DashboardTab(props) {
                                                             const hasData =
                                                                 kpiData
                                                                     .activityDistribution
-                                                                    ?.length > 0;
+                                                                    ?.length >
+                                                                0;
                                                             const areaCover =
                                                                 Number(
                                                                     kpiData.areaCover ??
@@ -1439,8 +1509,7 @@ export default function DashboardTab(props) {
                                                                         a +
                                                                         (Number(
                                                                             c.value,
-                                                                        ) ||
-                                                                            0),
+                                                                        ) || 0),
                                                                     0,
                                                                 );
 
@@ -1460,7 +1529,9 @@ export default function DashboardTab(props) {
                                                                             11
                                                                         }
                                                                         gap={3}
-                                                                        maxRings={5}
+                                                                        maxRings={
+                                                                            5
+                                                                        }
                                                                         label={
                                                                             areaCover
                                                                         }
@@ -1525,13 +1596,18 @@ export default function DashboardTab(props) {
                                                                                                     gap: 6,
                                                                                                     cursor: "pointer",
                                                                                                     borderRadius: 4,
-                                                                                                    padding: "1px 2px",
+                                                                                                    padding:
+                                                                                                        "1px 2px",
                                                                                                 }}
-                                                                                                onMouseEnter={(e) =>
+                                                                                                onMouseEnter={(
+                                                                                                    e,
+                                                                                                ) =>
                                                                                                     (e.currentTarget.style.background =
                                                                                                         "#f1f5f9")
                                                                                                 }
-                                                                                                onMouseLeave={(e) =>
+                                                                                                onMouseLeave={(
+                                                                                                    e,
+                                                                                                ) =>
                                                                                                     (e.currentTarget.style.background =
                                                                                                         "transparent")
                                                                                                 }
@@ -1808,13 +1884,18 @@ export default function DashboardTab(props) {
                                                                                             gap: 6,
                                                                                             cursor: "pointer",
                                                                                             borderRadius: 4,
-                                                                                            padding: "1px 2px",
+                                                                                            padding:
+                                                                                                "1px 2px",
                                                                                         }}
-                                                                                        onMouseEnter={(e) =>
+                                                                                        onMouseEnter={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "#f1f5f9")
                                                                                         }
-                                                                                        onMouseLeave={(e) =>
+                                                                                        onMouseLeave={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "transparent")
                                                                                         }
@@ -2046,13 +2127,18 @@ export default function DashboardTab(props) {
                                                                                             gap: 6,
                                                                                             cursor: "pointer",
                                                                                             borderRadius: 4,
-                                                                                            padding: "1px 2px",
+                                                                                            padding:
+                                                                                                "1px 2px",
                                                                                         }}
-                                                                                        onMouseEnter={(e) =>
+                                                                                        onMouseEnter={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "#f1f5f9")
                                                                                         }
-                                                                                        onMouseLeave={(e) =>
+                                                                                        onMouseLeave={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "transparent")
                                                                                         }
@@ -2161,6 +2247,10 @@ export default function DashboardTab(props) {
                                                         }}
                                                     >
                                                         ({kpiData.salesName})
+                                                        {kpiData.trlg?.total !=
+                                                        null
+                                                            ? ` · Total ${kpiData.trlg.total}`
+                                                            : ""}
                                                     </div>
                                                 </div>
 
@@ -2168,7 +2258,7 @@ export default function DashboardTab(props) {
                                                     style={{
                                                         display: "grid",
                                                         gridTemplateColumns:
-                                                            "repeat(2, 1fr)",
+                                                            "repeat(3, 1fr)",
                                                         gap: 4,
                                                         borderTop: `1px solid ${T.border}`,
                                                         paddingTop: 6,
@@ -3067,13 +3157,18 @@ export default function DashboardTab(props) {
                                                                                             gap: 6,
                                                                                             cursor: "pointer",
                                                                                             borderRadius: 4,
-                                                                                            padding: "1px 2px",
+                                                                                            padding:
+                                                                                                "1px 2px",
                                                                                         }}
-                                                                                        onMouseEnter={(e) =>
+                                                                                        onMouseEnter={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "#f1f5f9")
                                                                                         }
-                                                                                        onMouseLeave={(e) =>
+                                                                                        onMouseLeave={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "transparent")
                                                                                         }
@@ -3306,13 +3401,18 @@ export default function DashboardTab(props) {
                                                                                             gap: 6,
                                                                                             cursor: "pointer",
                                                                                             borderRadius: 4,
-                                                                                            padding: "1px 2px",
+                                                                                            padding:
+                                                                                                "1px 2px",
                                                                                         }}
-                                                                                        onMouseEnter={(e) =>
+                                                                                        onMouseEnter={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "#f1f5f9")
                                                                                         }
-                                                                                        onMouseLeave={(e) =>
+                                                                                        onMouseLeave={(
+                                                                                            e,
+                                                                                        ) =>
                                                                                             (e.currentTarget.style.background =
                                                                                                 "transparent")
                                                                                         }

@@ -2115,15 +2115,15 @@ export default function Area({
                                         <thead>
                                             <tr>
                                                 {[
-                                                    { label: "#", w: "4%" },
-                                                    { label: "Sales", w: "22%" },
-                                                    { label: "Score", w: "8%" },
+                                                    { label: "#", w: "5%" },
+                                                    { label: "Sales", w: "28%" },
+                                                    { label: "Score", w: "9%" },
                                                     { label: "YoY", w: "9%" },
-                                                    { label: "SP", w: "9%" },
-                                                    { label: "Ach", w: "10%" },
-                                                    { label: "AC", w: "9%" },
-                                                    { label: "Akt", w: "9%" },
-                                                    { label: "Sek", w: "10%" },
+                                                    { label: "Real", w: "9%" },
+                                                    { label: "Ach", w: "9%" },
+                                                    { label: "Tahan", w: "9%" },
+                                                    { label: "Rebut", w: "9%" },
+                                                    { label: "Lepas", w: "9%" },
                                                 ].map((h) => (
                                                     <th
                                                         key={h.label}
@@ -2282,18 +2282,25 @@ export default function Area({
                                                         </td>
                                                         <td style={cell}>
                                                             {Number(
-                                                                c.ac_score ?? 0,
-                                                            ).toFixed(0)}
-                                                        </td>
-                                                        <td style={cell}>
-                                                            {Number(
-                                                                c.activity_score ??
+                                                                c.tahan_vs_ac_score ??
                                                                     0,
                                                             ).toFixed(0)}
                                                         </td>
                                                         <td style={cell}>
                                                             {Number(
-                                                                c.realisasi_score ??
+                                                                c.rebut_vs_ac_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                        </td>
+                                                        <td
+                                                            style={{
+                                                                ...cell,
+                                                                color: "#b91c1c",
+                                                                fontWeight: 700,
+                                                            }}
+                                                        >
+                                                            {Number(
+                                                                c.lepas_vs_ac_score ??
                                                                     0,
                                                             ).toFixed(0)}
                                                         </td>

@@ -265,6 +265,32 @@ export default function SekolahTab(props) {
                                             <th
                                                 style={{
                                                     ...S.th,
+                                                    textAlign: "right",
+                                                    cursor: "pointer",
+                                                }}
+                                                onClick={() =>
+                                                    setSekolahSort((s) => ({
+                                                        key: "real_exemplar_current",
+                                                        dir:
+                                                            s.key ===
+                                                                "real_exemplar_current" &&
+                                                            s.dir === "asc"
+                                                                ? "desc"
+                                                                : "asc",
+                                                    }))
+                                                }
+                                            >
+                                                Realisasi{" "}
+                                                {sekolahSort.key ===
+                                                "real_exemplar_current"
+                                                    ? sekolahSort.dir === "asc"
+                                                        ? "↑"
+                                                        : "↓"
+                                                    : ""}
+                                            </th>
+                                            <th
+                                                style={{
+                                                    ...S.th,
                                                     textAlign: "left",
                                                     cursor: "pointer",
                                                 }}
@@ -324,7 +350,7 @@ export default function SekolahTab(props) {
                                                 return (
                                                     <tr>
                                                         <td
-                                                            colSpan="7"
+                                                            colSpan="8"
                                                             style={{
                                                                 ...S.td,
                                                                 textAlign:
@@ -379,7 +405,7 @@ export default function SekolahTab(props) {
                                                     >
                                                         <tr>
                                                             <td
-                                                                colSpan="7"
+                                                                colSpan="8"
                                                                 style={{
                                                                     ...S.td,
                                                                     fontWeight:
@@ -475,6 +501,27 @@ export default function SekolahTab(props) {
                                                                         >
                                                                             {formatNumber(
                                                                                 s.total_student,
+                                                                            )}
+                                                                        </td>
+                                                                        <td
+                                                                            style={{
+                                                                                ...S.td,
+                                                                                textAlign:
+                                                                                    "right",
+                                                                                fontWeight: 700,
+                                                                                color:
+                                                                                    (Number(
+                                                                                        s.real_exemplar_current,
+                                                                                    ) ||
+                                                                                        0) >
+                                                                                    0
+                                                                                        ? T.green
+                                                                                        : T.slate,
+                                                                            }}
+                                                                        >
+                                                                            {formatNumber(
+                                                                                s.real_exemplar_current ??
+                                                                                    0,
                                                                             )}
                                                                         </td>
                                                                         <td

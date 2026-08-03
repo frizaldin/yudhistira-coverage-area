@@ -203,24 +203,35 @@ function SalesScoreWeightsForm({
     canEdit,
     status,
 }) {
+    const PENALTY_KEYS = ["lepas_vs_ac"];
     const defaults = {
-        realisasi_yoy: 16.67,
-        sp_vs_ac: 16.67,
-        achievement: 16.66,
-        ac_growth: 16.67,
-        activity: 16.67,
-        realisasi_sekolah: 16.66,
+        realisasi_yoy: 20,
+        sp_vs_ac: 20,
+        achievement: 20,
+        tahan_vs_ac: 20,
+        rebut_vs_ac: 20,
+        lepas_vs_ac: 15,
     };
+    const initial = { ...defaults };
+    Object.keys(defaults).forEach((key) => {
+        if (initialWeights && initialWeights[key] != null) {
+            initial[key] = initialWeights[key];
+        }
+    });
     const { data, setData, put, errors, processing, recentlySuccessful } =
         useForm({
-            weights: { ...defaults, ...(initialWeights || {}) },
+            weights: initial,
         });
 
-    const total = Object.values(data.weights || {}).reduce(
-        (a, b) => a + (parseFloat(b) || 0),
+    const positiveKeys = Object.keys(defaults).filter(
+        (k) => !PENALTY_KEYS.includes(k),
+    );
+    const totalPositive = positiveKeys.reduce(
+        (a, key) => a + (parseFloat(data.weights?.[key]) || 0),
         0,
     );
-    const totalOk = Math.abs(total - 100) <= 0.05;
+    const lepasWeight = parseFloat(data.weights?.lepas_vs_ac) || 0;
+    const totalOk = Math.abs(totalPositive - 100) <= 0.05;
 
     const submit = (e) => {
         e.preventDefault();
@@ -263,7 +274,7 @@ function SalesScoreWeightsForm({
                             margin: 0,
                         }}
                     >
-                        Bobot Sales Score (AI)
+                        Bobot Sales Score (AI) — 5 + Lepas
                     </h2>
                     <p
                         style={{
@@ -272,8 +283,11 @@ function SalesScoreWeightsForm({
                             margin: "4px 0 0 0",
                         }}
                     >
-                        Atur bobot tiap indikator. Total harus 100%. Skor akhir
-                        = Σ (nilai × bobot) ÷ Σ bobot.
+                        Total <strong>100%</strong> hanya dari 5 indikator
+                        positif (YoY, Realisasi, Achievement, Tahan, Rebut).{" "}
+                        <strong style={{ color: "#b91c1c" }}>Lepas</strong>{" "}
+                        adalah pengurang eksternal di luar 100% — memotong skor
+                        akhir hingga sebesar bobotnya.
                     </p>
                 </div>
                 <button
@@ -288,7 +302,7 @@ function SalesScoreWeightsForm({
                         opacity: !canEdit ? 0.5 : 1,
                     }}
                 >
-                    Reset sama rata
+                    Reset default
                 </button>
             </div>
 
@@ -314,13 +328,24 @@ function SalesScoreWeightsForm({
             >
                 <div
                     style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: T.slate,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.4px",
+                    }}
+                >
+                    Indikator positif (total 100%)
+                </div>
+                <div
+                    style={{
                         display: "grid",
                         gridTemplateColumns:
                             "repeat(auto-fit, minmax(220px, 1fr))",
                         gap: 12,
                     }}
                 >
-                    {Object.keys(defaults).map((key) => (
+                    {positiveKeys.map((key) => (
                         <div key={key}>
                             <label style={S.label}>
                                 {labels?.[key] || key}
@@ -370,6 +395,113 @@ function SalesScoreWeightsForm({
                     ))}
                 </div>
 
+                <div
+                    style={{
+                        marginTop: 4,
+                        paddingTop: 12,
+                        borderTop: `1px dashed ${T.border}`,
+                    }}
+                >
+                    <div
+                        style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#b91c1c",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 8,
+                        }}
+                    >
+                        Pengurang eksternal (di luar 100%)
+                    </div>
+                    <div
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                                "repeat(auto-fit, minmax(220px, 1fr))",
+                            gap: 12,
+                        }}
+                    >
+                        {PENALTY_KEYS.map((key) => (
+                            <div key={key}>
+                                <label style={S.label}>
+                                    {labels?.[key] || key}
+                                    <span
+                                        style={{
+                                            marginLeft: 6,
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            color: "#b91c1c",
+                                            background: "#fef2f2",
+                                            border: "1px solid #fecaca",
+                                            borderRadius: 4,
+                                            padding: "1px 6px",
+                                        }}
+                                    >
+                                        PENGURANG
+                                    </span>
+                                </label>
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                    }}
+                                >
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        style={{
+                                            ...S.input,
+                                            flex: 1,
+                                            borderColor: "#fecaca",
+                                        }}
+                                        value={data.weights[key] ?? ""}
+                                        disabled={!canEdit || processing}
+                                        onChange={(e) =>
+                                            setWeight(key, e.target.value)
+                                        }
+                                        required
+                                    />
+                                    <span
+                                        style={{
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            color: T.slate,
+                                        }}
+                                    >
+                                        %
+                                    </span>
+                                </div>
+                                <div
+                                    style={{
+                                        fontSize: 10,
+                                        color: T.slate,
+                                        marginTop: 4,
+                                    }}
+                                >
+                                    Maks potongan skor ={" "}
+                                    {lepasWeight.toFixed(2)} poin (saat Lepas
+                                    vs AC = 100%)
+                                </div>
+                                {errors[`weights.${key}`] && (
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            color: T.red,
+                                            marginTop: 4,
+                                        }}
+                                    >
+                                        {errors[`weights.${key}`]}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
                 {errors.weights && (
                     <div style={{ fontSize: 11, color: T.red }}>
                         {errors.weights}
@@ -386,15 +518,23 @@ function SalesScoreWeightsForm({
                         flexWrap: "wrap",
                     }}
                 >
-                    <div
-                        style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: totalOk ? T.green : T.red,
-                        }}
-                    >
-                        Total bobot: {total.toFixed(2)}%
-                        {!totalOk ? " (harus 100%)" : ""}
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                        <span style={{ color: totalOk ? T.green : T.red }}>
+                            Total 5 indikator: {totalPositive.toFixed(2)}%
+                            {!totalOk ? " (harus 100%)" : ""}
+                        </span>
+                        <span
+                            style={{
+                                display: "block",
+                                marginTop: 2,
+                                color: "#b91c1c",
+                                fontWeight: 600,
+                                fontSize: 11,
+                            }}
+                        >
+                            Lepas (eksternal): {lepasWeight.toFixed(2)}% — tidak
+                            dihitung ke 100%
+                        </span>
                     </div>
                     <div
                         style={{

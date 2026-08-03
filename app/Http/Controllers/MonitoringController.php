@@ -1463,10 +1463,15 @@ class MonitoringController extends Controller
             $weights[$key] = round((float) $validated['weights'][$key], 2);
         }
 
-        $sum = array_sum($weights);
-        if (abs($sum - 100) > 0.05) {
+        $positiveKeys = \App\Models\Configuration::salesScorePositiveKeys();
+        $sumPositive = 0.0;
+        foreach ($positiveKeys as $key) {
+            $sumPositive += $weights[$key] ?? 0;
+        }
+
+        if (abs($sumPositive - 100) > 0.05) {
             return back()->withErrors([
-                'weights' => "Total bobot harus 100%. Saat ini: {$sum}%.",
+                'weights' => "Total bobot 5 indikator positif harus 100%. Saat ini: {$sumPositive}%. Bobot Lepas bersifat eksternal (di luar 100%).",
             ])->withInput();
         }
 
@@ -1479,6 +1484,32 @@ class MonitoringController extends Controller
         $config->save();
 
         return back()->with('status', 'sales-score-weights-updated');
+    }
+
+    /**
+     * Realisasi YoY score:
+     * - Tahun ini >= tahun lalu → 100
+     * - Turun → proporsi realisasi saat ini vs tahun lalu (0–100)
+     * - Tahun lalu 0 & tahun ini > 0 → 100
+     */
+    private function scoreRealisasiYoY(float $realCurr, float $realPrev): array
+    {
+        $realGrowthPct = $realPrev > 0
+            ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
+            : ($realCurr > 0 ? 100.0 : 0.0);
+
+        if ($realPrev <= 0) {
+            $score = $realCurr > 0 ? 100.0 : 0.0;
+        } elseif ($realCurr >= $realPrev) {
+            $score = 100.0;
+        } else {
+            $score = round(($realCurr / $realPrev) * 100, 1);
+        }
+
+        return [
+            'score' => $score,
+            'growth_pct' => $realGrowthPct,
+        ];
     }
 
     /** Resolve scope helper */
@@ -2879,27 +2910,17 @@ class MonitoringController extends Controller
             }
             $acScore = round($acScore, 1);
 
-            // 1. Realisasi tahun lalu vs tahun ini (growth volume eksemplar)
+            // 1. Realisasi tahun lalu vs tahun ini
             $realCurr = (float) $totalRealisasiTargetYear;
             $realPrev = (float) $totalRealisasiLaluTargetYear;
-            $realGrowthPct = $realPrev > 0
-                ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
-                : ($realCurr > 0 ? 100 : 0);
-            if ($realGrowthPct >= 20) {
-                $realisasiYoyScore = 100;
-            } elseif ($realGrowthPct >= 0) {
-                $realisasiYoyScore = 50 + ($realGrowthPct / 20) * 50;
-            } else {
-                $realisasiYoyScore = max(0, 50 + ($realGrowthPct / 20) * 50);
-            }
-            $realisasiYoyScore = round($realisasiYoyScore, 1);
+            $yoy = $this->scoreRealisasiYoY($realCurr, $realPrev);
+            $realGrowthPct = $yoy['growth_pct'];
+            $realisasiYoyScore = $yoy['score'];
 
-            // 2. Aktivitas SP vs Area Cover
-            $spCount = $kegiatanSales->filter(function ($item) {
-                return strtoupper(trim((string) ($item->aktivitas ?? ''))) === 'SP';
-            })->count();
+            // 2. Customer Realisasi vs Area Cover
+            $customerRealisasiCount = (int) $customerWithRealisasi;
             $areaCoverForScore = max(1, (int) $acCurr);
-            $spVsAcPct = round(($spCount / $areaCoverForScore) * 100, 1);
+            $spVsAcPct = round(($customerRealisasiCount / $areaCoverForScore) * 100, 1);
             $spVsAcScore = min(100, $spVsAcPct);
 
             // 3. Achievement Target (realisasi / rencana jual)
@@ -2908,6 +2929,29 @@ class MonitoringController extends Controller
                 ? round(($realCurr / $targetTotal) * 100, 1)
                 : ($realCurr > 0 ? 100 : 0);
             $achievementScore = min(100, max(0, $achievementPct));
+
+            // 4–6. Tahan / Rebut / Lepas vs Area Cover (dihitung dari sekolah AC)
+            // Lepas = semua yang tahun ini TIDAK ber-realisasi (termasuk "gagal")
+            $tahanCount = 0;
+            $rebutCount = 0;
+            $lepasCount = 0;
+            foreach ($areaCoverSekolah as $s) {
+                $prevReal = (bool) ($s->prev_realisasi ?? false);
+                $currReal = ((float) ($s->real_exemplar_current ?? 0)) > 0;
+                if ($prevReal && $currReal) {
+                    $tahanCount++;
+                } elseif (!$prevReal && $currReal) {
+                    $rebutCount++;
+                } else {
+                    $lepasCount++;
+                }
+            }
+            $tahanVsAcPct = round(($tahanCount / $areaCoverForScore) * 100, 1);
+            $tahanVsAcScore = min(100, $tahanVsAcPct);
+            $rebutVsAcPct = round(($rebutCount / $areaCoverForScore) * 100, 1);
+            $rebutVsAcScore = min(100, $rebutVsAcPct);
+            $lepasVsAcPct = round(($lepasCount / $areaCoverForScore) * 100, 1);
+            $lepasVsAcScore = min(100, $lepasVsAcPct);
 
             // Pendukung: Intensitas aktivitas + chart bulanan
             $activitiesByMonth = $kegiatanSales->groupBy(function ($item) {
@@ -2985,7 +3029,7 @@ class MonitoringController extends Controller
             // Indikator aktivitas lain vs Area Cover tidak masuk penilaian
             // (hanya SP yang dihitung di skor utama)
 
-            // Total KPI Score = weighted average of 6 indicators
+            // Total KPI Score = weighted (Tahan/Rebut menambah, Lepas mengurangi)
             $scoreWeights = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
                 ?->resolvedSalesScoreWeights()
                 ?? \App\Models\Configuration::defaultSalesScoreWeights();
@@ -2994,9 +3038,9 @@ class MonitoringController extends Controller
                 'realisasi_yoy' => $realisasiYoyScore,
                 'sp_vs_ac' => $spVsAcScore,
                 'achievement' => $achievementScore,
-                'ac_growth' => $acScore,
-                'activity' => $activityScore,
-                'realisasi_sekolah' => $realisasiScore,
+                'tahan_vs_ac' => $tahanVsAcScore,
+                'rebut_vs_ac' => $rebutVsAcScore,
+                'lepas_vs_ac' => $lepasVsAcScore,
             ];
             $totalKpiScore = \App\Models\Configuration::computeWeightedSalesScore($scoreMap, $scoreWeights);
 
@@ -3015,15 +3059,17 @@ class MonitoringController extends Controller
                         'detail' => "Realisasi " . ($currentYear - 1) . ": " . number_format($realPrev, 0, ',', '.') . " → {$currentYear}: " . number_format($realCurr, 0, ',', '.') . " (" . ($realGrowthPct >= 0 ? '+' : '') . "{$realGrowthPct}%)",
                         'icon' => 'bi-arrow-left-right',
                         'color' => '#3b82f6',
+                        'is_penalty' => false,
                     ],
                     [
                         'key' => 'sp_vs_ac',
-                        'label' => 'SP vs Area Cover',
+                        'label' => 'Customer Realisasi vs Area Cover',
                         'score' => $spVsAcScore,
                         'weight' => $scoreWeights['sp_vs_ac'] ?? 0,
-                        'detail' => "SP {$spCount} vs Area Cover {$acCurr} ({$spVsAcPct}%)",
-                        'icon' => 'bi-lightning-charge-fill',
+                        'detail' => "Customer Realisasi {$customerRealisasiCount} vs Area Cover {$acCurr} ({$spVsAcPct}%)",
+                        'icon' => 'bi-people-fill',
                         'color' => '#f59e0b',
+                        'is_penalty' => false,
                     ],
                     [
                         'key' => 'achievement',
@@ -3033,33 +3079,37 @@ class MonitoringController extends Controller
                         'detail' => "Realisasi " . number_format($realCurr, 0, ',', '.') . " / Target " . number_format($targetTotal, 0, ',', '.') . " ({$achievementPct}%)",
                         'icon' => 'bi-trophy-fill',
                         'color' => '#10b981',
+                        'is_penalty' => false,
                     ],
                     [
-                        'key' => 'ac_growth',
-                        'label' => 'Area Cover Growth',
-                        'score' => $acScore,
-                        'weight' => $scoreWeights['ac_growth'] ?? 0,
-                        'detail' => "AC " . ($currentYear - 1) . ": {$acPrev} → AC {$currentYear}: {$acCurr} (" . ($acGrowthPct >= 0 ? '+' : '') . "{$acGrowthPct}%)",
-                        'icon' => 'bi-graph-up-arrow',
-                        'color' => '#0d9488',
+                        'key' => 'tahan_vs_ac',
+                        'label' => 'Tahan vs Area Cover',
+                        'score' => $tahanVsAcScore,
+                        'weight' => $scoreWeights['tahan_vs_ac'] ?? 0,
+                        'detail' => "Tahan {$tahanCount} vs Area Cover {$acCurr} ({$tahanVsAcPct}%)",
+                        'icon' => 'bi-shield-check',
+                        'color' => '#059669',
+                        'is_penalty' => false,
                     ],
                     [
-                        'key' => 'activity',
-                        'label' => 'Intensitas Aktivitas',
-                        'score' => $activityScore,
-                        'weight' => $scoreWeights['activity'] ?? 0,
-                        'detail' => "Rata-rata {$avgPerMonth} aktivitas/bulan ({$totalActivities} total)",
-                        'icon' => 'bi-activity',
-                        'color' => '#a855f7',
+                        'key' => 'rebut_vs_ac',
+                        'label' => 'Rebut vs Area Cover',
+                        'score' => $rebutVsAcScore,
+                        'weight' => $scoreWeights['rebut_vs_ac'] ?? 0,
+                        'detail' => "Rebut {$rebutCount} vs Area Cover {$acCurr} ({$rebutVsAcPct}%)",
+                        'icon' => 'bi-arrow-repeat',
+                        'color' => '#2563eb',
+                        'is_penalty' => false,
                     ],
                     [
-                        'key' => 'realisasi_sekolah',
-                        'label' => 'Realisasi Sekolah',
-                        'score' => $realisasiScore,
-                        'weight' => $scoreWeights['realisasi_sekolah'] ?? 0,
-                        'detail' => "{$sekolahDenganRealisasi} dari {$areaCoverCount} Area Cover ({$realisasiPct}%)",
-                        'icon' => 'bi-check2-all',
+                        'key' => 'lepas_vs_ac',
+                        'label' => 'Lepas vs Area Cover',
+                        'score' => $lepasVsAcScore,
+                        'weight' => $scoreWeights['lepas_vs_ac'] ?? 0,
+                        'detail' => "Lepas {$lepasCount} vs Area Cover {$acCurr} ({$lepasVsAcPct}%) — mengurangi skor",
+                        'icon' => 'bi-box-arrow-right',
                         'color' => '#ef4444',
+                        'is_penalty' => true,
                     ],
                 ],
                 'extraIndicators' => [],
@@ -3071,10 +3121,32 @@ class MonitoringController extends Controller
                 return ['label' => empty($key) ? 'Tidak Diketahui' : $key, 'value' => $group->count()];
             })->values()->sortByDesc('value')->values()->toArray();
 
+            // SP di Distribusi Aktivitas = jumlah Customer Realisasi (bukan total row kegiatan SP)
+            $spSynced = false;
+            foreach ($activityDistribution as &$item) {
+                if (strtoupper(trim((string) ($item['label'] ?? ''))) === 'SP') {
+                    $item['value'] = (int) $customerWithRealisasi;
+                    $spSynced = true;
+                    break;
+                }
+            }
+            unset($item);
+            if (!$spSynced && (int) $customerWithRealisasi > 0) {
+                $activityDistribution[] = [
+                    'label' => 'SP',
+                    'value' => (int) $customerWithRealisasi,
+                ];
+            }
+            usort($activityDistribution, function ($a, $b) {
+                return ($b['value'] ?? 0) <=> ($a['value'] ?? 0);
+            });
+            $activityDistribution = array_values($activityDistribution);
+
             $pieColors = ['#1d4ed8', '#0d9488', '#f59e0b', '#dc2626', '#8b5cf6', '#10b981'];
             foreach ($activityDistribution as $index => &$item) {
                 $item['color'] = $pieColors[$index % count($pieColors)];
             }
+            unset($item);
             $kpiData['activityDistribution'] = $activityDistribution;
             $kpiData['areaCover'] = (int) $acCurr;
 
@@ -3164,7 +3236,7 @@ class MonitoringController extends Controller
                 $jenjang = strtoupper(trim($s->jenjang ?? ''));
                 if (empty($jenjang)) $jenjang = 'LAINNYA';
                 if (!isset($trlgPerJenjang[$jenjang])) {
-                    $trlgPerJenjang[$jenjang] = ['tahan' => 0, 'rebut' => 0, 'lepas' => 0];
+                    $trlgPerJenjang[$jenjang] = ['tahan' => 0, 'rebut' => 0, 'lepas' => 0, 'gagal' => 0];
                 }
 
                 $sumberDana = strtoupper(trim($s->sumber_dana ?? ''));
@@ -3174,11 +3246,10 @@ class MonitoringController extends Controller
                     $segmentSwasta++;
                 }
 
-                // Logika TRLG sesuai RJS:
+                // Logika TRL (semua sekolah Area Cover harus masuk salah satu):
                 // Tahan  = tahun lalu ada realisasi  && tahun ini ada realisasi
                 // Rebut  = tahun lalu TIDAK realisasi && tahun ini ada realisasi
-                // Lepas  = tahun lalu ada realisasi  && tahun ini TIDAK ada realisasi
-                // Gagal  = tahun lalu TIDAK realisasi && tahun ini TIDAK ada realisasi
+                // Lepas  = tahun ini TIDAK ada realisasi (termasuk yang dulu disebut "gagal")
                 $prevReal  = $s->prev_realisasi ?? false;
                 $currReal  = ($s->real_exemplar_current ?? 0) > 0;
 
@@ -3189,8 +3260,13 @@ class MonitoringController extends Controller
                     $customerBaru++;
                     $trlgPerJenjang[$jenjang]['rebut']++;
                 } else {
+                    // Lepas = tidak ada realisasi tahun ini (ex-customer + belum pernah realisasi)
                     $customerLoss++;
                     $trlgPerJenjang[$jenjang]['lepas']++;
+                    if (!$prevReal && !$currReal) {
+                        $customerGagal++;
+                        $trlgPerJenjang[$jenjang]['gagal'] = ($trlgPerJenjang[$jenjang]['gagal'] ?? 0) + 1;
+                    }
                 }
             }
             $kpiData['customerStatus'] = [
@@ -3199,12 +3275,16 @@ class MonitoringController extends Controller
                 ['label' => 'Loss', 'value' => $customerLoss, 'color' => '#ef4444'],
             ];
 
-            // Tahan - Rebut - Lepas (TRL)
+            // Tahan - Rebut - Lepas (total = Area Cover; gagal sudah masuk Lepas)
             $totalTrlg = $customerRetain + $customerBaru + $customerLoss;
+            $pctTrlg = function (int $count) use ($totalTrlg): float {
+                return $totalTrlg > 0 ? round(($count / $totalTrlg) * 100, 2) : 0;
+            };
             $kpiData['trlg'] = [
-                'tahan' => ['count' => $customerRetain, 'pct' => $totalTrlg > 0 ? round(($customerRetain / $totalTrlg) * 100, 2) : 0],
-                'rebut' => ['count' => $customerBaru, 'pct' => $totalTrlg > 0 ? round(($customerBaru / $totalTrlg) * 100, 2) : 0],
-                'lepas' => ['count' => $customerLoss, 'pct' => $totalTrlg > 0 ? round(($customerLoss / $totalTrlg) * 100, 2) : 0],
+                'tahan' => ['count' => $customerRetain, 'pct' => $pctTrlg($customerRetain)],
+                'rebut' => ['count' => $customerBaru, 'pct' => $pctTrlg($customerBaru)],
+                'lepas' => ['count' => $customerLoss, 'pct' => $pctTrlg($customerLoss)],
+                'total' => $totalTrlg,
             ];
 
             // Format array for UI table
@@ -3216,7 +3296,7 @@ class MonitoringController extends Controller
                 }
             }
             foreach ($trlgPerJenjang as $j => $counts) {
-                if ($counts['tahan'] > 0 || $counts['rebut'] > 0 || $counts['lepas'] > 0) {
+                if (($counts['tahan'] ?? 0) > 0 || ($counts['rebut'] ?? 0) > 0 || ($counts['lepas'] ?? 0) > 0) {
                     $trlgTable[] = array_merge(['jenjang' => $j], $counts);
                 }
             }
@@ -3871,7 +3951,31 @@ class MonitoringController extends Controller
             ->groupBy('customers.sales_id')
             ->select(
                 'customers.sales_id',
-                DB::raw('COUNT(DISTINCT CASE WHEN customer_plans.is_ac = 1 AND customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi')
+                DB::raw('COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi')
+            )
+            ->get()
+            ->keyBy('sales_id');
+
+        // TRL vs Area Cover: hanya sekolah yang AC di tahun berjalan
+        $trlRows = DB::table('customers')
+            ->join('customer_plans as cp_curr', function ($join) use ($year) {
+                $join->on('customers.id', '=', 'cp_curr.customer_id')
+                    ->where('cp_curr.year', $year)
+                    ->where('cp_curr.is_ac', 1);
+            })
+            ->leftJoin('customer_plans as cp_prev', function ($join) use ($prevYear) {
+                $join->on('customers.id', '=', 'cp_prev.customer_id')
+                    ->where('cp_prev.year', $prevYear);
+            })
+            ->whereIn('customers.sales_id', $salesIds)
+            ->when($request->filled('area_id'), fn ($q) => $q->where('customers.area_id', $request->area_id))
+            ->when($request->filled('cabang_id'), fn ($q) => $q->where('customers.cabang_id', $request->cabang_id))
+            ->groupBy('customers.sales_id')
+            ->select(
+                'customers.sales_id',
+                DB::raw('COUNT(DISTINCT CASE WHEN COALESCE(cp_prev.real_exemplar, 0) > 0 AND COALESCE(cp_curr.real_exemplar, 0) > 0 THEN customers.id END) as tahan_count'),
+                DB::raw('COUNT(DISTINCT CASE WHEN COALESCE(cp_prev.real_exemplar, 0) = 0 AND COALESCE(cp_curr.real_exemplar, 0) > 0 THEN customers.id END) as rebut_count'),
+                DB::raw('COUNT(DISTINCT CASE WHEN COALESCE(cp_curr.real_exemplar, 0) = 0 THEN customers.id END) as lepas_count')
             )
             ->get()
             ->keyBy('sales_id');
@@ -3894,6 +3998,7 @@ class MonitoringController extends Controller
             $volumeRows,
             $schoolCountRows,
             $schoolRealisasiRows,
+            $trlRows,
             $activities,
             $cabangs,
             $areas,
@@ -3925,24 +4030,13 @@ class MonitoringController extends Controller
             $sekolahRealisasi = (int) ($schoolRealisasiRows->get($salesId)->sekolah_realisasi ?? 0);
 
             // 1. Realisasi YoY
-            $realGrowthPct = $realPrev > 0
-                ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
-                : ($realCurr > 0 ? 100 : 0);
-            if ($realGrowthPct >= 20) {
-                $realisasiYoyScore = 100;
-            } elseif ($realGrowthPct >= 0) {
-                $realisasiYoyScore = 50 + ($realGrowthPct / 20) * 50;
-            } else {
-                $realisasiYoyScore = max(0, 50 + ($realGrowthPct / 20) * 50);
-            }
-            $realisasiYoyScore = round($realisasiYoyScore, 1);
+            $yoy = $this->scoreRealisasiYoY($realCurr, $realPrev);
+            $realGrowthPct = $yoy['growth_pct'];
+            $realisasiYoyScore = $yoy['score'];
 
-            // 2. SP vs Area Cover
-            $salesActivities = $activities->get($salesId) ?? collect();
-            $spCount = $salesActivities->filter(function ($a) {
-                return strtoupper(trim((string) ($a->aktivitas ?? ''))) === 'SP';
-            })->count();
-            $spVsAcPct = round(($spCount / max(1, $acCurr)) * 100, 1);
+            // 2. Customer Realisasi vs Area Cover
+            $customerRealisasiCount = (int) $sekolahRealisasi;
+            $spVsAcPct = round(($customerRealisasiCount / max(1, $acCurr)) * 100, 1);
             $spVsAcScore = min(100, $spVsAcPct);
 
             // 3. Achievement Target
@@ -3951,7 +4045,20 @@ class MonitoringController extends Controller
                 : ($realCurr > 0 ? 100 : 0);
             $achievementScore = min(100, max(0, $achievementPct));
 
-            // 4. Area Cover Growth
+            // 4–6. Tahan / Rebut / Lepas vs Area Cover
+            $trl = $trlRows->get($salesId);
+            $tahanCount = (int) ($trl->tahan_count ?? 0);
+            $rebutCount = (int) ($trl->rebut_count ?? 0);
+            $lepasCount = (int) ($trl->lepas_count ?? 0);
+            $acDenom = max(1, $acCurr);
+            $tahanVsAcPct = round(($tahanCount / $acDenom) * 100, 1);
+            $tahanVsAcScore = min(100, $tahanVsAcPct);
+            $rebutVsAcPct = round(($rebutCount / $acDenom) * 100, 1);
+            $rebutVsAcScore = min(100, $rebutVsAcPct);
+            $lepasVsAcPct = round(($lepasCount / $acDenom) * 100, 1);
+            $lepasVsAcScore = min(100, $lepasVsAcPct);
+
+            // 4. Area Cover Growth (pendukung legacy)
             $acGrowthPct = $acPrev > 0
                 ? round((($acCurr - $acPrev) / $acPrev) * 100, 1)
                 : ($acCurr > 0 ? 100 : 0);
@@ -3965,6 +4072,7 @@ class MonitoringController extends Controller
             $acScore = round($acScore, 1);
 
             // 5. Intensitas Aktivitas
+            $salesActivities = $activities->get($salesId) ?? collect();
             $parseMonth = function ($date) {
                 if (!$date) return null;
                 try {
@@ -4002,9 +4110,9 @@ class MonitoringController extends Controller
                 'realisasi_yoy' => $realisasiYoyScore,
                 'sp_vs_ac' => $spVsAcScore,
                 'achievement' => $achievementScore,
-                'ac_growth' => $acScore,
-                'activity' => $activityScore,
-                'realisasi_sekolah' => $realisasiScore,
+                'tahan_vs_ac' => $tahanVsAcScore,
+                'rebut_vs_ac' => $rebutVsAcScore,
+                'lepas_vs_ac' => $lepasVsAcScore,
             ], $scoreWeights);
             $grade = $totalScore >= 80
                 ? 'Sangat Baik'
@@ -4026,12 +4134,21 @@ class MonitoringController extends Controller
                     'real_curr' => $realCurr,
                     'real_growth_pct' => $realGrowthPct,
                     'sp_vs_ac_score' => $spVsAcScore,
-                    'sp_count' => $spCount,
+                    'sp_count' => $customerRealisasiCount,
                     'ac_curr' => $acCurr,
                     'sp_vs_ac_pct' => $spVsAcPct,
                     'achievement_score' => $achievementScore,
                     'target_curr' => $targetCurr,
                     'achievement_pct' => $achievementPct,
+                    'tahan_vs_ac_score' => $tahanVsAcScore,
+                    'tahan_count' => $tahanCount,
+                    'tahan_vs_ac_pct' => $tahanVsAcPct,
+                    'rebut_vs_ac_score' => $rebutVsAcScore,
+                    'rebut_count' => $rebutCount,
+                    'rebut_vs_ac_pct' => $rebutVsAcPct,
+                    'lepas_vs_ac_score' => $lepasVsAcScore,
+                    'lepas_count' => $lepasCount,
+                    'lepas_vs_ac_pct' => $lepasVsAcPct,
                     'ac_score' => $acScore,
                     'ac_prev' => $acPrev,
                     'ac_growth_pct' => $acGrowthPct,
