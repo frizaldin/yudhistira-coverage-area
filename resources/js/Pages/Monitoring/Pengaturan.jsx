@@ -197,7 +197,391 @@ function PasswordForm() {
     );
 }
 
-export default function Pengaturan({ activeNav = 'setting', status }) {
+function SalesScoreWeightsForm({
+    initialWeights,
+    labels,
+    canEdit,
+    status,
+}) {
+    const PENALTY_KEYS = ["lepas_vs_ac"];
+    const defaults = {
+        realisasi_yoy: 20,
+        sp_vs_ac: 20,
+        achievement: 20,
+        tahan_vs_ac: 20,
+        rebut_vs_ac: 20,
+        lepas_vs_ac: 15,
+    };
+    const initial = { ...defaults };
+    Object.keys(defaults).forEach((key) => {
+        if (initialWeights && initialWeights[key] != null) {
+            initial[key] = initialWeights[key];
+        }
+    });
+    const { data, setData, put, errors, processing, recentlySuccessful } =
+        useForm({
+            weights: initial,
+        });
+
+    const positiveKeys = Object.keys(defaults).filter(
+        (k) => !PENALTY_KEYS.includes(k),
+    );
+    const totalPositive = positiveKeys.reduce(
+        (a, key) => a + (parseFloat(data.weights?.[key]) || 0),
+        0,
+    );
+    const lepasWeight = parseFloat(data.weights?.lepas_vs_ac) || 0;
+    const totalOk = Math.abs(totalPositive - 100) <= 0.05;
+
+    const submit = (e) => {
+        e.preventDefault();
+        if (!canEdit) return;
+        put(route("monitoring.pengaturan.sales-score-weights"), {
+            preserveScroll: true,
+        });
+    };
+
+    const setWeight = (key, value) => {
+        setData("weights", {
+            ...data.weights,
+            [key]: value === "" ? "" : value,
+        });
+    };
+
+    const resetEqual = () => {
+        setData("weights", { ...defaults });
+    };
+
+    return (
+        <div style={{ ...S.card, padding: "20px" }}>
+            <div
+                style={{
+                    marginBottom: "16px",
+                    paddingBottom: "12px",
+                    borderBottom: `1px solid ${T.border}`,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
+                }}
+            >
+                <div>
+                    <h2
+                        style={{
+                            fontSize: "15px",
+                            fontWeight: 700,
+                            color: T.text,
+                            margin: 0,
+                        }}
+                    >
+                        Bobot Sales Score (AI) — 5 + Lepas
+                    </h2>
+                    <p
+                        style={{
+                            fontSize: "11px",
+                            color: T.slate,
+                            margin: "4px 0 0 0",
+                        }}
+                    >
+                        Total <strong>100%</strong> hanya dari 5 indikator
+                        positif (YoY, Realisasi, Achievement, Tahan, Rebut).{" "}
+                        <strong style={{ color: "#b91c1c" }}>Lepas</strong>{" "}
+                        adalah pengurang eksternal di luar 100% — memotong skor
+                        akhir hingga sebesar bobotnya.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={resetEqual}
+                    disabled={!canEdit || processing}
+                    style={{
+                        ...S.button,
+                        background: "#f1f5f9",
+                        color: T.text,
+                        border: `1px solid ${T.border}`,
+                        opacity: !canEdit ? 0.5 : 1,
+                    }}
+                >
+                    Reset default
+                </button>
+            </div>
+
+            {!canEdit && (
+                <div
+                    style={{
+                        marginBottom: 12,
+                        padding: "8px 12px",
+                        background: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: 8,
+                        fontSize: 11,
+                        color: "#92400e",
+                    }}
+                >
+                    Hanya user level nasional yang dapat mengubah bobot.
+                </div>
+            )}
+
+            <form
+                onSubmit={submit}
+                style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+                <div
+                    style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: T.slate,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.4px",
+                    }}
+                >
+                    Indikator positif (total 100%)
+                </div>
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                            "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                    }}
+                >
+                    {positiveKeys.map((key) => (
+                        <div key={key}>
+                            <label style={S.label}>
+                                {labels?.[key] || key}
+                            </label>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                }}
+                            >
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    style={{ ...S.input, flex: 1 }}
+                                    value={data.weights[key] ?? ""}
+                                    disabled={!canEdit || processing}
+                                    onChange={(e) =>
+                                        setWeight(key, e.target.value)
+                                    }
+                                    required
+                                />
+                                <span
+                                    style={{
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        color: T.slate,
+                                    }}
+                                >
+                                    %
+                                </span>
+                            </div>
+                            {errors[`weights.${key}`] && (
+                                <div
+                                    style={{
+                                        fontSize: 11,
+                                        color: T.red,
+                                        marginTop: 4,
+                                    }}
+                                >
+                                    {errors[`weights.${key}`]}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+
+                <div
+                    style={{
+                        marginTop: 4,
+                        paddingTop: 12,
+                        borderTop: `1px dashed ${T.border}`,
+                    }}
+                >
+                    <div
+                        style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#b91c1c",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.4px",
+                            marginBottom: 8,
+                        }}
+                    >
+                        Pengurang eksternal (di luar 100%)
+                    </div>
+                    <div
+                        style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                                "repeat(auto-fit, minmax(220px, 1fr))",
+                            gap: 12,
+                        }}
+                    >
+                        {PENALTY_KEYS.map((key) => (
+                            <div key={key}>
+                                <label style={S.label}>
+                                    {labels?.[key] || key}
+                                    <span
+                                        style={{
+                                            marginLeft: 6,
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            color: "#b91c1c",
+                                            background: "#fef2f2",
+                                            border: "1px solid #fecaca",
+                                            borderRadius: 4,
+                                            padding: "1px 6px",
+                                        }}
+                                    >
+                                        PENGURANG
+                                    </span>
+                                </label>
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                    }}
+                                >
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        style={{
+                                            ...S.input,
+                                            flex: 1,
+                                            borderColor: "#fecaca",
+                                        }}
+                                        value={data.weights[key] ?? ""}
+                                        disabled={!canEdit || processing}
+                                        onChange={(e) =>
+                                            setWeight(key, e.target.value)
+                                        }
+                                        required
+                                    />
+                                    <span
+                                        style={{
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            color: T.slate,
+                                        }}
+                                    >
+                                        %
+                                    </span>
+                                </div>
+                                <div
+                                    style={{
+                                        fontSize: 10,
+                                        color: T.slate,
+                                        marginTop: 4,
+                                    }}
+                                >
+                                    Maks potongan skor ={" "}
+                                    {lepasWeight.toFixed(2)} poin (saat Lepas
+                                    vs AC = 100%)
+                                </div>
+                                {errors[`weights.${key}`] && (
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            color: T.red,
+                                            marginTop: 4,
+                                        }}
+                                    >
+                                        {errors[`weights.${key}`]}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {errors.weights && (
+                    <div style={{ fontSize: 11, color: T.red }}>
+                        {errors.weights}
+                    </div>
+                )}
+
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        marginTop: 4,
+                        flexWrap: "wrap",
+                    }}
+                >
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                        <span style={{ color: totalOk ? T.green : T.red }}>
+                            Total 5 indikator: {totalPositive.toFixed(2)}%
+                            {!totalOk ? " (harus 100%)" : ""}
+                        </span>
+                        <span
+                            style={{
+                                display: "block",
+                                marginTop: 2,
+                                color: "#b91c1c",
+                                fontWeight: 600,
+                                fontSize: 11,
+                            }}
+                        >
+                            Lepas (eksternal): {lepasWeight.toFixed(2)}% — tidak
+                            dihitung ke 100%
+                        </span>
+                    </div>
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                        }}
+                    >
+                        <button
+                            type="submit"
+                            style={{
+                                ...S.button,
+                                opacity:
+                                    processing || !canEdit || !totalOk
+                                        ? 0.6
+                                        : 1,
+                            }}
+                            disabled={processing || !canEdit || !totalOk}
+                        >
+                            <i className="bi bi-save" /> Simpan Bobot
+                        </button>
+                        {recentlySuccessful &&
+                            status === "sales-score-weights-updated" && (
+                                <span
+                                    style={{
+                                        fontSize: 11,
+                                        color: T.green,
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    Bobot berhasil disimpan.
+                                </span>
+                            )}
+                    </div>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+export default function Pengaturan({
+    activeNav = "setting",
+    status,
+    salesScoreWeights = {},
+    salesScoreWeightLabels = {},
+    canEditSalesScoreWeights = false,
+}) {
     const { auth } = usePage().props;
     const user = auth.user;
 
@@ -205,30 +589,67 @@ export default function Pengaturan({ activeNav = 'setting', status }) {
         <MonitoringLayout activeNav={activeNav}>
             <Head title="Pengaturan Akun" />
 
-            <div style={{
-                background: 'white', padding: '14px 20px',
-                borderBottom: `1px solid ${T.border}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
+            <div
+                style={{
+                    background: "white",
+                    padding: "14px 20px",
+                    borderBottom: `1px solid ${T.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                }}
+            >
                 <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: T.slate, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                    <div
+                        style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: T.slate,
+                            letterSpacing: "1px",
+                            textTransform: "uppercase",
+                        }}
+                    >
                         Pengaturan
                     </div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: T.text, letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+                    <div
+                        style={{
+                            fontSize: 22,
+                            fontWeight: 900,
+                            color: T.text,
+                            letterSpacing: "-0.5px",
+                            lineHeight: 1.15,
+                        }}
+                    >
                         Profil & Akun
                     </div>
                 </div>
             </div>
 
-            <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                    <div style={{ flex: '1 1 300px' }}>
+            <div
+                style={{
+                    padding: "20px",
+                    maxWidth: "1000px",
+                    margin: "0 auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "20px",
+                }}
+            >
+                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+                    <div style={{ flex: "1 1 300px" }}>
                         <ProfileForm user={user} status={status} />
                     </div>
-                    <div style={{ flex: '1 1 300px' }}>
+                    <div style={{ flex: "1 1 300px" }}>
                         <PasswordForm />
                     </div>
                 </div>
+
+                <SalesScoreWeightsForm
+                    initialWeights={salesScoreWeights}
+                    labels={salesScoreWeightLabels}
+                    canEdit={canEditSalesScoreWeights}
+                    status={status}
+                />
             </div>
         </MonitoringLayout>
     );

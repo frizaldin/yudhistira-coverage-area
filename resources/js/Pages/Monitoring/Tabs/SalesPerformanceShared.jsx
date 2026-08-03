@@ -85,14 +85,14 @@ export const S = {
     },
 };
 
-export function Donut({ segments, size = 120, ring = 26, label, sub }) {
+export function Donut({ segments, size = 120, ring = 26, label, sub, onSegmentClick }) {
     const [hoveredInfo, setHoveredInfo] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const r = (size - ring) / 2;
     const cx = size / 2;
     const cy = size / 2;
     const circ = 2 * Math.PI * r;
-    const tot = segments.reduce((a, s) => a + s.value, 0);
+    const tot = segments.reduce((a, s) => a + (Number(s.value) || 0), 0);
     let cum = 0;
     return (
         <div
@@ -119,50 +119,58 @@ export function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     stroke="#f1f5f9"
                     strokeWidth={ring}
                 />
-                {segments.map((seg, i) => {
-                    const len = (seg.value / tot) * circ;
-                    const offset = circ / 4 - cum;
-                    cum += len;
-                    const percent =
-                        tot > 0 ? ((seg.value / tot) * 100).toFixed(1) : 0;
-                    return (
-                        <circle
-                            key={i}
-                            cx={cx}
-                            cy={cy}
-                            r={r}
-                            fill="none"
-                            stroke={seg.color}
-                            strokeWidth={ring}
-                            strokeDasharray={`${len} ${circ}`}
-                            strokeDashoffset={offset}
-                            style={{
-                                cursor: seg.label ? "pointer" : "default",
-                                transition: "stroke-width 0.2s ease",
-                            }}
-                            onMouseEnter={() => {
-                                if (seg.label) {
-                                    setHoveredInfo({
-                                        label: seg.label,
-                                        value: seg.value,
-                                        percent,
-                                        color: seg.color,
-                                    });
-                                }
-                            }}
-                            onMouseOver={(e) => {
-                                if (seg.label)
-                                    e.target.setAttribute(
-                                        "stroke-width",
-                                        ring + 6,
-                                    );
-                            }}
-                            onMouseOut={(e) => {
-                                e.target.setAttribute("stroke-width", ring);
-                            }}
-                        />
-                    );
-                })}
+                {/* rotate -90 supaya mulai dari atas (12 jam) dan mengisi full 360° */}
+                <g transform={`rotate(-90 ${cx} ${cy})`}>
+                    {segments.map((seg, i) => {
+                        const value = Number(seg.value) || 0;
+                        const len = tot > 0 ? (value / tot) * circ : 0;
+                        const offset = -cum;
+                        cum += len;
+                        const percent =
+                            tot > 0 ? ((value / tot) * 100).toFixed(1) : 0;
+                        const clickable = typeof onSegmentClick === "function" && seg.label;
+                        return (
+                            <circle
+                                key={i}
+                                cx={cx}
+                                cy={cy}
+                                r={r}
+                                fill="none"
+                                stroke={seg.color}
+                                strokeWidth={ring}
+                                strokeDasharray={`${len} ${Math.max(circ - len, 0)}`}
+                                strokeDashoffset={offset}
+                                style={{
+                                    cursor: clickable || seg.label ? "pointer" : "default",
+                                    transition: "stroke-width 0.2s ease",
+                                }}
+                                onClick={() => {
+                                    if (clickable) onSegmentClick(seg, i);
+                                }}
+                                onMouseEnter={() => {
+                                    if (seg.label) {
+                                        setHoveredInfo({
+                                            label: seg.label,
+                                            value,
+                                            percent,
+                                            color: seg.color,
+                                        });
+                                    }
+                                }}
+                                onMouseOver={(e) => {
+                                    if (seg.label)
+                                        e.target.setAttribute(
+                                            "stroke-width",
+                                            ring + 6,
+                                        );
+                                }}
+                                onMouseOut={(e) => {
+                                    e.target.setAttribute("stroke-width", ring);
+                                }}
+                            />
+                        );
+                    })}
+                </g>
             </svg>
 
             {/* Default Label */}
@@ -258,6 +266,254 @@ export function Donut({ segments, size = 120, ring = 26, label, sub }) {
                             >
                                 ({hoveredInfo.value.toLocaleString("id-ID")})
                             </span>
+                        </div>
+                    </div>,
+                    document.body,
+                )}
+        </div>
+    );
+}
+
+/**
+ * Concentric rings: tiap ring = 1 jenis aktivitas vs total Area Cover.
+ * Outer ring = aktivitas pertama, makin dalam makin ke aktivitas berikutnya.
+ */
+export function ConcentricActivityDonut({
+    activities = [],
+    areaCover = 0,
+    size = 120,
+    ringWidth = 12,
+    gap = 3,
+    maxRings = 5,
+    label,
+    sub,
+    onRingClick,
+}) {
+    const [hoveredInfo, setHoveredInfo] = useState(null);
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+    const rings = (activities || [])
+        .filter((a) => (Number(a.value) || 0) > 0)
+        .slice(0, maxRings);
+
+    const cx = size / 2;
+    const cy = size / 2;
+    const maxRadius = size / 2 - 2;
+
+    const centerHole =
+        maxRadius - rings.length * ringWidth - Math.max(0, rings.length - 1) * gap;
+
+    return (
+        <div
+            style={{
+                position: "relative",
+                width: size,
+                height: size,
+                flexShrink: 0,
+            }}
+            onMouseLeave={() => setHoveredInfo(null)}
+        >
+            <svg
+                width={size}
+                height={size}
+                viewBox={`0 0 ${size} ${size}`}
+                style={{ overflow: "visible" }}
+                onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+            >
+                {rings.map((ring, i) => {
+                    const value = Number(ring.value) || 0;
+                    const radius =
+                        maxRadius - ringWidth / 2 - i * (ringWidth + gap);
+                    const circ = 2 * Math.PI * radius;
+                    const base = areaCover > 0 ? areaCover : Math.max(value, 1);
+                    const ratio = Math.min(value / base, 1);
+                    const fillLen = ratio * circ;
+                    const restLen = Math.max(circ - fillLen, 0);
+                    const pct = areaCover > 0
+                        ? ((value / areaCover) * 100).toFixed(1)
+                        : "0.0";
+
+                    // Midpoint of filled arc (start at top = -π/2)
+                    const midAngle = -Math.PI / 2 + ratio * Math.PI;
+                    const labelR = radius;
+                    const lx = cx + labelR * Math.cos(midAngle);
+                    const ly = cy + labelR * Math.sin(midAngle);
+                    const showBadge = fillLen > 8;
+
+                    return (
+                        <g key={`${ring.label}-${i}`}>
+                            <g transform={`rotate(-90 ${cx} ${cy})`}>
+                                {/* Track = sisa area cover */}
+                                <circle
+                                    cx={cx}
+                                    cy={cy}
+                                    r={radius}
+                                    fill="none"
+                                    stroke="#e2e8f0"
+                                    strokeWidth={ringWidth}
+                                />
+                                {/* Filled = jumlah aktivitas */}
+                                <circle
+                                    cx={cx}
+                                    cy={cy}
+                                    r={radius}
+                                    fill="none"
+                                    stroke={ring.color || "#3b82f6"}
+                                    strokeWidth={ringWidth}
+                                    strokeDasharray={`${fillLen} ${restLen}`}
+                                    strokeDashoffset={0}
+                                    strokeLinecap="butt"
+                                    style={{
+                                        cursor: typeof onRingClick === "function" ? "pointer" : "pointer",
+                                    }}
+                                    onClick={() => {
+                                        if (typeof onRingClick === "function") {
+                                            onRingClick(ring, i);
+                                        }
+                                    }}
+                                    onMouseEnter={() =>
+                                        setHoveredInfo({
+                                            label: ring.label,
+                                            value,
+                                            areaCover,
+                                            percent: pct,
+                                            color: ring.color || "#3b82f6",
+                                        })
+                                    }
+                                />
+                            </g>
+                            {showBadge && (
+                                <g
+                                    style={{ pointerEvents: "none" }}
+                                    onMouseEnter={() =>
+                                        setHoveredInfo({
+                                            label: ring.label,
+                                            value,
+                                            areaCover,
+                                            percent: pct,
+                                            color: ring.color || "#3b82f6",
+                                        })
+                                    }
+                                >
+                                    <circle
+                                        cx={lx}
+                                        cy={ly}
+                                        r={8}
+                                        fill="#fff"
+                                        stroke={ring.color || "#3b82f6"}
+                                        strokeWidth={1.5}
+                                    />
+                                    <text
+                                        x={lx}
+                                        y={ly}
+                                        textAnchor="middle"
+                                        dominantBaseline="central"
+                                        style={{
+                                            fontSize: value >= 100 ? 7 : 8,
+                                            fontWeight: 800,
+                                            fill: "#0f172a",
+                                        }}
+                                    >
+                                        {value}
+                                    </text>
+                                </g>
+                            )}
+                        </g>
+                    );
+                })}
+
+                {/* Inner hole guide */}
+                {rings.length > 0 && centerHole > 8 && (
+                    <circle
+                        cx={cx}
+                        cy={cy}
+                        r={Math.max(centerHole - 1, 0)}
+                        fill="#fff"
+                    />
+                )}
+            </svg>
+
+            {(label !== undefined && label !== null) && !hoveredInfo && (
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none",
+                    }}
+                >
+                    <div
+                        style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: T.text,
+                            lineHeight: 1,
+                        }}
+                    >
+                        {label}
+                    </div>
+                    {sub && (
+                        <div
+                            style={{
+                                fontSize: 8,
+                                color: T.slate,
+                                marginTop: 2,
+                                textAlign: "center",
+                                maxWidth: 56,
+                                lineHeight: 1.2,
+                            }}
+                        >
+                            {sub}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {hoveredInfo &&
+                typeof window !== "undefined" &&
+                createPortal(
+                    <div
+                        style={{
+                            position: "fixed",
+                            left: mousePos.x + 15,
+                            top: mousePos.y + 15,
+                            zIndex: 999999,
+                            background: "#ffffff",
+                            padding: "6px 8px",
+                            borderRadius: "8px",
+                            boxShadow:
+                                "0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                            border: `1px solid ${T.border}`,
+                            pointerEvents: "none",
+                            minWidth: 140,
+                        }}
+                    >
+                        <div
+                            style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: hoveredInfo.color,
+                                marginBottom: 4,
+                            }}
+                        >
+                            {hoveredInfo.label}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.text }}>
+                            <strong>{hoveredInfo.value}</strong>
+                            {" vs AC "}
+                            <strong>{hoveredInfo.areaCover}</strong>
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 10,
+                                color: T.slate,
+                                marginTop: 2,
+                            }}
+                        >
+                            {hoveredInfo.percent}% dari Area Cover
                         </div>
                     </div>,
                     document.body,
@@ -1433,4 +1689,4 @@ export function Badge({ label, bg, color }) {
 }
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN PAGE
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */

@@ -168,14 +168,35 @@ export default function SalesPerformanceDetail({
     const [sekolahSearch, setSekolahSearch] = useState("");
     const [sekolahJenjang, setSekolahJenjang] = useState("");
     const [sekolahStatus, setSekolahStatus] = useState("");
+    const [sekolahChartFilter, setSekolahChartFilter] = useState(null);
     const [sekolahSort, setSekolahSort] = useState({ key: "name", dir: "asc" });
+    const [kegiatanAktivitasFilter, setKegiatanAktivitasFilter] = useState("");
     const [rekomendasiSort, setRekomendasiSort] = useState({
         key: "total_student",
         dir: "desc",
     });
     useEffect(() => {
         setSekolahPage(1);
-    }, [sekolahSearch, sekolahJenjang, sekolahStatus, sekolahSort]);
+    }, [sekolahSearch, sekolahJenjang, sekolahStatus, sekolahSort, sekolahChartFilter]);
+
+    const openSekolahFromChart = (filter) => {
+        setSekolahSearch("");
+        setSekolahJenjang("");
+        setSekolahStatus("1");
+        setSekolahChartFilter(filter || null);
+        setSekolahPage(1);
+        setActiveTab("sekolah");
+    };
+
+    const openKegiatanFromChart = (aktivitas) => {
+        setKegiatanAktivitasFilter(aktivitas || "");
+        setKegiatanPage(1);
+        setActiveTab("kegiatan");
+    };
+
+    const clearSekolahChartFilter = () => {
+        setSekolahChartFilter(null);
+    };
     /* ——— Format helpers ——— */
     const formatNumber = (num) =>
         new Intl.NumberFormat("id-ID").format(num || 0);
@@ -465,11 +486,79 @@ export default function SalesPerformanceDetail({
             (s) => !!s.is_active === isActive,
         );
     }
+    if (sekolahChartFilter) {
+        const { type, value } = sekolahChartFilter;
+        if (type === "segmen") {
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const sd = String(s.sumber_dana || "")
+                    .toUpperCase()
+                    .trim();
+                if (value === "negeri") return sd === "BOS";
+                if (value === "swasta") return sd.startsWith("SWA");
+                return true;
+            });
+        } else if (type === "sumber_dana") {
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const sd = String(s.sumber_dana || "")
+                    .toUpperCase()
+                    .trim();
+                const key = sd || "LAINNYA/KOSONG";
+                return key === String(value).toUpperCase().trim();
+            });
+        } else if (type === "potensi_siswa") {
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const n = Number(s.total_student) || 0;
+                if (value === "< 100") return n < 100;
+                if (value === "100-300") return n >= 100 && n <= 300;
+                if (value === "301-500") return n > 300 && n <= 500;
+                if (value === "> 500") return n > 500;
+                return true;
+            });
+        } else if (type === "penerbit") {
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const p = String(s.penerbit || "").trim();
+                const key = p || "Tidak Diketahui";
+                return (
+                    key.toLowerCase() ===
+                    String(value || "")
+                        .trim()
+                        .toLowerCase()
+                );
+            });
+        } else if (type === "jenjang") {
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const j = String(s.jenjang || "").trim() || "Lainnya";
+                return (
+                    j.toLowerCase() ===
+                    String(value || "")
+                        .trim()
+                        .toLowerCase()
+                );
+            });
+        } else if (type === "customer_status") {
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const prevReal = !!s.prev_realisasi;
+                const currReal = (Number(s.real_exemplar_current) || 0) > 0;
+                if (value === "baru") return !prevReal && currReal;
+                if (value === "retain") return prevReal && currReal;
+                if (value === "loss") return !currReal;
+                return true;
+            });
+        }
+    }
     filteredListSekolah.sort((a, b) => {
         let valA = a[sekolahSort.key];
         let valB = b[sekolahSort.key];
-        if (typeof valA === "string") valA = valA.toLowerCase();
-        if (typeof valB === "string") valB = valB.toLowerCase();
+        if (
+            sekolahSort.key === "real_exemplar_current" ||
+            sekolahSort.key === "total_student"
+        ) {
+            valA = Number(valA) || 0;
+            valB = Number(valB) || 0;
+        } else {
+            if (typeof valA === "string") valA = valA.toLowerCase();
+            if (typeof valB === "string") valB = valB.toLowerCase();
+        }
         if (valA < valB) return sekolahSort.dir === "asc" ? -1 : 1;
         if (valA > valB) return sekolahSort.dir === "asc" ? 1 : -1;
         return 0;
@@ -486,12 +575,18 @@ export default function SalesPerformanceDetail({
         salesProfile,
         showScoreInfo, setShowScoreInfo,
         sekolahPage, setSekolahPage,
+        kegiatanPage, setKegiatanPage,
         handleSpAreaChange, applySpFilter,
         sekolahPerPage,
         sekolahSearch, setSekolahSearch,
         sekolahJenjang, setSekolahJenjang,
         sekolahStatus, setSekolahStatus,
         sekolahSort, setSekolahSort,
+        sekolahChartFilter, setSekolahChartFilter,
+        clearSekolahChartFilter,
+        openSekolahFromChart,
+        openKegiatanFromChart,
+        kegiatanAktivitasFilter, setKegiatanAktivitasFilter,
         filteredListSekolah
     };
 
@@ -837,7 +932,8 @@ export default function SalesPerformanceDetail({
                     flexDirection: "column",
                     gap: 12,
                 }}
-            >                {activeTab === "dashboard" && <DashboardTab {...propsToPass} />}
+            >
+                {activeTab === "dashboard" && <DashboardTab {...propsToPass} />}
                 {activeTab === "competitor" && <CompetitorTab {...propsToPass} />}
                 {activeTab === "kecamatan" && isSalesDetail && <KecamatanTab {...propsToPass} />}
                 {activeTab === "sekolah" && isSalesDetail && <SekolahTab {...propsToPass} />}

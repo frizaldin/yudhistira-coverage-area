@@ -16,7 +16,7 @@ const NAV_ITEMS = [
         icon: "bi-house-door-fill",
         routeName: "monitoring.nasional",
         hideForLevels: ["area", "cabang", "sales"],
-    },
+    },*/
     {
         key: "area",
         top: "Dashboard",
@@ -24,7 +24,7 @@ const NAV_ITEMS = [
         icon: "bi-map",
         routeName: "monitoring.area.select",
         hideForLevels: ["cabang", "sales"],
-    },*/
+    },
     {
         key: "cabang",
         top: "Dashboard",

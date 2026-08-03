@@ -944,9 +944,9 @@ function Badge({ label, bg, color }) {
     );
 }
 
-/* ════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN PAGE
-   ════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 export default function Area({
     activeNav = "cabang",
     pageTitle = "Dashboard Cabang",
@@ -963,6 +963,7 @@ export default function Area({
     trl = [],
     trlJenjang = [],
     salesPerformance = [],
+    ranking = [],
     rankingKecamatan = [],
     top10Schools = [],
     mapMarkers = [],
@@ -977,6 +978,10 @@ export default function Area({
     salesJenjangTotal = "0",
     uncovered = [],
     uncoveredDana = [],
+    gov = [],
+    segmenBreakdown = [],
+    customerStatusBreakdown = [],
+    salesScoreRanking = [],
     hideFilters = false,
     backUrl = null,
     isSalesDetail = false,
@@ -988,7 +993,7 @@ export default function Area({
     visitCoverage = [],
     activityBreakdown = [],
     resultBreakdown = [],
-    insights = [],
+    insights = null,
     filterOptions = {},
     filters = {},
     isFromSalesPerformance = false,
@@ -1213,13 +1218,28 @@ export default function Area({
         })
         .slice(0, 10);
 
-    // GOV computed from area coverage (placeholder — no conflict data yet)
-    const GOV = [];
+    const rankingCabang = ranking.length > 0 ? ranking : [];
+    const primaryRanking =
+        rankingCabang.length > 0 ? rankingCabang : rankingKecamatan;
+    const primaryRankingTitle =
+        rankingCabang.length > 0
+            ? "Ranking Cabang - Coverage (%)"
+            : "Ranking Kecamatan - Coverage (%)";
+    const primaryRankingFooter =
+        rankingCabang.length > 0
+            ? "Lihat Semua Cabang"
+            : "Lihat Semua Kecamatan";
 
-    const INSIGHTS = [];
+    const GOV = gov.length > 0 ? gov : [];
+    const areaInsights =
+        insights && !Array.isArray(insights) ? insights : null;
+    const executiveInsights = Array.isArray(insights) ? insights : [];
+    const SEGMEN = segmenBreakdown.length > 0 ? segmenBreakdown : [];
+    const CUSTOMER_STATUS =
+        customerStatusBreakdown.length > 0 ? customerStatusBreakdown : [];
 
     const MAP_LEGEND = [
-        { label: "Covered ≥ 70%", color: "#34d399" },
+        { label: "Covered â‰¥ 70%", color: "#34d399" },
         { label: "Low Coverage 30–70%", color: "#60a5fa" },
         { label: "Opportunity 10–30%", color: "#fbbf24" },
         { label: "High Opportunity < 10%", color: "#fb923c" },
@@ -1304,9 +1324,9 @@ export default function Area({
         <MonitoringLayout activeNav={activeNav}>
             <Head title={`${pageTitle} – ${cabangName}`} />
 
-            {/* ━━━━━━━━━━━━━━━━━━
+            {/* â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
                 HEADER
-            ━━━━━━━━━━━━━━━━━━ */}
+            â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â” */}
             <div
                 style={{
                     background: "white",
@@ -1456,7 +1476,7 @@ export default function Area({
                                         </div>
                                         <select
                                             style={sel}
-                                            value={selectedCabang || cabangCode || ""}
+                                            value={selectedCabang || ""}
                                             onChange={(e) => {
                                                 router.get(
                                                     route(
@@ -1513,9 +1533,9 @@ export default function Area({
                 </div>
             </div>
 
-            {/* ━━━━━━━━━━━━━━━━━━
+            {/* â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
                 TABS NAVIGATION
-            ━━━━━━━━━━━━━━━━━━ */}
+            â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â” */}
             <div
                 style={{
                     display: "flex",
@@ -1560,9 +1580,9 @@ export default function Area({
                 ))}
             </div>
 
-            {/* ━━━━━━━━━━━━━━━━━━
+            {/* â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
                 CONTENT
-            ━━━━━━━━━━━━━━━━━━ */}
+            â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â” */}
             <div
                 style={{
                     padding: "14px 16px",
@@ -1574,7 +1594,7 @@ export default function Area({
                 {activeTab === "dashboard" && (
                     <>
                         {/* ── R0: EXECUTIVE INSIGHTS (Sales Detail Only) ── */}
-                        {isSalesDetail && insights.length > 0 && (
+                        {isSalesDetail && executiveInsights.length > 0 && (
                             <div
                                 style={{
                                     background: "#fefce8",
@@ -1626,11 +1646,11 @@ export default function Area({
                                             lineHeight: 1.6,
                                         }}
                                     >
-                                        {insights.map((ins, idx) => (
+                                        {executiveInsights.map((ins, idx) => (
                                             <li
                                                 key={idx}
                                                 dangerouslySetInnerHTML={{
-                                                    __html: ins.replace(
+                                                    __html: String(ins).replace(
                                                         /\*(.*?)\*/g,
                                                         "<strong>$1</strong>",
                                                     ),
@@ -1639,6 +1659,147 @@ export default function Area({
                                         ))}
                                     </ul>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* ── R0b: AREA KPI STRIP ── */}
+                        {!isSalesDetail && areaInsights && (
+                            <div
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns:
+                                        "repeat(auto-fit, minmax(150px, 1fr))",
+                                    gap: 10,
+                                }}
+                            >
+                                {[
+                                    {
+                                        label: "ACHIEVEMENT TARGET",
+                                        value: `${
+                                            areaInsights.totalRencanaJualTargetYear >
+                                            0
+                                                ? (
+                                                      (areaInsights.totalRealisasiTargetYear /
+                                                          areaInsights.totalRencanaJualTargetYear) *
+                                                      100
+                                                  ).toFixed(1)
+                                                : 0
+                                        }%`,
+                                        sub: `Real ${formatNumber(areaInsights.totalRealisasiTargetYear)} / Target ${formatNumber(areaInsights.totalRencanaJualTargetYear)}`,
+                                        bg: "#10b981",
+                                        icon: "bi-trophy-fill",
+                                    },
+                                    {
+                                        label: `REALISASI (${areaInsights.targetYear || targetYear})`,
+                                        value: formatNumber(
+                                            areaInsights.totalRealisasiTargetYear,
+                                        ),
+                                        sub: "Eksemplar",
+                                        bg: "#3b82f6",
+                                        icon: "bi-bar-chart-fill",
+                                    },
+                                    {
+                                        label: "GAP REALISASI YoY",
+                                        value: `${
+                                            (areaInsights.totalRealisasiTargetYear ||
+                                                0) -
+                                                (areaInsights.totalRealisasiLaluTargetYear ||
+                                                    0) >
+                                            0
+                                                ? "+"
+                                                : ""
+                                        }${formatNumber(
+                                            (areaInsights.totalRealisasiTargetYear ||
+                                                0) -
+                                                (areaInsights.totalRealisasiLaluTargetYear ||
+                                                    0),
+                                        )}`,
+                                        sub: `Tahun lalu: ${formatNumber(areaInsights.totalRealisasiLaluTargetYear)}`,
+                                        bg: "#059669",
+                                        icon: "bi-graph-up-arrow",
+                                    },
+                                    {
+                                        label: "RENCANA JUAL",
+                                        value: formatNumber(
+                                            areaInsights.totalRencanaJualTargetYear,
+                                        ),
+                                        sub: "Eksemplar target",
+                                        bg: "#f59e0b",
+                                        icon: "bi-journal-text",
+                                    },
+                                    {
+                                        label: "AREA COVER",
+                                        value: formatNumber(
+                                            areaInsights.totalAreaCover,
+                                        ),
+                                        sub: `dari ${formatNumber(areaInsights.totalSekolah || ts)} sekolah`,
+                                        bg: "#0d9488",
+                                        icon: "bi-geo-alt-fill",
+                                    },
+                                    {
+                                        label: "CUSTOMER REALISASI",
+                                        value: formatNumber(
+                                            areaInsights.customerWithRealisasi,
+                                        ),
+                                        sub: `Aktivitas: ${formatNumber(areaInsights.activityCount)}`,
+                                        bg: "#6366f1",
+                                        icon: "bi-people-fill",
+                                    },
+                                ].map((card, i) => (
+                                    <div
+                                        key={i}
+                                        style={{
+                                            background: card.bg,
+                                            borderRadius: 12,
+                                            padding: 14,
+                                            color: "#fff",
+                                            position: "relative",
+                                            overflow: "hidden",
+                                            minHeight: 96,
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            justifyContent: "space-between",
+                                        }}
+                                    >
+                                        <i
+                                            className={card.icon}
+                                            style={{
+                                                position: "absolute",
+                                                right: 10,
+                                                top: 10,
+                                                fontSize: 18,
+                                                color: "rgba(255,255,255,0.25)",
+                                            }}
+                                        />
+                                        <div
+                                            style={{
+                                                fontSize: 9,
+                                                fontWeight: 700,
+                                                letterSpacing: "0.4px",
+                                                opacity: 0.9,
+                                            }}
+                                        >
+                                            {card.label}
+                                        </div>
+                                        <div
+                                            style={{
+                                                fontSize: 22,
+                                                fontWeight: 800,
+                                                lineHeight: 1.1,
+                                            }}
+                                        >
+                                            {card.value}
+                                        </div>
+                                        <div
+                                            style={{
+                                                fontSize: 10,
+                                                opacity: 0.9,
+                                            }}
+                                        >
+                                            {card.sub}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
@@ -1654,6 +1815,503 @@ export default function Area({
                                 <StatCard key={i} {...s} />
                             ))}
                         </div>
+
+                        {/* ── R1b: GOVERNANCE + KOMPOSISI AREA ── */}
+                        {!isSalesDetail &&
+                            (GOV.length > 0 ||
+                                SEGMEN.length > 0 ||
+                                CUSTOMER_STATUS.length > 0) && (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        gap: 10,
+                                        flexWrap: "wrap",
+                                    }}
+                                >
+                                    {GOV.length > 0 && (
+                                        <Card
+                                            title="Area Governance"
+                                            sub="Distribusi coverage kecamatan"
+                                            style={{ flex: 1.4, minWidth: 280 }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: "grid",
+                                                    gridTemplateColumns:
+                                                        "1fr 1fr",
+                                                    gap: 8,
+                                                }}
+                                            >
+                                                {GOV.map((g, i) => (
+                                                    <div
+                                                        key={i}
+                                                        style={{
+                                                            display: "flex",
+                                                            gap: 10,
+                                                            alignItems:
+                                                                "center",
+                                                            padding: "8px 10px",
+                                                            borderRadius: 8,
+                                                            background:
+                                                                "#f8fafc",
+                                                            border: `1px solid ${T.border}`,
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                width: 36,
+                                                                height: 36,
+                                                                borderRadius: 8,
+                                                                background:
+                                                                    g.color +
+                                                                    "22",
+                                                                color: g.color,
+                                                                display: "flex",
+                                                                alignItems:
+                                                                    "center",
+                                                                justifyContent:
+                                                                    "center",
+                                                                flexShrink: 0,
+                                                            }}
+                                                        >
+                                                            <i
+                                                                className={`bi ${g.icon}`}
+                                                            />
+                                                        </div>
+                                                        <div
+                                                            style={{
+                                                                minWidth: 0,
+                                                            }}
+                                                        >
+                                                            <div
+                                                                style={{
+                                                                    fontSize: 12,
+                                                                    fontWeight: 700,
+                                                                }}
+                                                            >
+                                                                {g.label}
+                                                            </div>
+                                                            <div
+                                                                style={{
+                                                                    fontSize: 10,
+                                                                    color: T.slate,
+                                                                }}
+                                                            >
+                                                                {g.count} kec Â·{" "}
+                                                                {g.pct}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </Card>
+                                    )}
+
+                                    {SEGMEN.length > 0 && (
+                                        <Card
+                                            title="Segmen Sekolah"
+                                            sub="Negeri vs Swasta"
+                                            style={{ flex: 1, minWidth: 220 }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: 14,
+                                                }}
+                                            >
+                                                <Donut
+                                                    size={88}
+                                                    ring={14}
+                                                    segments={SEGMEN}
+                                                    label={formatNumber(
+                                                        SEGMEN.reduce(
+                                                            (a, b) =>
+                                                                a +
+                                                                (b.value || 0),
+                                                            0,
+                                                        ),
+                                                    )}
+                                                    sub="Sekolah"
+                                                />
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        gap: 8,
+                                                        flex: 1,
+                                                    }}
+                                                >
+                                                    {SEGMEN.map((s, i) => (
+                                                        <div
+                                                            key={i}
+                                                            style={{
+                                                                display: "flex",
+                                                                justifyContent:
+                                                                    "space-between",
+                                                                fontSize: 11,
+                                                            }}
+                                                        >
+                                                            <span
+                                                                style={{
+                                                                    display:
+                                                                        "flex",
+                                                                    alignItems:
+                                                                        "center",
+                                                                    gap: 6,
+                                                                }}
+                                                            >
+                                                                <span
+                                                                    style={{
+                                                                        width: 8,
+                                                                        height: 8,
+                                                                        borderRadius: 2,
+                                                                        background:
+                                                                            s.color,
+                                                                    }}
+                                                                />
+                                                                {s.label}
+                                                            </span>
+                                                            <strong>
+                                                                {formatNumber(
+                                                                    s.value,
+                                                                )}
+                                                            </strong>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    )}
+
+                                    {CUSTOMER_STATUS.length > 0 && (
+                                        <Card
+                                            title="Customer Status"
+                                            sub={`Baru / Retain / Loss ${areaInsights?.targetYear || targetYear}`}
+                                            style={{ flex: 1, minWidth: 220 }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: 14,
+                                                }}
+                                            >
+                                                <Donut
+                                                    size={88}
+                                                    ring={14}
+                                                    segments={CUSTOMER_STATUS}
+                                                    label={formatNumber(
+                                                        CUSTOMER_STATUS.reduce(
+                                                            (a, b) =>
+                                                                a +
+                                                                (b.value || 0),
+                                                            0,
+                                                        ),
+                                                    )}
+                                                    sub="Cust"
+                                                />
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        gap: 8,
+                                                        flex: 1,
+                                                    }}
+                                                >
+                                                    {CUSTOMER_STATUS.map(
+                                                        (s, i) => (
+                                                            <div
+                                                                key={i}
+                                                                style={{
+                                                                    display:
+                                                                        "flex",
+                                                                    justifyContent:
+                                                                        "space-between",
+                                                                    fontSize: 11,
+                                                                }}
+                                                            >
+                                                                <span
+                                                                    style={{
+                                                                        display:
+                                                                            "flex",
+                                                                        alignItems:
+                                                                            "center",
+                                                                        gap: 6,
+                                                                    }}
+                                                                >
+                                                                    <span
+                                                                        style={{
+                                                                            width: 8,
+                                                                            height: 8,
+                                                                            borderRadius: 2,
+                                                                            background:
+                                                                                s.color,
+                                                                        }}
+                                                                    />
+                                                                    {s.label}
+                                                                </span>
+                                                                <strong>
+                                                                    {formatNumber(
+                                                                        s.value,
+                                                                    )}
+                                                                </strong>
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    )}
+                                </div>
+                            )}
+
+                        {/* ── RANKING PERFORMANCE SALES (Score) — compact ── */}
+                        {!isSalesDetail && salesScoreRanking.length > 0 && (
+                            <div
+                                style={{
+                                    ...S.card,
+                                    padding: "10px 12px",
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "baseline",
+                                        justifyContent: "space-between",
+                                        gap: 8,
+                                        marginBottom: 6,
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            fontWeight: 800,
+                                            color: T.blue,
+                                            textTransform: "uppercase",
+                                            letterSpacing: "0.3px",
+                                        }}
+                                    >
+                                        Ranking Performance Sales (Score)
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 10,
+                                            color: T.slate,
+                                        }}
+                                    >
+                                        Top {salesScoreRanking.length} ·{" "}
+                                        {areaInsights?.targetYear || targetYear}
+                                    </div>
+                                </div>
+                                <div style={{ overflowX: "auto" }}>
+                                    <table
+                                        style={{
+                                            width: "100%",
+                                            borderCollapse: "collapse",
+                                            tableLayout: "fixed",
+                                        }}
+                                    >
+                                        <thead>
+                                            <tr>
+                                                {[
+                                                    { label: "#", w: "5%" },
+                                                    { label: "Sales", w: "28%" },
+                                                    { label: "Score", w: "9%" },
+                                                    { label: "YoY", w: "9%" },
+                                                    { label: "Real", w: "9%" },
+                                                    { label: "Ach", w: "9%" },
+                                                    { label: "Tahan", w: "9%" },
+                                                    { label: "Rebut", w: "9%" },
+                                                    { label: "Lepas", w: "9%" },
+                                                ].map((h) => (
+                                                    <th
+                                                        key={h.label}
+                                                        style={{
+                                                            fontSize: 9,
+                                                            fontWeight: 700,
+                                                            color: T.slate,
+                                                            textAlign:
+                                                                h.label ===
+                                                                "Sales"
+                                                                    ? "left"
+                                                                    : "center",
+                                                            padding: "4px 4px",
+                                                            borderBottom: `1px solid ${T.border}`,
+                                                            width: h.w,
+                                                            textTransform:
+                                                                "uppercase",
+                                                            letterSpacing:
+                                                                "0.2px",
+                                                        }}
+                                                    >
+                                                        {h.label}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {salesScoreRanking.map((row, i) => {
+                                                const score =
+                                                    Number(row.total_score) || 0;
+                                                const heat =
+                                                    score >= 90
+                                                        ? "#16a34a"
+                                                        : score >= 85
+                                                          ? "#22c55e"
+                                                          : score >= 80
+                                                            ? "#4ade80"
+                                                            : score >= 75
+                                                              ? "#a3e635"
+                                                              : score >= 70
+                                                                ? "#facc15"
+                                                                : "#fb923c";
+                                                const c = row.components || {};
+                                                const cell = {
+                                                    textAlign: "center",
+                                                    fontSize: 11,
+                                                    padding: "5px 4px",
+                                                    borderTop: `1px solid ${T.border}`,
+                                                    color: T.text,
+                                                };
+                                                return (
+                                                    <tr key={row.sales_id || i}>
+                                                        <td
+                                                            style={{
+                                                                ...cell,
+                                                                color: T.slate,
+                                                                fontWeight: 600,
+                                                                fontSize: 10,
+                                                            }}
+                                                        >
+                                                            {i + 1}
+                                                        </td>
+                                                        <td
+                                                            style={{
+                                                                ...cell,
+                                                                textAlign:
+                                                                    "left",
+                                                                fontWeight: 600,
+                                                                overflow:
+                                                                    "hidden",
+                                                                textOverflow:
+                                                                    "ellipsis",
+                                                                whiteSpace:
+                                                                    "nowrap",
+                                                            }}
+                                                        >
+                                                            <Link
+                                                                href={route(
+                                                                    "monitoring.sales-performance",
+                                                                    {
+                                                                        area_id:
+                                                                            provinceCode,
+                                                                        cabang_id:
+                                                                            row.cabang_id ||
+                                                                            "",
+                                                                        sales_id:
+                                                                            row.sales_id,
+                                                                        tahun:
+                                                                            areaInsights?.targetYear ||
+                                                                            targetYear,
+                                                                    },
+                                                                )}
+                                                                style={{
+                                                                    color: T.blue,
+                                                                    textDecoration:
+                                                                        "none",
+                                                                    fontSize: 11,
+                                                                }}
+                                                                title={`${row.sales_name} Â· ${row.cabang_name || ""}`}
+                                                            >
+                                                                {row.sales_name}
+                                                            </Link>
+                                                            {row.cabang_name ? (
+                                                                <span
+                                                                    style={{
+                                                                        color: T.slate,
+                                                                        fontWeight: 500,
+                                                                        fontSize: 9,
+                                                                        marginLeft: 4,
+                                                                    }}
+                                                                >
+                                                                    Â·{" "}
+                                                                    {
+                                                                        row.cabang_name
+                                                                    }
+                                                                </span>
+                                                            ) : null}
+                                                        </td>
+                                                        <td style={cell}>
+                                                            <span
+                                                                style={{
+                                                                    display:
+                                                                        "inline-block",
+                                                                    minWidth: 36,
+                                                                    padding:
+                                                                        "1px 6px",
+                                                                    borderRadius: 4,
+                                                                    background:
+                                                                        heat,
+                                                                    fontWeight: 800,
+                                                                    fontSize: 11,
+                                                                    color: "#0f172a",
+                                                                }}
+                                                            >
+                                                                {score}
+                                                            </span>
+                                                        </td>
+                                                        <td style={cell}>
+                                                            {Number(
+                                                                c.realisasi_yoy_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                        </td>
+                                                        <td style={cell}>
+                                                            {Number(
+                                                                c.sp_vs_ac_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                        </td>
+                                                        <td style={cell}>
+                                                            {Number(
+                                                                c.achievement_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                            %
+                                                        </td>
+                                                        <td style={cell}>
+                                                            {Number(
+                                                                c.tahan_vs_ac_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                        </td>
+                                                        <td style={cell}>
+                                                            {Number(
+                                                                c.rebut_vs_ac_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                        </td>
+                                                        <td
+                                                            style={{
+                                                                ...cell,
+                                                                color: "#b91c1c",
+                                                                fontWeight: 700,
+                                                            }}
+                                                        >
+                                                            {Number(
+                                                                c.lepas_vs_ac_score ??
+                                                                    0,
+                                                            ).toFixed(0)}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
 
                         {/* ── R2: RANKING KECAMATAN | PETA | TRL & SALES ── */}
                         <div
@@ -1678,12 +2336,12 @@ export default function Area({
                                         title={
                                             isFromSalesPerformance
                                                 ? `Ranking Sekolah (Realisasi Tertinggi ${prevYear})`
-                                                : "Ranking Kecamatan - Coverage (%)"
+                                                : primaryRankingTitle
                                         }
                                         footer={
                                             isFromSalesPerformance
                                                 ? "Lihat Semua Sekolah"
-                                                : "Lihat Semua Kecamatan"
+                                                : primaryRankingFooter
                                         }
                                         onFooterClick={() =>
                                             setShowAllRanking(true)
@@ -1699,10 +2357,10 @@ export default function Area({
                                                 {(showAllRanking
                                                     ? isFromSalesPerformance
                                                         ? top10Schools
-                                                        : rankingKecamatan
+                                                        : primaryRanking
                                                     : (isFromSalesPerformance
                                                           ? top10Schools
-                                                          : rankingKecamatan
+                                                          : primaryRanking
                                                       ).slice(0, 10)
                                                 ).map((r, i) => (
                                                     <tr key={i}>
@@ -1722,6 +2380,26 @@ export default function Area({
                                                             }}
                                                         >
                                                             {r.name}
+                                                            {r.sales_count !=
+                                                                null && (
+                                                                <div
+                                                                    style={{
+                                                                        fontSize: 9,
+                                                                        color: T.slate,
+                                                                        fontWeight: 500,
+                                                                    }}
+                                                                >
+                                                                    {r.sales_count}{" "}
+                                                                    sales Â·{" "}
+                                                                    {formatNumber(
+                                                                        r.cust,
+                                                                    )}
+                                                                    /
+                                                                    {formatNumber(
+                                                                        r.total,
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </td>
                                                         <td
                                                             style={{
@@ -2392,7 +3070,7 @@ export default function Area({
                                 }}
                             >
                                 <Card
-                                    title={`Peta Coverage ${cabangName} (Kecamatan)`}
+                                    title={`Peta Coverage ${areaName || cabangName} (Kecamatan)`}
                                 >
                                     <LeafletMap
                                         markers={mapMarkers}
@@ -2868,500 +3546,6 @@ export default function Area({
                                 )}
                             </div>
 
-                            {/* Right col: TRL & Sales Performance */}
-                            {!isSalesDetail && !isFromSalesPerformance && (
-                                <div
-                                    style={{
-                                        flex: 1,
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: 10,
-                                        minWidth: 350,
-                                    }}
-                                >
-                                    {/* Ranking Sales */}
-                                    <Card
-                                        title={`Ranking Sales - ${cabangName}`}
-                                        sub="Berdasarkan Coverage Tertinggi"
-                                        style={{ flex: 1 }}
-                                    >
-                                        <div
-                                            style={{
-                                                width: "100%",
-                                                overflowX: "auto",
-                                            }}
-                                        >
-                                            <table
-                                                style={{
-                                                    width: "100%",
-                                                    borderCollapse: "collapse",
-                                                    textAlign: "left",
-                                                }}
-                                            >
-                                                <thead>
-                                                    <tr>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                paddingLeft: 16,
-                                                            }}
-                                                        >
-                                                            No
-                                                        </th>
-                                                        <th style={{ ...S.th }}>
-                                                            Sales
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Area Cover/Tot
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Coverage
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Tahan
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Rebut
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                                paddingRight: 16,
-                                                            }}
-                                                        >
-                                                            Status
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {[...timSalesPerformance]
-                                                        .sort(
-                                                            (a, b) =>
-                                                                b.coverage -
-                                                                a.coverage,
-                                                        )
-                                                        .map((sales, idx) => (
-                                                            <tr
-                                                                key={idx}
-                                                                style={{
-                                                                    borderTop: `1px solid ${T.slate}20`,
-                                                                }}
-                                                            >
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        paddingLeft: 16,
-                                                                        color: T.slate,
-                                                                        width: 24,
-                                                                    }}
-                                                                >
-                                                                    {idx + 1}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        fontWeight: 600,
-                                                                        color: T.blue,
-                                                                    }}
-                                                                >
-                                                                    {sales.name}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        color: T.slate,
-                                                                        fontSize: 11,
-                                                                    }}
-                                                                >
-                                                                    <strong
-                                                                        style={{
-                                                                            color: T.green,
-                                                                        }}
-                                                                    >
-                                                                        {formatNumber(
-                                                                            sales.aktif,
-                                                                        )}
-                                                                    </strong>{" "}
-                                                                    /{" "}
-                                                                    {formatNumber(
-                                                                        sales.total_sekolah,
-                                                                    )}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                    }}
-                                                                >
-                                                                    <Badge
-                                                                        label={`${sales.coverage}%`}
-                                                                        bg={
-                                                                            sales.coverage >=
-                                                                            40
-                                                                                ? "#f0fdf4"
-                                                                                : "#fef2f2"
-                                                                        }
-                                                                        color={
-                                                                            sales.coverage >=
-                                                                            40
-                                                                                ? T.green
-                                                                                : T.red
-                                                                        }
-                                                                    />
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        color: T.green,
-                                                                    }}
-                                                                >
-                                                                    {formatNumber(
-                                                                        sales.tahan,
-                                                                    )}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        color: T.blue,
-                                                                    }}
-                                                                >
-                                                                    {formatNumber(
-                                                                        sales.rebut,
-                                                                    )}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        paddingRight: 16,
-                                                                    }}
-                                                                >
-                                                                    <Badge
-                                                                        label={
-                                                                            sales.status
-                                                                        }
-                                                                        bg={
-                                                                            sales.status ===
-                                                                            "Sangat Baik"
-                                                                                ? "#dcfce7"
-                                                                                : sales.status ===
-                                                                                    "Baik"
-                                                                                  ? "#fef9c3"
-                                                                                  : "#fee2e2"
-                                                                        }
-                                                                        color={
-                                                                            sales.status ===
-                                                                            "Sangat Baik"
-                                                                                ? "#166534"
-                                                                                : sales.status ===
-                                                                                    "Baik"
-                                                                                  ? "#854d0e"
-                                                                                  : "#991b1b"
-                                                                        }
-                                                                    />
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    {(!timSalesPerformance ||
-                                                        timSalesPerformance.length ===
-                                                            0) && (
-                                                        <tr>
-                                                            <td
-                                                                colSpan="7"
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                    padding: 20,
-                                                                }}
-                                                            >
-                                                                Belum ada data
-                                                                sales
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </Card>
-
-                                    {/* Worst Ranking Sales */}
-                                    <Card
-                                        title={`Sales yang perlu ditinjau kembali - ${cabangName}`}
-                                        sub="Berdasarkan Coverage Terendah"
-                                        style={{ flex: 1 }}
-                                    >
-                                        <div
-                                            style={{
-                                                width: "100%",
-                                                overflowX: "auto",
-                                            }}
-                                        >
-                                            <table
-                                                style={{
-                                                    width: "100%",
-                                                    borderCollapse: "collapse",
-                                                    textAlign: "left",
-                                                }}
-                                            >
-                                                <thead>
-                                                    <tr>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                paddingLeft: 16,
-                                                            }}
-                                                        >
-                                                            No
-                                                        </th>
-                                                        <th style={{ ...S.th }}>
-                                                            Sales
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Area Cover/Tot
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Coverage
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Tahan
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            Rebut
-                                                        </th>
-                                                        <th
-                                                            style={{
-                                                                ...S.th,
-                                                                textAlign:
-                                                                    "center",
-                                                                paddingRight: 16,
-                                                            }}
-                                                        >
-                                                            Status
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {[
-                                                        ...timSalesPerformanceWorst,
-                                                    ]
-                                                        .sort(
-                                                            (a, b) =>
-                                                                a.coverage -
-                                                                b.coverage,
-                                                        )
-                                                        .map((sales, idx) => (
-                                                            <tr
-                                                                key={idx}
-                                                                style={{
-                                                                    borderTop: `1px solid ${T.slate}20`,
-                                                                }}
-                                                            >
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        paddingLeft: 16,
-                                                                        color: T.slate,
-                                                                        width: 24,
-                                                                    }}
-                                                                >
-                                                                    {idx + 1}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        fontWeight: 600,
-                                                                        color: T.blue,
-                                                                    }}
-                                                                >
-                                                                    {sales.name}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        color: T.slate,
-                                                                        fontSize: 11,
-                                                                    }}
-                                                                >
-                                                                    <strong
-                                                                        style={{
-                                                                            color: T.green,
-                                                                        }}
-                                                                    >
-                                                                        {formatNumber(
-                                                                            sales.aktif,
-                                                                        )}
-                                                                    </strong>{" "}
-                                                                    /{" "}
-                                                                    {formatNumber(
-                                                                        sales.total_sekolah,
-                                                                    )}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                    }}
-                                                                >
-                                                                    <Badge
-                                                                        label={`${sales.coverage}%`}
-                                                                        bg={
-                                                                            sales.coverage >=
-                                                                            40
-                                                                                ? "#f0fdf4"
-                                                                                : "#fef2f2"
-                                                                        }
-                                                                        color={
-                                                                            sales.coverage >=
-                                                                            40
-                                                                                ? T.green
-                                                                                : T.red
-                                                                        }
-                                                                    />
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        color: T.green,
-                                                                    }}
-                                                                >
-                                                                    {formatNumber(
-                                                                        sales.tahan,
-                                                                    )}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        color: T.blue,
-                                                                    }}
-                                                                >
-                                                                    {formatNumber(
-                                                                        sales.rebut,
-                                                                    )}
-                                                                </td>
-                                                                <td
-                                                                    style={{
-                                                                        ...S.td,
-                                                                        textAlign:
-                                                                            "center",
-                                                                        paddingRight: 16,
-                                                                    }}
-                                                                >
-                                                                    <Badge
-                                                                        label={
-                                                                            sales.status
-                                                                        }
-                                                                        bg={
-                                                                            sales.status ===
-                                                                            "Sangat Baik"
-                                                                                ? "#dcfce7"
-                                                                                : sales.status ===
-                                                                                    "Baik"
-                                                                                  ? "#fef9c3"
-                                                                                  : "#fee2e2"
-                                                                        }
-                                                                        color={
-                                                                            sales.status ===
-                                                                            "Sangat Baik"
-                                                                                ? "#166534"
-                                                                                : sales.status ===
-                                                                                    "Baik"
-                                                                                  ? "#854d0e"
-                                                                                  : "#991b1b"
-                                                                        }
-                                                                    />
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    {(!timSalesPerformanceWorst ||
-                                                        timSalesPerformanceWorst.length ===
-                                                            0) && (
-                                                        <tr>
-                                                            <td
-                                                                colSpan="7"
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                    padding: 20,
-                                                                }}
-                                                            >
-                                                                Belum ada data
-                                                                sales
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </Card>
-                                </div>
-                            )}
                         </div>
 
                         {/* ── R3: OPP KECAMATAN | STRATEGIC | PRA AREA & TREND ── */}
@@ -3614,7 +3798,7 @@ export default function Area({
                                 </table>
                             </Card>
 
-                            {/* Pra Area & Trend */}
+                            {/* Uncovered per Cabang & Trend */}
                             <div
                                 style={{
                                     flex: 0.8,
@@ -3624,93 +3808,121 @@ export default function Area({
                                     minWidth: 280,
                                 }}
                             >
-                                <Card title="Pra Area Cover (2027)">
-                                    <div
+                                <Card
+                                    title="Sekolah Belum Cover per Cabang"
+                                    sub="Opportunity sekolah belum aktif"
+                                    noPad
+                                >
+                                    <table
                                         style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 14,
+                                            width: "100%",
+                                            borderCollapse: "collapse",
                                         }}
                                     >
-                                        <Donut
-                                            segments={[
-                                                { value: 405, color: T.blue },
-                                            ]}
-                                            size={80}
-                                            ring={12}
-                                            label="405"
-                                            sub="Sekolah"
-                                        />
-                                        <div style={{ flex: 1 }}>
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 5,
-                                                    marginBottom: 4,
-                                                }}
-                                            >
-                                                <div
+                                        <thead>
+                                            <tr>
+                                                <th
                                                     style={{
-                                                        width: 8,
-                                                        height: 8,
-                                                        borderRadius: 2,
-                                                        background: T.blue,
+                                                        ...S.th,
+                                                        paddingLeft: 16,
                                                     }}
-                                                />
-                                                <span
-                                                    style={{ fontSize: 10.5 }}
                                                 >
-                                                    Tetap di Sales yang sama
-                                                </span>
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: T.slate,
-                                                    marginLeft: 13,
-                                                    marginBottom: 8,
-                                                }}
-                                            >
-                                                182 (44.94%)
-                                            </div>
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 5,
-                                                    marginBottom: 4,
-                                                }}
-                                            >
-                                                <div
+                                                    No
+                                                </th>
+                                                <th style={{ ...S.th }}>
+                                                    Cabang
+                                                </th>
+                                                <th
                                                     style={{
-                                                        width: 8,
-                                                        height: 8,
-                                                        borderRadius: 2,
-                                                        background: T.orange,
+                                                        ...S.th,
+                                                        textAlign: "right",
                                                     }}
-                                                />
-                                                <span
-                                                    style={{ fontSize: 10.5 }}
                                                 >
-                                                    Akan Diberikan ke Sales lain
-                                                </span>
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: T.slate,
-                                                    marginLeft: 13,
-                                                }}
-                                            >
-                                                156 (38.52%)
-                                            </div>
-                                        </div>
-                                    </div>
+                                                    Sekolah
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "right",
+                                                        paddingRight: 16,
+                                                    }}
+                                                >
+                                                    Potensi Siswa
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(uncovered || [])
+                                                .slice(0, 8)
+                                                .map((r) => (
+                                                    <tr key={r.no || r.name}>
+                                                        <td
+                                                            style={{
+                                                                ...S.td,
+                                                                paddingLeft: 16,
+                                                                color: T.slate,
+                                                            }}
+                                                        >
+                                                            {r.no}
+                                                        </td>
+                                                        <td
+                                                            style={{
+                                                                ...S.td,
+                                                                fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            {r.name}
+                                                        </td>
+                                                        <td
+                                                            style={{
+                                                                ...S.td,
+                                                                textAlign:
+                                                                    "right",
+                                                                fontWeight: 700,
+                                                                color: T.orange,
+                                                            }}
+                                                        >
+                                                            {formatNumber(
+                                                                r.count,
+                                                            )}
+                                                        </td>
+                                                        <td
+                                                            style={{
+                                                                ...S.td,
+                                                                textAlign:
+                                                                    "right",
+                                                                paddingRight: 16,
+                                                            }}
+                                                        >
+                                                            {formatNumber(
+                                                                r.potensi,
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            {(!uncovered ||
+                                                uncovered.length === 0) && (
+                                                <tr>
+                                                    <td
+                                                        colSpan={4}
+                                                        style={{
+                                                            ...S.td,
+                                                            textAlign: "center",
+                                                            color: T.slate,
+                                                            padding: 20,
+                                                        }}
+                                                    >
+                                                        Tidak ada data
+                                                        uncovered
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </Card>
 
                                 <Card
-                                    title={`Trend Coverage ${cabangName}`}
+                                    title={`Trend Coverage ${areaName || cabangName}`}
                                     sub="3 Tahun Terakhir"
                                     style={{ flex: 1 }}
                                 >
@@ -4323,8 +4535,8 @@ export default function Area({
                                                 Nama Sekolah{" "}
                                                 {sekolahSort.key === "name"
                                                     ? sekolahSort.dir === "asc"
-                                                        ? "↑"
-                                                        : "↓"
+                                                        ? "â†‘"
+                                                        : "â†“"
                                                     : ""}
                                             </th>
                                             <th
@@ -4349,8 +4561,8 @@ export default function Area({
                                                 {sekolahSort.key ===
                                                 "kecamatan_name"
                                                     ? sekolahSort.dir === "asc"
-                                                        ? "↑"
-                                                        : "↓"
+                                                        ? "â†‘"
+                                                        : "â†“"
                                                     : ""}
                                             </th>
 
@@ -4375,8 +4587,8 @@ export default function Area({
                                                 Status{" "}
                                                 {sekolahSort.key === "is_active"
                                                     ? sekolahSort.dir === "asc"
-                                                        ? "↑"
-                                                        : "↓"
+                                                        ? "â†‘"
+                                                        : "â†“"
                                                     : ""}
                                             </th>
                                             <th
@@ -4401,8 +4613,8 @@ export default function Area({
                                                 {sekolahSort.key ===
                                                 "total_student"
                                                     ? sekolahSort.dir === "asc"
-                                                        ? "↑"
-                                                        : "↓"
+                                                        ? "â†‘"
+                                                        : "â†“"
                                                     : ""}
                                             </th>
                                             <th
@@ -4426,8 +4638,8 @@ export default function Area({
                                                 Penerbit{" "}
                                                 {sekolahSort.key === "penerbit"
                                                     ? sekolahSort.dir === "asc"
-                                                        ? "↑"
-                                                        : "↓"
+                                                        ? "â†‘"
+                                                        : "â†“"
                                                     : ""}
                                             </th>
                                             <th
@@ -4452,8 +4664,8 @@ export default function Area({
                                                 {sekolahSort.key ===
                                                 "sumber_dana"
                                                     ? sekolahSort.dir === "asc"
-                                                        ? "↑"
-                                                        : "↓"
+                                                        ? "â†‘"
+                                                        : "â†“"
                                                     : ""}
                                             </th>
                                         </tr>

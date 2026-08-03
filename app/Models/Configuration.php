@@ -37,8 +37,110 @@ class Configuration extends Model
         'terms_conditions',
         'privacy_policy',
         'prev_year',
-        'target_year'
+        'target_year',
+        'sales_score_weights',
     ];
+
+    protected $casts = [
+        'sales_score_weights' => 'array',
+        'maintenance_mode' => 'boolean',
+    ];
+
+    public static function defaultSalesScoreWeights(): array
+    {
+        return [
+            'realisasi_yoy' => 20,
+            'sp_vs_ac' => 20,
+            'achievement' => 20,
+            'tahan_vs_ac' => 20,
+            'rebut_vs_ac' => 20,
+            'lepas_vs_ac' => 15, // eksternal, di luar 100%
+        ];
+    }
+
+    public static function salesScoreWeightLabels(): array
+    {
+        return [
+            'realisasi_yoy' => 'Realisasi YoY',
+            'sp_vs_ac' => 'Customer Realisasi vs Area Cover',
+            'achievement' => 'Achievement Target',
+            'tahan_vs_ac' => 'Tahan vs Area Cover',
+            'rebut_vs_ac' => 'Rebut vs Area Cover',
+            'lepas_vs_ac' => 'Lepas vs Area Cover (pengurang)',
+        ];
+    }
+
+    /** Keys that reduce the final score instead of adding to it. */
+    public static function salesScorePenaltyKeys(): array
+    {
+        return ['lepas_vs_ac'];
+    }
+
+    /** Positive indicator keys that must sum to 100%. */
+    public static function salesScorePositiveKeys(): array
+    {
+        return array_values(array_diff(
+            array_keys(self::defaultSalesScoreWeights()),
+            self::salesScorePenaltyKeys()
+        ));
+    }
+
+    public function resolvedSalesScoreWeights(): array
+    {
+        $defaults = self::defaultSalesScoreWeights();
+        $stored = is_array($this->sales_score_weights) ? $this->sales_score_weights : [];
+        $weights = [];
+        foreach ($defaults as $key => $default) {
+            $weights[$key] = max(0, isset($stored[$key]) ? (float) $stored[$key] : (float) $default);
+        }
+
+        $positiveKeys = self::salesScorePositiveKeys();
+        $sumPositive = 0.0;
+        foreach ($positiveKeys as $key) {
+            $sumPositive += $weights[$key] ?? 0;
+        }
+
+        // 5 indikator positif harus ~100%; Lepas eksternal di luar itu
+        if ($sumPositive <= 0 || abs($sumPositive - 100) > 5) {
+            return $defaults;
+        }
+
+        return $weights;
+    }
+
+    /**
+     * Weighted total from component scores.
+     * Positive indicators (sum bobot 100%): weighted average (0–100).
+     * Lepas: pengurang eksternal — potong hingga sebesar bobot lepas (di luar 100%).
+     */
+    public static function computeWeightedSalesScore(array $scores, ?array $weights = null): float
+    {
+        $weights = $weights ?: self::defaultSalesScoreWeights();
+        $penalties = self::salesScorePenaltyKeys();
+
+        $posSum = 0.0;
+        $posW = 0.0;
+        $penaltyPts = 0.0;
+
+        foreach ($weights as $key => $w) {
+            $w = (float) $w;
+            if ($w <= 0) {
+                continue;
+            }
+            $score = (float) ($scores[$key] ?? 0);
+            if (in_array($key, $penalties, true)) {
+                // Lepas 100% vs AC dengan bobot eksternal 15 → potong 15 poin
+                $penaltyPts += ($score / 100) * $w;
+            } else {
+                $posSum += $score * $w;
+                $posW += $w;
+            }
+        }
+
+        $positiveAvg = $posW > 0 ? ($posSum / $posW) : 0.0;
+
+        return round(max(0, min(100, $positiveAvg - $penaltyPts)), 1);
+    }
 
     protected $appends = [
         'url_logo',
