@@ -48,9 +48,21 @@ export default function AnalisisTab(props) {
         const [currentPage, setCurrentPage] = useState(1);
         const itemsPerPage = 10;
         const totalPages = Math.ceil(data.length / itemsPerPage);
-        
+
         const currentData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-        
+
+        const totals = data.reduce(
+            (acc, s) => {
+                acc.target += Number(s.target_exemplar_current) || 0;
+                acc.realisasi += Number(s.real_exemplar_current) || 0;
+                acc.siswa += Number(s.total_student) || 0;
+                return acc;
+            },
+            { target: 0, realisasi: 0, siswa: 0 },
+        );
+
+        const fmt = (n) => new Intl.NumberFormat("id-ID").format(n || 0);
+
         return (
             <Card title={title} style={{ flex: 1, minWidth: 300, display: "flex", flexDirection: "column" }} noPad>
                 <div style={{ overflowX: "auto", flex: 1 }}>
@@ -65,6 +77,52 @@ export default function AnalisisTab(props) {
                             </tr>
                         </thead>
                         <tbody>
+                            <tr
+                                style={{
+                                    background: "#eff6ff",
+                                    borderBottom: `1px solid ${T.border}`,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                <td style={{ padding: "10px 16px", color: T.slate }}>—</td>
+                                <td
+                                    style={{
+                                        padding: "10px 16px",
+                                        color: T.blue,
+                                        fontWeight: 800,
+                                    }}
+                                >
+                                    Total ({data.length} sekolah)
+                                </td>
+                                <td
+                                    style={{
+                                        padding: "10px 16px",
+                                        textAlign: "right",
+                                        color: T.text,
+                                    }}
+                                >
+                                    {fmt(totals.target)}
+                                </td>
+                                <td
+                                    style={{
+                                        padding: "10px 16px",
+                                        textAlign: "right",
+                                        color: color,
+                                        fontWeight: 800,
+                                    }}
+                                >
+                                    {fmt(totals.realisasi)}
+                                </td>
+                                <td
+                                    style={{
+                                        padding: "10px 16px",
+                                        textAlign: "right",
+                                        color: T.text,
+                                    }}
+                                >
+                                    {fmt(totals.siswa)}
+                                </td>
+                            </tr>
                             {currentData.length > 0 ? (
                                 currentData.map((s, idx) => {
                                     return (
@@ -72,13 +130,13 @@ export default function AnalisisTab(props) {
                                             <td style={{ padding: "12px 16px", color: T.slate }}>{(currentPage - 1) * itemsPerPage + idx + 1}</td>
                                             <td style={{ padding: "12px 16px", fontWeight: 600, color: T.text }}>{s.name}</td>
                                             <td style={{ padding: "12px 16px", color: T.slate, textAlign: "right" }}>
-                                                {new Intl.NumberFormat("id-ID").format(s.target_exemplar_current || 0)}
+                                                {fmt(s.target_exemplar_current || 0)}
                                             </td>
                                             <td style={{ padding: "12px 16px", color: color, fontWeight: 700, textAlign: "right" }}>
-                                                {new Intl.NumberFormat("id-ID").format(s.real_exemplar_current || 0)}
+                                                {fmt(s.real_exemplar_current || 0)}
                                             </td>
                                             <td style={{ padding: "12px 16px", color: T.slate, textAlign: "right", fontWeight: 600 }}>
-                                                {new Intl.NumberFormat("id-ID").format(s.total_student || 0)}
+                                                {fmt(s.total_student || 0)}
                                             </td>
                                         </tr>
                                     );
@@ -143,7 +201,13 @@ export default function AnalisisTab(props) {
         const itemsPerPage = 10;
         const totalPages = Math.ceil(data.length / itemsPerPage);
         const currentData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-        
+
+        const yearKeys = [2023, 2024, 2025, 2026];
+        const yearTotals = yearKeys.reduce((acc, y) => {
+            acc[y] = data.filter((s) => !!s[`realisasi_${y}`]).length;
+            return acc;
+        }, {});
+
         const renderCheck = (hasRealisasi) => {
             if (hasRealisasi) return <i className="bi bi-check-circle-fill" style={{ color: T.green, fontSize: 14 }}></i>;
             return <i className="bi bi-x-circle-fill" style={{ color: "#cbd5e1", fontSize: 14 }}></i>;
@@ -166,6 +230,41 @@ export default function AnalisisTab(props) {
                             </tr>
                         </thead>
                         <tbody>
+                            <tr
+                                style={{
+                                    background: "#eff6ff",
+                                    borderBottom: `1px solid ${T.border}`,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                <td style={{ padding: "10px 16px", color: T.slate }}>—</td>
+                                <td
+                                    style={{
+                                        padding: "10px 16px",
+                                        color: T.blue,
+                                        fontWeight: 800,
+                                    }}
+                                    colSpan={2}
+                                >
+                                    Total ({data.length} sekolah)
+                                </td>
+                                {yearKeys.map((y) => (
+                                    <td
+                                        key={y}
+                                        style={{
+                                            padding: "10px 16px",
+                                            textAlign: "center",
+                                            color: T.text,
+                                            fontSize: 13,
+                                        }}
+                                    >
+                                        {yearTotals[y]}
+                                    </td>
+                                ))}
+                                <td style={{ padding: "10px 16px", color: T.slate, fontSize: 11 }}>
+                                    jumlah ceklis
+                                </td>
+                            </tr>
                             {currentData.length > 0 ? (
                                 currentData.map((s, idx) => (
                                     <tr key={s.id || idx} style={{ borderBottom: `1px solid ${T.border}`, transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f1f5f9"} onMouseLeave={(e) => e.currentTarget.style.background = "white"}>

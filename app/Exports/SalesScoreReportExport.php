@@ -41,16 +41,12 @@ class SalesScoreReportExport implements FromCollection, WithHeadings, WithMappin
             'Total Sekolah',
             'Score',
             'Grade',
-            'AC Score',
-            'AC Tahun Lalu',
-            'AC Tahun Ini',
-            'AC Growth %',
-            'Aktivitas Score',
-            'Rata-rata Aktivitas/Bulan',
-            'Total Aktivitas',
-            'Realisasi Score',
-            'Sekolah Realisasi',
-            'Realisasi %',
+            'Realisasi YoY',
+            'SP vs AC',
+            'Achievement Target',
+            'Area Cover Growth',
+            'Intensitas Aktivitas',
+            'Realisasi Sekolah',
         ];
     }
 
@@ -66,16 +62,12 @@ class SalesScoreReportExport implements FromCollection, WithHeadings, WithMappin
             $row['total_sekolah'] ?? 0,
             $row['total_score'] ?? 0,
             $row['grade'] ?? '',
+            $c['realisasi_yoy_score'] ?? 0,
+            $c['sp_vs_ac_score'] ?? 0,
+            $c['achievement_score'] ?? 0,
             $c['ac_score'] ?? 0,
-            $c['ac_prev'] ?? 0,
-            $c['ac_curr'] ?? 0,
-            $c['ac_growth_pct'] ?? 0,
             $c['activity_score'] ?? 0,
-            $c['avg_per_month'] ?? 0,
-            $c['total_activities'] ?? 0,
             $c['realisasi_score'] ?? 0,
-            $c['sekolah_realisasi'] ?? 0,
-            $c['realisasi_pct'] ?? 0,
         ];
     }
 

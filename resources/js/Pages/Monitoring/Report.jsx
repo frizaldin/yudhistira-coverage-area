@@ -199,8 +199,8 @@ export default function Report({
                                 fontSize: 14,
                             }}
                         >
-                            Performa sales berdasarkan KPI Area Cover Growth,
-                            Intensitas Aktivitas, dan Realisasi Sekolah
+                            Performa sales berdasarkan rata-rata 6 indikator
+                            penilaian
                             {tahunFilter ? ` · Tahun ${tahunFilter}` : ""}.
                         </p>
                     </div>
@@ -606,22 +606,40 @@ export default function Report({
                                                     }}
                                                 >
                                                     <KpiMini
+                                                        label="Realisasi YoY"
+                                                        score={c.realisasi_yoy_score}
+                                                        color="#3b82f6"
+                                                        tip={`Real ${tahun - 1}: ${Number(c.real_prev ?? 0).toLocaleString("id-ID")} → ${tahun}: ${Number(c.real_curr ?? 0).toLocaleString("id-ID")}`}
+                                                    />
+                                                    <KpiMini
+                                                        label="SP vs AC"
+                                                        score={c.sp_vs_ac_score}
+                                                        color="#f59e0b"
+                                                        tip={`SP ${c.sp_count ?? 0} vs AC ${c.ac_curr ?? 0}`}
+                                                    />
+                                                    <KpiMini
+                                                        label="Achievement"
+                                                        score={c.achievement_score}
+                                                        color="#10b981"
+                                                        tip={`${Number(c.real_curr ?? 0).toLocaleString("id-ID")} / ${Number(c.target_curr ?? 0).toLocaleString("id-ID")} (${c.achievement_pct ?? 0}%)`}
+                                                    />
+                                                    <KpiMini
                                                         label="AC Growth"
                                                         score={c.ac_score}
-                                                        color="#10b981"
-                                                        tip={`AC ${tahun - 1}: ${c.ac_prev} → ${tahun}: ${c.ac_curr}`}
+                                                        color="#0d9488"
+                                                        tip={`AC ${tahun - 1}: ${c.ac_prev ?? 0} → ${tahun}: ${c.ac_curr ?? 0}`}
                                                     />
                                                     <KpiMini
-                                                        label="Aktivitas"
+                                                        label="Intensitas"
                                                         score={c.activity_score}
-                                                        color="#f59e0b"
-                                                        tip={`${c.avg_per_month} aktivitas/bulan`}
+                                                        color="#a855f7"
+                                                        tip={`${c.avg_per_month ?? 0} aktivitas/bulan`}
                                                     />
                                                     <KpiMini
-                                                        label="Realisasi"
+                                                        label="Realisasi Sekolah"
                                                         score={c.realisasi_score}
-                                                        color="#3b82f6"
-                                                        tip={`${c.sekolah_realisasi}/${row.total_sekolah} sekolah`}
+                                                        color="#ef4444"
+                                                        tip={`${c.sekolah_realisasi ?? 0}/${c.ac_curr ?? 0} Area Cover`}
                                                     />
                                                 </div>
                                             </td>

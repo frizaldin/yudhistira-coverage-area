@@ -6,6 +6,7 @@ import {
     Card,
     Badge,
     Donut,
+    ConcentricActivityDonut,
     StatCard,
     KecamatanChoroplethMap,
     CompetitorChoroplethMap,
@@ -84,7 +85,116 @@ export default function DashboardTab(props) {
         handleSpAreaChange,
         applySpFilter,
         sekolahPerPage,
+        openSekolahFromChart,
+        openKegiatanFromChart,
     } = props;
+
+    const [visitHover, setVisitHover] = useState(null);
+
+    const activityColorMap = {
+        Pendekatan: "#1d4ed8",
+        SP: "#0d9488",
+        Faktur: "#f59e0b",
+        Gagal: "#dc2626",
+        Promosi: "#8b5cf6",
+        Penagihan: "#06b6d4",
+        "Tidak Diketahui": "#94a3b8",
+    };
+
+    const handleSegmenClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        const label = String(item.label).toLowerCase();
+        if (label.includes("negeri") || label === "bos") {
+            openSekolahFromChart?.({
+                type: "segmen",
+                value: "negeri",
+                label: "Segmen: Negeri (BOS)",
+            });
+        } else if (label.includes("swasta")) {
+            openSekolahFromChart?.({
+                type: "segmen",
+                value: "swasta",
+                label: "Segmen: Swasta",
+            });
+        }
+    };
+
+    const handleSumberDanaClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        openSekolahFromChart?.({
+            type: "sumber_dana",
+            value: item.label,
+            label: `Sumber Dana: ${item.label}`,
+        });
+    };
+
+    const handleCustomerStatusClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        const label = String(item.label).toLowerCase();
+        let value = "";
+        if (label.includes("baru")) value = "baru";
+        else if (label.includes("retain") || label.includes("tahan"))
+            value = "retain";
+        else if (label.includes("loss") || label.includes("lepas"))
+            value = "loss";
+        if (!value) return;
+        openSekolahFromChart?.({
+            type: "customer_status",
+            value,
+            label: `Customer Status: ${item.label}`,
+        });
+    };
+
+    const handleJenjangClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        openSekolahFromChart?.({
+            type: "jenjang",
+            value: item.label,
+            label: `Jenjang: ${item.label}`,
+        });
+    };
+
+    const handlePotensiSiswaClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        openSekolahFromChart?.({
+            type: "potensi_siswa",
+            value: item.label,
+            label: `Jumlah Siswa: ${item.label}`,
+        });
+    };
+
+    const handlePenerbitClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        openSekolahFromChart?.({
+            type: "penerbit",
+            value: item.label,
+            label: `Competitor: ${item.label}`,
+        });
+    };
+
+    const clickableLegendProps = (onClick, item) => ({
+        onClick: () => onClick(item),
+        title: "Klik untuk lihat daftar sekolah",
+        style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            cursor: "pointer",
+            borderRadius: 4,
+            padding: "1px 2px",
+        },
+        onMouseEnter: (e) => {
+            e.currentTarget.style.background = "#f1f5f9";
+        },
+        onMouseLeave: (e) => {
+            e.currentTarget.style.background = "transparent";
+        },
+    });
+
+    const handleAktivitasClick = (item) => {
+        if (!item?.label || item.label === "Belum Ada") return;
+        openKegiatanFromChart?.(item.label);
+    };
 
     return (
         <>
@@ -148,15 +258,56 @@ export default function DashboardTab(props) {
                                             style={{
                                                 background: "#fff",
                                                 borderRadius: 12,
-                                                padding: "16px 20px",
+                                                padding: "12px 16px",
                                                 display: "flex",
                                                 alignItems: "center",
-                                                gap: 16,
+                                                gap: 14,
                                                 boxShadow:
                                                     "0 1px 3px rgba(0,0,0,0.05)",
                                                 border: "1px solid #f1f5f9",
                                             }}
                                         >
+                                            <div
+                                                style={{
+                                                    width: 72,
+                                                    height: 88,
+                                                    borderRadius: 10,
+                                                    background: "#e2e8f0",
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    flexShrink: 0,
+                                                    overflow: "hidden",
+                                                }}
+                                            >
+                                                {salesProfile?.photo ||
+                                                salesProfile?.foto ? (
+                                                    <img
+                                                        src={
+                                                            salesProfile.photo ||
+                                                            salesProfile.foto
+                                                        }
+                                                        alt={
+                                                            salesProfile?.name ||
+                                                            "Sales"
+                                                        }
+                                                        style={{
+                                                            width: "100%",
+                                                            height: "100%",
+                                                            objectFit: "cover",
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <i
+                                                        className="bi bi-person-fill"
+                                                        style={{
+                                                            fontSize: 42,
+                                                            color: "#94a3b8",
+                                                            lineHeight: 1,
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
                                             <div
                                                 style={{ flex: 1, minWidth: 0 }}
                                             >
@@ -200,9 +351,9 @@ export default function DashboardTab(props) {
                                                         style={{
                                                             background:
                                                                 "#ecfdf5",
-                                                            color: "#10b981",
-                                                            padding: "2px 6px",
-                                                            borderRadius: 4,
+                                                            color: "#059669",
+                                                            padding: "2px 8px",
+                                                            borderRadius: 999,
                                                             fontSize: 9,
                                                             fontWeight: 700,
                                                             flexShrink: 0,
@@ -295,20 +446,49 @@ export default function DashboardTab(props) {
                                                     }}
                                                     title="Lihat detail skor"
                                                     onClick={() => {
+                                                        const renderItem = (c) => `
+                                                            <div style="padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;">
+                                                                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+                                                                    <div style="font-weight: 700; color: #334155; font-size: 13px;">${c.label} <span style="color:#64748b; font-weight:600; font-size:11px;">(${Number(c.weight ?? 0).toFixed(2)}%)</span></div>
+                                                                    <div style="font-weight: 800; color: ${c.color || "#334155"}; font-size: 15px;">${c.score}</div>
+                                                                </div>
+                                                                <div style="height: 6px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-bottom: 6px;">
+                                                                    <div style="height: 100%; width: ${Math.min(100, Math.max(0, Number(c.score) || 0))}%; background: ${c.color || "#3b82f6"}; border-radius: 99px;"></div>
+                                                                </div>
+                                                                <div style="font-size: 11px; color: #64748b; line-height: 1.35;">${c.detail || ""}</div>
+                                                            </div>
+                                                        `;
+
+                                                        const main = (kpiData?.components || [])
+                                                            .map(renderItem)
+                                                            .join("");
+
+                                                        const weightSum = (kpiData?.components || []).reduce(
+                                                            (a, c) => a + (Number(c.weight) || 0),
+                                                            0,
+                                                        );
+                                                        const formulaParts = (kpiData?.components || [])
+                                                            .map(
+                                                                (c) =>
+                                                                    `(${c.score}×${Number(c.weight || 0).toFixed(2)}%)`,
+                                                            )
+                                                            .join(" + ");
+
                                                         const htmlContent =
-                                                            kpiData?.components
+                                                            main
                                                                 ? `
-                                                            <div style="text-align: left; font-size: 14px;">
-                                                                ${kpiData.components
-                                                                    .map(
-                                                                        (c) => `
-                                                                    <div style="margin-bottom: 12px;">
-                                                                        <div style="font-weight: 600; color: #334155;">${c.label}: <span style="color: ${c.color}">${c.score}</span></div>
-                                                                        <div style="font-size: 12px; color: #64748b;">${c.detail}</div>
-                                                                    </div>
-                                                                `,
-                                                                    )
-                                                                    .join("")}
+                                                            <div style="text-align: left;">
+                                                                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">Indikator Penilaian (bobot custom)</div>
+                                                                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px;">
+                                                                    ${main}
+                                                                </div>
+                                                                <div style="padding: 10px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; font-size: 12px; color: #1e3a8a;">
+                                                                    <strong>Total Score:</strong> ${kpiData?.totalScore ?? 0} / 100 · <strong>${kpiData?.grade ?? "-"}</strong>
+                                                                    <span style="display:block; margin-top: 4px; color:#334155; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+                                                                        [${formulaParts || "—"}] ÷ ${weightSum.toFixed(2)}% = ${kpiData?.totalScore ?? 0}
+                                                                    </span>
+                                                                    <span style="display:block; margin-top: 3px; color:#64748b; font-size: 11px;">Skor berbobot dari master Pengaturan. Total bobot: ${weightSum.toFixed(2)}%.</span>
+                                                                </div>
                                                             </div>
                                                         `
                                                                 : "Data skor tidak tersedia.";
@@ -317,6 +497,7 @@ export default function DashboardTab(props) {
                                                             title: "Detail Sales Score (AI)",
                                                             html: htmlContent,
                                                             icon: "info",
+                                                            width: 760,
                                                             confirmButtonText:
                                                                 "Tutup",
                                                         });
@@ -374,7 +555,65 @@ export default function DashboardTab(props) {
                                             </div>
                                         </div>
 
-                                        {/* Card 3: Achievement Target */}
+                                        {/* Card 3: Rencana Jual */}
+                                        <div
+                                            style={{
+                                                background: "#f59e0b",
+                                                borderRadius: 12,
+                                                padding: 16,
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                justifyContent: "center",
+                                                color: "#fff",
+                                                boxShadow:
+                                                    "0 1px 3px rgba(0,0,0,0.05)",
+                                                position: "relative",
+                                            }}
+                                        >
+                                            <i
+                                                className="bi bi-journal-text"
+                                                style={{
+                                                    position: "absolute",
+                                                    right: 12,
+                                                    top: 12,
+                                                    fontSize: 20,
+                                                    color: "rgba(255,255,255,0.2)",
+                                                }}
+                                            ></i>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    fontWeight: 700,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                    marginBottom: 4,
+                                                }}
+                                            >
+                                                RENCANA JUAL (Tahun{" "}
+                                                {insights?.targetYear ||
+                                                    new Date().getFullYear()}
+                                                )
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 22,
+                                                    fontWeight: 800,
+                                                }}
+                                            >
+                                                {insights?.totalRencanaJualTargetYear?.toLocaleString(
+                                                    "id-ID",
+                                                ) || 0}
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                }}
+                                            >
+                                                Eksemplar
+                                            </div>
+                                        </div>
+
+                                        {/* Card 4: Achievement Target */}
                                         <div
                                             style={{
                                                 background: "#10b981",
@@ -450,7 +689,7 @@ export default function DashboardTab(props) {
                                             </div>
                                         </div>
 
-                                        {/* Card 4: Realisasi */}
+                                        {/* Card 5: Realisasi */}
                                         <div
                                             style={{
                                                 background: "#3b82f6",
@@ -508,7 +747,7 @@ export default function DashboardTab(props) {
                                             </div>
                                         </div>
 
-                                        {/* Card 4b: Realisasi Growth */}
+                                        {/* Card 6: Gap Realisasi */}
                                         <div
                                             style={{
                                                 background: "#10b981", // Emerald green
@@ -586,65 +825,7 @@ export default function DashboardTab(props) {
                                             </div>
                                         </div>
 
-                                        {/* Card 5: Rencana Jual */}
-                                        <div
-                                            style={{
-                                                background: "#f59e0b",
-                                                borderRadius: 12,
-                                                padding: 16,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                justifyContent: "center",
-                                                color: "#fff",
-                                                boxShadow:
-                                                    "0 1px 3px rgba(0,0,0,0.05)",
-                                                position: "relative",
-                                            }}
-                                        >
-                                            <i
-                                                className="bi bi-journal-text"
-                                                style={{
-                                                    position: "absolute",
-                                                    right: 12,
-                                                    top: 12,
-                                                    fontSize: 20,
-                                                    color: "rgba(255,255,255,0.2)",
-                                                }}
-                                            ></i>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    fontWeight: 700,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                    marginBottom: 4,
-                                                }}
-                                            >
-                                                RENCANA JUAL (Tahun{" "}
-                                                {insights?.targetYear ||
-                                                    new Date().getFullYear()}
-                                                )
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 22,
-                                                    fontWeight: 800,
-                                                }}
-                                            >
-                                                {insights?.totalRencanaJualTargetYear?.toLocaleString(
-                                                    "id-ID",
-                                                ) || 0}
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                }}
-                                            >
-                                                Eksemplar
-                                            </div>
-                                        </div>
-
-                                        {/* Card 6: Area Cover */}
+                                        {/* Card 7: Area Cover */}
                                         <div
                                             style={{
                                                 background: "#8b5cf6",
@@ -702,7 +883,7 @@ export default function DashboardTab(props) {
                                             </div>
                                         </div>
 
-                                        {/* Card 7: Customer Realisasi */}
+                                        {/* Card 8: Customer Realisasi */}
                                         <div
                                             style={{
                                                 background: "#0ea5e9",
@@ -781,7 +962,7 @@ export default function DashboardTab(props) {
                                                     style={{
                                                         ...S.card,
                                                         padding: 0,
-                                                        overflow: "hidden",
+                                                        overflow: "visible",
                                                         display: "flex",
                                                         flexDirection: "column",
                                                         flex: 1,
@@ -884,6 +1065,9 @@ export default function DashboardTab(props) {
                                                             alignItems:
                                                                 "flex-end",
                                                             gap: 6,
+                                                            position:
+                                                                "relative",
+                                                            overflow: "visible",
                                                         }}
                                                     >
                                                         {monthlyActivities.map(
@@ -904,10 +1088,14 @@ export default function DashboardTab(props) {
                                                                 const isCurrentMonth =
                                                                     i ===
                                                                     new Date().getMonth();
+                                                                const isHovered =
+                                                                    visitHover?.index ===
+                                                                    i;
                                                                 return (
                                                                     <div
                                                                         key={i}
                                                                         style={{
+                                                                            flex: 1,
                                                                             display:
                                                                                 "flex",
                                                                             flexDirection:
@@ -915,9 +1103,157 @@ export default function DashboardTab(props) {
                                                                             alignItems:
                                                                                 "center",
                                                                             gap: 4,
-                                                                            group: "hover",
+                                                                            position:
+                                                                                "relative",
+                                                                            cursor: "pointer",
                                                                         }}
+                                                                        onMouseEnter={() =>
+                                                                            setVisitHover(
+                                                                                {
+                                                                                    index: i,
+                                                                                    month: m.month,
+                                                                                    year: m.year,
+                                                                                    count: m.count,
+                                                                                    breakdown:
+                                                                                        m.breakdown ||
+                                                                                        [],
+                                                                                },
+                                                                            )
+                                                                        }
+                                                                        onMouseLeave={() =>
+                                                                            setVisitHover(
+                                                                                null,
+                                                                            )
+                                                                        }
                                                                     >
+                                                                        {isHovered && (
+                                                                            <div
+                                                                                style={{
+                                                                                    position:
+                                                                                        "absolute",
+                                                                                    bottom: "100%",
+                                                                                    left: "50%",
+                                                                                    transform:
+                                                                                        "translateX(-50%)",
+                                                                                    marginBottom: 8,
+                                                                                    zIndex: 40,
+                                                                                    minWidth: 140,
+                                                                                    background:
+                                                                                        "#0f172a",
+                                                                                    color: "#fff",
+                                                                                    borderRadius: 8,
+                                                                                    padding:
+                                                                                        "8px 10px",
+                                                                                    boxShadow:
+                                                                                        "0 10px 25px rgba(15,23,42,0.25)",
+                                                                                    pointerEvents:
+                                                                                        "none",
+                                                                                    whiteSpace:
+                                                                                        "nowrap",
+                                                                                }}
+                                                                            >
+                                                                                <div
+                                                                                    style={{
+                                                                                        fontSize: 10,
+                                                                                        fontWeight: 700,
+                                                                                        marginBottom: 6,
+                                                                                        color: "#e2e8f0",
+                                                                                    }}
+                                                                                >
+                                                                                    {m.month}
+                                                                                    {m.year
+                                                                                        ? ` ${m.year}`
+                                                                                        : ""}{" "}
+                                                                                    · Total{" "}
+                                                                                    {m.count}
+                                                                                </div>
+                                                                                {(m.breakdown ||
+                                                                                    [])
+                                                                                    .length >
+                                                                                0 ? (
+                                                                                    (m.breakdown || []).map(
+                                                                                        (
+                                                                                            b,
+                                                                                            bi,
+                                                                                        ) => (
+                                                                                            <div
+                                                                                                key={
+                                                                                                    bi
+                                                                                                }
+                                                                                                style={{
+                                                                                                    display:
+                                                                                                        "flex",
+                                                                                                    alignItems:
+                                                                                                        "center",
+                                                                                                    justifyContent:
+                                                                                                        "space-between",
+                                                                                                    gap: 12,
+                                                                                                    fontSize: 10,
+                                                                                                    marginBottom: 3,
+                                                                                                }}
+                                                                                            >
+                                                                                                <span
+                                                                                                    style={{
+                                                                                                        display:
+                                                                                                            "inline-flex",
+                                                                                                        alignItems:
+                                                                                                            "center",
+                                                                                                        gap: 6,
+                                                                                                    }}
+                                                                                                >
+                                                                                                    <span
+                                                                                                        style={{
+                                                                                                            width: 7,
+                                                                                                            height: 7,
+                                                                                                            borderRadius: 2,
+                                                                                                            background:
+                                                                                                                activityColorMap[
+                                                                                                                    b
+                                                                                                                        .label
+                                                                                                                ] ||
+                                                                                                                "#94a3b8",
+                                                                                                            flexShrink: 0,
+                                                                                                        }}
+                                                                                                    />
+                                                                                                    {
+                                                                                                        b.label
+                                                                                                    }
+                                                                                                </span>
+                                                                                                <strong>
+                                                                                                    {
+                                                                                                        b.value
+                                                                                                    }
+                                                                                                </strong>
+                                                                                            </div>
+                                                                                        ),
+                                                                                    )
+                                                                                ) : (
+                                                                                    <div
+                                                                                        style={{
+                                                                                            fontSize: 10,
+                                                                                            color: "#94a3b8",
+                                                                                        }}
+                                                                                    >
+                                                                                        Tidak ada
+                                                                                        aktivitas
+                                                                                    </div>
+                                                                                )}
+                                                                                <div
+                                                                                    style={{
+                                                                                        position:
+                                                                                            "absolute",
+                                                                                        left: "50%",
+                                                                                        bottom: -5,
+                                                                                        transform:
+                                                                                            "translateX(-50%) rotate(45deg)",
+                                                                                        width: 10,
+                                                                                        height: 10,
+                                                                                        background:
+                                                                                            "#0f172a",
+                                                                                    }}
+                                                                                />
+                                                                            </div>
+                                                                        )}
                                                                         <span
                                                                             style={{
                                                                                 fontSize: 9.5,
@@ -925,7 +1261,8 @@ export default function DashboardTab(props) {
                                                                                 color:
                                                                                     m.count >
                                                                                     0
-                                                                                        ? isCurrentMonth
+                                                                                        ? isCurrentMonth ||
+                                                                                          isHovered
                                                                                             ? "#4f46e5"
                                                                                             : T.text
                                                                                         : T.slate,
@@ -944,7 +1281,8 @@ export default function DashboardTab(props) {
                                                                                 borderRadius:
                                                                                     "4px 4px 0 0",
                                                                                 background:
-                                                                                    isCurrentMonth
+                                                                                    isCurrentMonth ||
+                                                                                    isHovered
                                                                                         ? "linear-gradient(180deg, #4f46e5, #818cf8)"
                                                                                         : m.count >
                                                                                             0
@@ -952,29 +1290,22 @@ export default function DashboardTab(props) {
                                                                                           : "#f1f5f9",
                                                                                 transition:
                                                                                     "height 0.6s ease, filter 0.2s",
-                                                                                cursor: "default",
+                                                                                filter: isHovered
+                                                                                    ? "brightness(1.12)"
+                                                                                    : "none",
                                                                             }}
-                                                                            onMouseEnter={(
-                                                                                e,
-                                                                            ) =>
-                                                                                (e.currentTarget.style.filter =
-                                                                                    "brightness(1.1)")
-                                                                            }
-                                                                            onMouseLeave={(
-                                                                                e,
-                                                                            ) =>
-                                                                                (e.currentTarget.style.filter =
-                                                                                    "brightness(1)")
-                                                                            }
                                                                         />
                                                                         <span
                                                                             style={{
                                                                                 fontSize: 9,
-                                                                                color: isCurrentMonth
-                                                                                    ? "#4f46e5"
-                                                                                    : T.slate,
+                                                                                color:
+                                                                                    isCurrentMonth ||
+                                                                                    isHovered
+                                                                                        ? "#4f46e5"
+                                                                                        : T.slate,
                                                                                 fontWeight:
-                                                                                    isCurrentMonth
+                                                                                    isCurrentMonth ||
+                                                                                    isHovered
                                                                                         ? 700
                                                                                         : 500,
                                                                                 paddingTop: 2,
@@ -1070,9 +1401,9 @@ export default function DashboardTab(props) {
                                                                     marginTop: 1,
                                                                 }}
                                                             >
-                                                                Berdasarkan
-                                                                jenis aktivitas
-                                                                sales
+                                                                Tiap ring =
+                                                                aktivitas vs
+                                                                Area Cover
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1091,46 +1422,52 @@ export default function DashboardTab(props) {
                                                             const hasData =
                                                                 kpiData
                                                                     .activityDistribution
-                                                                    .length > 0;
-                                                            const segments =
+                                                                    ?.length > 0;
+                                                            const areaCover =
+                                                                Number(
+                                                                    kpiData.areaCover ??
+                                                                        insights?.totalAreaCover ??
+                                                                        0,
+                                                                );
+                                                            const activities =
                                                                 hasData
                                                                     ? kpiData.activityDistribution
-                                                                    : [
-                                                                          {
-                                                                              label: "Belum Ada",
-                                                                              value: 1,
-                                                                              color: "#e2e8f0",
-                                                                          },
-                                                                      ];
-                                                            const total =
-                                                                hasData
-                                                                    ? kpiData.activityDistribution.reduce(
-                                                                          (
-                                                                              a,
-                                                                              c,
-                                                                          ) =>
-                                                                              a +
-                                                                              c.value,
-                                                                          0,
-                                                                      )
-                                                                    : 0;
+                                                                    : [];
+                                                            const totalAkt =
+                                                                activities.reduce(
+                                                                    (a, c) =>
+                                                                        a +
+                                                                        (Number(
+                                                                            c.value,
+                                                                        ) ||
+                                                                            0),
+                                                                    0,
+                                                                );
 
                                                             return (
                                                                 <>
-                                                                    <Donut
-                                                                        segments={
-                                                                            segments
+                                                                    <ConcentricActivityDonut
+                                                                        activities={
+                                                                            activities
+                                                                        }
+                                                                        areaCover={
+                                                                            areaCover
                                                                         }
                                                                         size={
-                                                                            70
+                                                                            110
                                                                         }
-                                                                        ring={
-                                                                            12
+                                                                        ringWidth={
+                                                                            11
                                                                         }
+                                                                        gap={3}
+                                                                        maxRings={5}
                                                                         label={
-                                                                            total
+                                                                            areaCover
                                                                         }
-                                                                        sub="Total"
+                                                                        sub="Area Cover"
+                                                                        onRingClick={
+                                                                            handleAktivitasClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -1139,67 +1476,125 @@ export default function DashboardTab(props) {
                                                                             flexDirection:
                                                                                 "column",
                                                                             gap: 6,
-                                                                            maxHeight: 90,
+                                                                            maxHeight: 110,
                                                                             overflowY:
                                                                                 "auto",
                                                                             paddingRight: 4,
+                                                                            flex: 1,
+                                                                            minWidth: 0,
                                                                         }}
                                                                     >
                                                                         {hasData ? (
-                                                                            kpiData.activityDistribution.map(
-                                                                                (
-                                                                                    item,
-                                                                                    idx,
-                                                                                ) => (
-                                                                                    <div
-                                                                                        key={
-                                                                                            idx
-                                                                                        }
-                                                                                        style={{
-                                                                                            display:
-                                                                                                "flex",
-                                                                                            alignItems:
-                                                                                                "center",
-                                                                                            gap: 6,
-                                                                                        }}
-                                                                                    >
-                                                                                        <div
-                                                                                            style={{
-                                                                                                width: 8,
-                                                                                                height: 8,
-                                                                                                borderRadius: 2,
-                                                                                                background:
-                                                                                                    item.color,
-                                                                                                flexShrink: 0,
-                                                                                            }}
-                                                                                        />
-                                                                                        <div
-                                                                                            style={{
-                                                                                                fontSize: 9.5,
-                                                                                                color: T.text,
-                                                                                                fontWeight: 500,
-                                                                                            }}
-                                                                                        >
-                                                                                            {
-                                                                                                item.label
-                                                                                            }
-                                                                                        </div>
-                                                                                        <div
-                                                                                            style={{
-                                                                                                fontSize: 9.5,
-                                                                                                color: T.slate,
-                                                                                                marginLeft:
-                                                                                                    "auto",
-                                                                                                fontWeight: 700,
-                                                                                            }}
-                                                                                        >
-                                                                                            {
-                                                                                                item.value
-                                                                                            }
-                                                                                        </div>
-                                                                                    </div>
-                                                                                ),
-                                                                            )
+                                                                            activities
+                                                                                .slice(
+                                                                                    0,
+                                                                                    5,
+                                                                                )
+                                                                                .map(
+                                                                                    (
+                                                                                        item,
+                                                                                        idx,
+                                                                                    ) => {
+                                                                                        const pct =
+                                                                                            areaCover >
+                                                                                            0
+                                                                                                ? (
+                                                                                                      (item.value /
+                                                                                                          areaCover) *
+                                                                                                      100
+                                                                                                  ).toFixed(
+                                                                                                      0,
+                                                                                                  )
+                                                                                                : 0;
+                                                                                        return (
+                                                                                            <div
+                                                                                                key={
+                                                                                                    idx
+                                                                                                }
+                                                                                                onClick={() =>
+                                                                                                    handleAktivitasClick(
+                                                                                                        item,
+                                                                                                    )
+                                                                                                }
+                                                                                                title="Klik untuk lihat detail kegiatan"
+                                                                                                style={{
+                                                                                                    display:
+                                                                                                        "flex",
+                                                                                                    alignItems:
+                                                                                                        "center",
+                                                                                                    gap: 6,
+                                                                                                    cursor: "pointer",
+                                                                                                    borderRadius: 4,
+                                                                                                    padding: "1px 2px",
+                                                                                                }}
+                                                                                                onMouseEnter={(e) =>
+                                                                                                    (e.currentTarget.style.background =
+                                                                                                        "#f1f5f9")
+                                                                                                }
+                                                                                                onMouseLeave={(e) =>
+                                                                                                    (e.currentTarget.style.background =
+                                                                                                        "transparent")
+                                                                                                }
+                                                                                            >
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        width: 8,
+                                                                                                        height: 8,
+                                                                                                        borderRadius: 2,
+                                                                                                        background:
+                                                                                                            item.color,
+                                                                                                        flexShrink: 0,
+                                                                                                    }}
+                                                                                                />
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        fontSize: 9.5,
+                                                                                                        color: T.text,
+                                                                                                        fontWeight: 500,
+                                                                                                        whiteSpace:
+                                                                                                            "nowrap",
+                                                                                                        overflow:
+                                                                                                            "hidden",
+                                                                                                        textOverflow:
+                                                                                                            "ellipsis",
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {
+                                                                                                        item.label
+                                                                                                    }
+                                                                                                </div>
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        fontSize: 9.5,
+                                                                                                        color: T.slate,
+                                                                                                        marginLeft:
+                                                                                                            "auto",
+                                                                                                        fontWeight: 700,
+                                                                                                        whiteSpace:
+                                                                                                            "nowrap",
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {
+                                                                                                        item.value
+                                                                                                    }
+                                                                                                    <span
+                                                                                                        style={{
+                                                                                                            fontWeight: 500,
+                                                                                                            color: "#94a3b8",
+                                                                                                            marginLeft: 3,
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        (
+                                                                                                        {
+                                                                                                            pct
+                                                                                                        }
+                                                                                                        %)
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    },
+                                                                                )
                                                                         ) : (
                                                                             <div
                                                                                 style={{
@@ -1215,6 +1610,30 @@ export default function DashboardTab(props) {
                                                                                 aktivitas.
                                                                             </div>
                                                                         )}
+                                                                        {hasData &&
+                                                                            areaCover >
+                                                                                0 && (
+                                                                                <div
+                                                                                    style={{
+                                                                                        fontSize: 8.5,
+                                                                                        color: "#94a3b8",
+                                                                                        marginTop: 2,
+                                                                                        borderTop: `1px solid ${T.border}`,
+                                                                                        paddingTop: 4,
+                                                                                    }}
+                                                                                >
+                                                                                    Total
+                                                                                    akt.{" "}
+                                                                                    {
+                                                                                        totalAkt
+                                                                                    }{" "}
+                                                                                    ·
+                                                                                    AC{" "}
+                                                                                    {
+                                                                                        areaCover
+                                                                                    }
+                                                                                </div>
+                                                                            )}
                                                                     </div>
                                                                 </>
                                                             );
@@ -1347,6 +1766,9 @@ export default function DashboardTab(props) {
                                                                             total
                                                                         }
                                                                         sub="Total"
+                                                                        onSegmentClick={
+                                                                            handleSegmenClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -1372,13 +1794,30 @@ export default function DashboardTab(props) {
                                                                                         key={
                                                                                             idx
                                                                                         }
+                                                                                        onClick={() =>
+                                                                                            handleSegmenClick(
+                                                                                                item,
+                                                                                            )
+                                                                                        }
+                                                                                        title="Klik untuk lihat daftar sekolah"
                                                                                         style={{
                                                                                             display:
                                                                                                 "flex",
                                                                                             alignItems:
                                                                                                 "center",
                                                                                             gap: 6,
+                                                                                            cursor: "pointer",
+                                                                                            borderRadius: 4,
+                                                                                            padding: "1px 2px",
                                                                                         }}
+                                                                                        onMouseEnter={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "#f1f5f9")
+                                                                                        }
+                                                                                        onMouseLeave={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "transparent")
+                                                                                        }
                                                                                     >
                                                                                         <div
                                                                                             style={{
@@ -1565,6 +2004,9 @@ export default function DashboardTab(props) {
                                                                             total
                                                                         }
                                                                         sub="Total"
+                                                                        onSegmentClick={
+                                                                            handleSumberDanaClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -1590,13 +2032,30 @@ export default function DashboardTab(props) {
                                                                                         key={
                                                                                             idx
                                                                                         }
+                                                                                        onClick={() =>
+                                                                                            handleSumberDanaClick(
+                                                                                                item,
+                                                                                            )
+                                                                                        }
+                                                                                        title="Klik untuk lihat daftar sekolah"
                                                                                         style={{
                                                                                             display:
                                                                                                 "flex",
                                                                                             alignItems:
                                                                                                 "center",
                                                                                             gap: 6,
+                                                                                            cursor: "pointer",
+                                                                                            borderRadius: 4,
+                                                                                            padding: "1px 2px",
                                                                                         }}
+                                                                                        onMouseEnter={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "#f1f5f9")
+                                                                                        }
+                                                                                        onMouseLeave={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "transparent")
+                                                                                        }
                                                                                     >
                                                                                         <div
                                                                                             style={{
@@ -2124,6 +2583,9 @@ export default function DashboardTab(props) {
                                                                             total
                                                                         }
                                                                         sub="Total"
+                                                                        onSegmentClick={
+                                                                            handleCustomerStatusClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -2149,13 +2611,10 @@ export default function DashboardTab(props) {
                                                                                         key={
                                                                                             idx
                                                                                         }
-                                                                                        style={{
-                                                                                            display:
-                                                                                                "flex",
-                                                                                            alignItems:
-                                                                                                "center",
-                                                                                            gap: 6,
-                                                                                        }}
+                                                                                        {...clickableLegendProps(
+                                                                                            handleCustomerStatusClick,
+                                                                                            item,
+                                                                                        )}
                                                                                     >
                                                                                         <div
                                                                                             style={{
@@ -2346,6 +2805,9 @@ export default function DashboardTab(props) {
                                                                             total
                                                                         }
                                                                         sub="Total"
+                                                                        onSegmentClick={
+                                                                            handleJenjangClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -2371,13 +2833,10 @@ export default function DashboardTab(props) {
                                                                                         key={
                                                                                             idx
                                                                                         }
-                                                                                        style={{
-                                                                                            display:
-                                                                                                "flex",
-                                                                                            alignItems:
-                                                                                                "center",
-                                                                                            gap: 6,
-                                                                                        }}
+                                                                                        {...clickableLegendProps(
+                                                                                            handleJenjangClick,
+                                                                                            item,
+                                                                                        )}
                                                                                     >
                                                                                         <div
                                                                                             style={{
@@ -2566,6 +3025,9 @@ export default function DashboardTab(props) {
                                                                             total
                                                                         }
                                                                         sub="Total"
+                                                                        onSegmentClick={
+                                                                            handlePotensiSiswaClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -2591,13 +3053,30 @@ export default function DashboardTab(props) {
                                                                                         key={
                                                                                             idx
                                                                                         }
+                                                                                        onClick={() =>
+                                                                                            handlePotensiSiswaClick(
+                                                                                                item,
+                                                                                            )
+                                                                                        }
+                                                                                        title="Klik untuk lihat daftar sekolah"
                                                                                         style={{
                                                                                             display:
                                                                                                 "flex",
                                                                                             alignItems:
                                                                                                 "center",
                                                                                             gap: 6,
+                                                                                            cursor: "pointer",
+                                                                                            borderRadius: 4,
+                                                                                            padding: "1px 2px",
                                                                                         }}
+                                                                                        onMouseEnter={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "#f1f5f9")
+                                                                                        }
+                                                                                        onMouseLeave={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "transparent")
+                                                                                        }
                                                                                     >
                                                                                         <div
                                                                                             style={{
@@ -2785,6 +3264,9 @@ export default function DashboardTab(props) {
                                                                             total
                                                                         }
                                                                         sub="Total"
+                                                                        onSegmentClick={
+                                                                            handlePenerbitClick
+                                                                        }
                                                                     />
                                                                     <div
                                                                         style={{
@@ -2810,13 +3292,30 @@ export default function DashboardTab(props) {
                                                                                         key={
                                                                                             idx
                                                                                         }
+                                                                                        onClick={() =>
+                                                                                            handlePenerbitClick(
+                                                                                                item,
+                                                                                            )
+                                                                                        }
+                                                                                        title="Klik untuk lihat daftar sekolah"
                                                                                         style={{
                                                                                             display:
                                                                                                 "flex",
                                                                                             alignItems:
                                                                                                 "center",
                                                                                             gap: 6,
+                                                                                            cursor: "pointer",
+                                                                                            borderRadius: 4,
+                                                                                            padding: "1px 2px",
                                                                                         }}
+                                                                                        onMouseEnter={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "#f1f5f9")
+                                                                                        }
+                                                                                        onMouseLeave={(e) =>
+                                                                                            (e.currentTarget.style.background =
+                                                                                                "transparent")
+                                                                                        }
                                                                                     >
                                                                                         <div
                                                                                             style={{

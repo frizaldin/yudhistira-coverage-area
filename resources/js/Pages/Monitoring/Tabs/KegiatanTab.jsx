@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, router } from "@inertiajs/react";
 import {
     T, S, Card, Badge, Donut, StatCard, KecamatanChoroplethMap,
@@ -19,12 +19,26 @@ export default function KegiatanTab(props) {
         showScoreInfo, setShowScoreInfo,
         sekolahPage, setSekolahPage,
         handleSpAreaChange, applySpFilter,
-        sekolahPerPage
+        sekolahPerPage,
+        kegiatanAktivitasFilter, setKegiatanAktivitasFilter,
     } = props;
 
     const [kegiatanPage, setKegiatanPage] = useState(1);
     const kegiatanPerPage = 10;
     const formatNumber = (num) => new Intl.NumberFormat("id-ID").format(num);
+
+    useEffect(() => {
+        setKegiatanPage(1);
+    }, [kegiatanAktivitasFilter]);
+
+    const filteredKegiatan = (kegiatanSales || []).filter((k) => {
+        if (!kegiatanAktivitasFilter) return true;
+        const akt = String(k.aktivitas || "").trim() || "Tidak Diketahui";
+        return (
+            akt.toLowerCase() ===
+            String(kegiatanAktivitasFilter).trim().toLowerCase()
+        );
+    });
 
     return (
         <>
@@ -245,6 +259,57 @@ export default function KegiatanTab(props) {
                                 style={{ flex: 1, minWidth: 300 }}
                                 noPad
                             >
+                                {kegiatanAktivitasFilter && (
+                                    <div
+                                        style={{
+                                            padding: "10px 16px",
+                                            borderBottom: `1px solid ${T.border}`,
+                                            background: "#f0fdf4",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                        }}
+                                    >
+                                        <span
+                                            style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: 6,
+                                                padding: "4px 10px",
+                                                borderRadius: 99,
+                                                background: "#ecfdf5",
+                                                border: "1px solid #a7f3d0",
+                                                fontSize: 11,
+                                                fontWeight: 700,
+                                                color: "#047857",
+                                            }}
+                                        >
+                                            <i className="bi bi-funnel-fill" style={{ fontSize: 10 }} />
+                                            Aktivitas: {kegiatanAktivitasFilter}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setKegiatanAktivitasFilter?.("");
+                                                    setKegiatanPage(1);
+                                                }}
+                                                style={{
+                                                    border: "none",
+                                                    background: "transparent",
+                                                    color: "#047857",
+                                                    cursor: "pointer",
+                                                    padding: 0,
+                                                    fontSize: 14,
+                                                    lineHeight: 1,
+                                                }}
+                                            >
+                                                ×
+                                            </button>
+                                        </span>
+                                        <span style={{ fontSize: 11, color: T.slate }}>
+                                            {filteredKegiatan.length} kegiatan
+                                        </span>
+                                    </div>
+                                )}
                                 <div style={{ overflowX: "auto" }}>
                                     <table
                                         style={{
@@ -314,9 +379,9 @@ export default function KegiatanTab(props) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {kegiatanSales &&
-                                            kegiatanSales.length > 0 ? (
-                                                kegiatanSales
+                                            {filteredKegiatan &&
+                                            filteredKegiatan.length > 0 ? (
+                                                filteredKegiatan
                                                     .slice(
                                                         (kegiatanPage - 1) *
                                                             kegiatanPerPage,
@@ -424,8 +489,8 @@ export default function KegiatanTab(props) {
                                     </table>
                                 </div>
                                 {/* Pagination Controls */}
-                                {kegiatanSales &&
-                                    kegiatanSales.length > kegiatanPerPage && (
+                                {filteredKegiatan &&
+                                    filteredKegiatan.length > kegiatanPerPage && (
                                         <div
                                             style={{
                                                 display: "flex",
@@ -449,9 +514,9 @@ export default function KegiatanTab(props) {
                                                 {Math.min(
                                                     kegiatanPage *
                                                         kegiatanPerPage,
-                                                    kegiatanSales.length,
+                                                    filteredKegiatan.length,
                                                 )}{" "}
-                                                dari {kegiatanSales.length}
+                                                dari {filteredKegiatan.length}
                                             </div>
                                             <div
                                                 style={{
@@ -494,7 +559,7 @@ export default function KegiatanTab(props) {
                                                         setKegiatanPage((p) =>
                                                             Math.min(
                                                                 Math.ceil(
-                                                                    kegiatanSales.length /
+                                                                    filteredKegiatan.length /
                                                                         kegiatanPerPage,
                                                                 ),
                                                                 p + 1,
@@ -504,7 +569,7 @@ export default function KegiatanTab(props) {
                                                     disabled={
                                                         kegiatanPage ===
                                                         Math.ceil(
-                                                            kegiatanSales.length /
+                                                            filteredKegiatan.length /
                                                                 kegiatanPerPage,
                                                         )
                                                     }
@@ -516,7 +581,7 @@ export default function KegiatanTab(props) {
                                                         backgroundColor:
                                                             kegiatanPage ===
                                                             Math.ceil(
-                                                                kegiatanSales.length /
+                                                                filteredKegiatan.length /
                                                                     kegiatanPerPage,
                                                             )
                                                                 ? "#f8fafc"
@@ -524,7 +589,7 @@ export default function KegiatanTab(props) {
                                                         color:
                                                             kegiatanPage ===
                                                             Math.ceil(
-                                                                kegiatanSales.length /
+                                                                filteredKegiatan.length /
                                                                     kegiatanPerPage,
                                                             )
                                                                 ? "#cbd5e1"
@@ -532,7 +597,7 @@ export default function KegiatanTab(props) {
                                                         cursor:
                                                             kegiatanPage ===
                                                             Math.ceil(
-                                                                kegiatanSales.length /
+                                                                filteredKegiatan.length /
                                                                     kegiatanPerPage,
                                                             )
                                                                 ? "not-allowed"

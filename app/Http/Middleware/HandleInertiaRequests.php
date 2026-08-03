@@ -87,6 +87,9 @@ class HandleInertiaRequests extends Middleware
                 'privacy_policy' => $configuration->privacy_policy,
                 'prev_year' => $configuration->prev_year ?? '2025',
                 'target_year' => $configuration->target_year ?? '2026',
+                'sales_score_weights' => $configuration
+                    ? $configuration->resolvedSalesScoreWeights()
+                    : \App\Models\Configuration::defaultSalesScoreWeights(),
                 'updated_at' => $configuration->updated_at,
             ]
         ];

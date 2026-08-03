@@ -24,6 +24,8 @@ export default function SekolahTab(props) {
         sekolahJenjang, setSekolahJenjang,
         sekolahStatus, setSekolahStatus,
         sekolahSort, setSekolahSort,
+        sekolahChartFilter,
+        clearSekolahChartFilter,
         filteredListSekolah
     } = props;
 
@@ -105,6 +107,41 @@ export default function SekolahTab(props) {
                                     <option value="1">Area Cover</option>
                                     <option value="0">Non Area Cover</option>
                                 </select>
+                                {sekolahChartFilter && (
+                                    <div
+                                        style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: 6,
+                                            padding: "5px 10px",
+                                            borderRadius: 99,
+                                            background: "#eff6ff",
+                                            border: "1px solid #bfdbfe",
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                            color: "#1d4ed8",
+                                        }}
+                                    >
+                                        <i className="bi bi-funnel-fill" style={{ fontSize: 10 }} />
+                                        {sekolahChartFilter.label || "Filter chart"}
+                                        <button
+                                            type="button"
+                                            onClick={() => clearSekolahChartFilter?.()}
+                                            title="Hapus filter"
+                                            style={{
+                                                border: "none",
+                                                background: "transparent",
+                                                color: "#1d4ed8",
+                                                cursor: "pointer",
+                                                padding: 0,
+                                                lineHeight: 1,
+                                                fontSize: 14,
+                                            }}
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                             <div style={{ overflowX: "auto" }}>
                                 <table
@@ -276,33 +313,6 @@ export default function SekolahTab(props) {
                                                         : "↓"
                                                     : ""}
                                             </th>
-                                            <th
-                                                style={{
-                                                    ...S.th,
-                                                    textAlign: "center",
-                                                    width: 50,
-                                                }}
-                                            >
-                                                2023
-                                            </th>
-                                            <th
-                                                style={{
-                                                    ...S.th,
-                                                    textAlign: "center",
-                                                    width: 50,
-                                                }}
-                                            >
-                                                2024
-                                            </th>
-                                            <th
-                                                style={{
-                                                    ...S.th,
-                                                    textAlign: "center",
-                                                    width: 50,
-                                                }}
-                                            >
-                                                2025
-                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -314,7 +324,7 @@ export default function SekolahTab(props) {
                                                 return (
                                                     <tr>
                                                         <td
-                                                            colSpan="10"
+                                                            colSpan="7"
                                                             style={{
                                                                 ...S.td,
                                                                 textAlign:
@@ -369,7 +379,7 @@ export default function SekolahTab(props) {
                                                     >
                                                         <tr>
                                                             <td
-                                                                colSpan="10"
+                                                                colSpan="7"
                                                                 style={{
                                                                     ...S.td,
                                                                     fontWeight:
@@ -482,171 +492,6 @@ export default function SekolahTab(props) {
                                                                         >
                                                                             {s.sumber_dana ||
                                                                                 "-"}
-                                                                        </td>
-                                                                        <td
-                                                                            style={{
-                                                                                ...S.td,
-                                                                                textAlign:
-                                                                                    "center",
-                                                                            }}
-                                                                        >
-                                                                            {s.realisasi_2023 ? (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display:
-                                                                                            "flex",
-                                                                                        justifyContent:
-                                                                                            "center",
-                                                                                        alignItems:
-                                                                                            "center",
-                                                                                        width: 24,
-                                                                                        height: 24,
-                                                                                        borderRadius:
-                                                                                            "50%",
-                                                                                        background:
-                                                                                            "#f0fdf4",
-                                                                                        color: T.green,
-                                                                                        margin: "0 auto",
-                                                                                        fontWeight:
-                                                                                            "bold",
-                                                                                    }}
-                                                                                >
-                                                                                    ✓
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display:
-                                                                                            "flex",
-                                                                                        justifyContent:
-                                                                                            "center",
-                                                                                        alignItems:
-                                                                                            "center",
-                                                                                        width: 24,
-                                                                                        height: 24,
-                                                                                        borderRadius:
-                                                                                            "50%",
-                                                                                        background:
-                                                                                            "#fef2f2",
-                                                                                        color: T.red,
-                                                                                        margin: "0 auto",
-                                                                                        fontWeight:
-                                                                                            "bold",
-                                                                                    }}
-                                                                                >
-                                                                                    ✗
-                                                                                </div>
-                                                                            )}
-                                                                        </td>
-                                                                        <td
-                                                                            style={{
-                                                                                ...S.td,
-                                                                                textAlign:
-                                                                                    "center",
-                                                                            }}
-                                                                        >
-                                                                            {s.realisasi_2024 ? (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display:
-                                                                                            "flex",
-                                                                                        justifyContent:
-                                                                                            "center",
-                                                                                        alignItems:
-                                                                                            "center",
-                                                                                        width: 24,
-                                                                                        height: 24,
-                                                                                        borderRadius:
-                                                                                            "50%",
-                                                                                        background:
-                                                                                            "#f0fdf4",
-                                                                                        color: T.green,
-                                                                                        margin: "0 auto",
-                                                                                        fontWeight:
-                                                                                            "bold",
-                                                                                    }}
-                                                                                >
-                                                                                    ✓
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display:
-                                                                                            "flex",
-                                                                                        justifyContent:
-                                                                                            "center",
-                                                                                        alignItems:
-                                                                                            "center",
-                                                                                        width: 24,
-                                                                                        height: 24,
-                                                                                        borderRadius:
-                                                                                            "50%",
-                                                                                        background:
-                                                                                            "#fef2f2",
-                                                                                        color: T.red,
-                                                                                        margin: "0 auto",
-                                                                                        fontWeight:
-                                                                                            "bold",
-                                                                                    }}
-                                                                                >
-                                                                                    ✗
-                                                                                </div>
-                                                                            )}
-                                                                        </td>
-                                                                        <td
-                                                                            style={{
-                                                                                ...S.td,
-                                                                                textAlign:
-                                                                                    "center",
-                                                                            }}
-                                                                        >
-                                                                            {s.realisasi_2025 ? (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display:
-                                                                                            "flex",
-                                                                                        justifyContent:
-                                                                                            "center",
-                                                                                        alignItems:
-                                                                                            "center",
-                                                                                        width: 24,
-                                                                                        height: 24,
-                                                                                        borderRadius:
-                                                                                            "50%",
-                                                                                        background:
-                                                                                            "#f0fdf4",
-                                                                                        color: T.green,
-                                                                                        margin: "0 auto",
-                                                                                        fontWeight:
-                                                                                            "bold",
-                                                                                    }}
-                                                                                >
-                                                                                    ✓
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display:
-                                                                                            "flex",
-                                                                                        justifyContent:
-                                                                                            "center",
-                                                                                        alignItems:
-                                                                                            "center",
-                                                                                        width: 24,
-                                                                                        height: 24,
-                                                                                        borderRadius:
-                                                                                            "50%",
-                                                                                        background:
-                                                                                            "#fef2f2",
-                                                                                        color: T.red,
-                                                                                        margin: "0 auto",
-                                                                                        fontWeight:
-                                                                                            "bold",
-                                                                                    }}
-                                                                                >
-                                                                                    ✗
-                                                                                </div>
-                                                                            )}
                                                                         </td>
                                                                     </tr>
                                                                 );

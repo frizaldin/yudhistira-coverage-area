@@ -29,6 +29,7 @@ Route::prefix('monitoring')->name('monitoring.')->group(function () {
     
     // Pengaturan Route
     Route::get('/pengaturan',             [MonitoringController::class, 'pengaturan'])->name('pengaturan');
+    Route::put('/pengaturan/sales-score-weights', [MonitoringController::class, 'updateSalesScoreWeights'])->name('pengaturan.sales-score-weights');
 
     Route::get('/uncovered-customers',    [MonitoringController::class, 'uncoveredCustomers'])->name('uncovered-customers');
     Route::get('/area-kosong',            [MonitoringController::class, 'areaKosong'])->name('area-kosong');

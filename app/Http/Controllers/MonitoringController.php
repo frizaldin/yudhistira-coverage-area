@@ -326,6 +326,7 @@ class MonitoringController extends Controller
         $rankingKecamatan = array_slice($rankingKecamatan, 0, 50);
 
         $schools = (clone $customerQuery)
+            ->with('cabang')
             ->whereNotNull('total_student')
             ->orderBy('total_student', 'desc')
             ->take(10)
@@ -335,7 +336,7 @@ class MonitoringController extends Controller
                     'no' => $i + 1,
                     'name' => $c->name,
                     'grade' => $c->jenjang ?: 'N/A',
-                    'branch' => $c->cabang ? $c->cabang->nama_cabang : 'N/A',
+                    'branch' => $c->cabang ? $c->cabang->nama_cabang : ($c->kecamatan_name ?: 'N/A'),
                     'siswa' => number_format($c->total_student, 0, ',', '.'),
                     'status' => $c->is_active ? 'Customer' : 'Belum Customer',
                 ];
@@ -1091,8 +1092,6 @@ class MonitoringController extends Controller
             return redirect()->route('monitoring.area.select');
         }
 
-        $areaIds = [$area->id];
-
         // Fetch cabangs for the selector
         $cabangs = \App\Models\Cabang::where('area_id', $area->id)->orderBy('nama_cabang')->get();
         $selectedCabang = $request->query('cabang', '');
@@ -1116,57 +1115,242 @@ class MonitoringController extends Controller
             }
         }
 
-        $data = $this->buildDashboardData($areaIds, $area->name, $selectedCabang);
+        // Foundation: same pipeline as Cabang/Sales (AREA scope)
+        $data = $this->buildUniversalDashboardData('AREA', $area->id);
 
-        $mapMarkers = [];
-        if ($selectedCabang) {
-            $kecamatans = \DB::table('kecamatans')->where('cabang_id', $selectedCabang)->whereNotNull('geomap')->get();
-            foreach ($kecamatans as $kec) {
-                // geomap could be a JSON string or just "lat,lng" string. Let's try parsing it.
-                // Depending on data format. Let's assume it's standard lat/lng object or string.
-                $geomap = json_decode($kec->geomap, true);
-                if ($geomap && isset($geomap['lat']) && isset($geomap['lng'])) {
-                    $mapMarkers[] = [
-                        'lat' => $geomap['lat'],
-                        'lng' => $geomap['lng'],
-                        'label' => $kec->camat_name
-                    ];
-                } elseif (is_string($kec->geomap) && strpos($kec->geomap, ',') !== false) {
-                    $parts = explode(',', $kec->geomap);
-                    if (count($parts) >= 2) {
-                        $mapMarkers[] = [
-                            'lat' => (float) trim($parts[0]),
-                            'lng' => (float) trim($parts[1]),
-                            'label' => $kec->camat_name
-                        ];
-                    }
-                }
+        /* ── Ranking Cabang (unik level Area) ── */
+        $custCounts = Customer::whereIn('cabang_id', $cabangs->pluck('id'))
+            ->selectRaw('cabang_id, count(*) as count')
+            ->groupBy('cabang_id')
+            ->pluck('count', 'cabang_id');
+
+        $acCustCounts = Customer::whereIn('cabang_id', $cabangs->pluck('id'))
+            ->where('is_active', true)
+            ->selectRaw('cabang_id, count(*) as count')
+            ->groupBy('cabang_id')
+            ->pluck('count', 'cabang_id');
+
+        $salesCountPerCabang = Customer::whereIn('cabang_id', $cabangs->pluck('id'))
+            ->whereNotNull('sales_id')
+            ->selectRaw('cabang_id, COUNT(DISTINCT sales_id) as cnt')
+            ->groupBy('cabang_id')
+            ->pluck('cnt', 'cabang_id');
+
+        $ranking = [];
+        foreach ($cabangs as $cabang) {
+            $custCount = $custCounts[$cabang->id] ?? 0;
+            $acCust = $acCustCounts[$cabang->id] ?? 0;
+            $ranking[] = [
+                'id' => $cabang->id,
+                'name' => $cabang->nama_cabang,
+                'cust' => (int) $acCust,
+                'total' => (int) $custCount,
+                'pct' => $custCount > 0 ? round(($acCust / $custCount) * 100) : 0,
+                'sales_count' => (int) ($salesCountPerCabang[$cabang->id] ?? 0),
+            ];
+        }
+        usort($ranking, fn($a, $b) => $b['pct'] <=> $a['pct']);
+        $ranking = array_map(fn($r, $i) => ['no' => $i + 1] + $r, $ranking, array_keys($ranking));
+
+        /* ── Uncovered per Cabang ── */
+        $cabangsMap = $cabangs->keyBy('id');
+        $rawUncovered = Customer::where(function ($q) {
+                $q->where('is_active', false)->orWhereNull('is_active');
+            })
+            ->where('area_id', $area->id)
+            ->select('cabang_id', DB::raw('COUNT(*) as count'), DB::raw('SUM(total_student) as potensi'))
+            ->groupBy('cabang_id')
+            ->get();
+
+        $uncovered = [];
+        foreach ($rawUncovered as $r) {
+            if (!$r->cabang_id || !isset($cabangsMap[$r->cabang_id])) {
+                continue;
+            }
+            $uncovered[] = [
+                'name' => $cabangsMap[$r->cabang_id]->nama_cabang,
+                'count' => (int) $r->count,
+                'potensi' => (int) $r->potensi,
+            ];
+        }
+        usort($uncovered, fn($a, $b) => $b['count'] <=> $a['count']);
+        foreach ($uncovered as $i => &$v) {
+            $v['no'] = $i + 1;
+        }
+        unset($v);
+
+        /* ── Area Governance (dari ranking kecamatan) ── */
+        $govCounts = ['covered' => 0, 'low' => 0, 'opp' => 0, 'high_opp' => 0];
+        $tKec = 0;
+        foreach ($data['rankingKecamatan'] ?? [] as $kec) {
+            $dCust = $kec['total'] ?? 0;
+            if ($dCust == 0) {
+                continue;
+            }
+            $tKec++;
+            $p = $kec['pct'] ?? 0;
+            if ($p >= 70) {
+                $govCounts['covered']++;
+            } elseif ($p >= 30) {
+                $govCounts['low']++;
+            } elseif ($p >= 10) {
+                $govCounts['opp']++;
+            } else {
+                $govCounts['high_opp']++;
             }
         }
+        $gov = [
+            [
+                'label' => 'Covered',
+                'sub' => 'Kecamatan dengan coverage ≥ 70%',
+                'pct' => $tKec > 0 ? round(($govCounts['covered'] / $tKec) * 100) . '%' : '0%',
+                'count' => $govCounts['covered'],
+                'color' => '#34d399',
+                'icon' => 'bi-shield-fill-check',
+            ],
+            [
+                'label' => 'Low Coverage',
+                'sub' => 'Kecamatan dengan coverage 30–70%',
+                'pct' => $tKec > 0 ? round(($govCounts['low'] / $tKec) * 100) . '%' : '0%',
+                'count' => $govCounts['low'],
+                'color' => '#60a5fa',
+                'icon' => 'bi-exclamation-triangle-fill',
+            ],
+            [
+                'label' => 'Opportunity',
+                'sub' => 'Kecamatan dengan coverage 10–30%',
+                'pct' => $tKec > 0 ? round(($govCounts['opp'] / $tKec) * 100) . '%' : '0%',
+                'count' => $govCounts['opp'],
+                'color' => '#fbbf24',
+                'icon' => 'bi-lightbulb-fill',
+            ],
+            [
+                'label' => 'High Opportunity',
+                'sub' => 'Kecamatan dengan coverage < 10%',
+                'pct' => $tKec > 0 ? round(($govCounts['high_opp'] / $tKec) * 100) . '%' : '0%',
+                'count' => $govCounts['high_opp'],
+                'color' => '#fb923c',
+                'icon' => 'bi-fire',
+            ],
+        ];
+
+        /* ── KPI strip agregat area (tanpa skor pribadi) ── */
+        $configYear = optional(\App\Models\Configuration::first())->target_year;
+        $targetYear = (int) ($request->query('tahun') ?: ($configYear ?: date('Y')));
+        $prevY = $targetYear - 1;
+        $customerIds = Customer::where('area_id', $area->id)->pluck('id');
+
+        $planAgg = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->whereIn('year', [$targetYear, $prevY])
+            ->selectRaw('year, SUM(real_exemplar) as real_sum, SUM(target_exemplar) as target_sum')
+            ->groupBy('year')
+            ->get()
+            ->keyBy('year');
+
+        $totalRealisasiTargetYear = (int) ($planAgg[$targetYear]->real_sum ?? 0);
+        $totalRealisasiLaluTargetYear = (int) ($planAgg[$prevY]->real_sum ?? 0);
+        $totalRencanaJualTargetYear = (int) ($planAgg[$targetYear]->target_sum ?? 0);
+
+        $totalAreaCover = (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->where('year', $targetYear)
+            ->where('is_ac', 1)
+            ->distinct('customer_id')
+            ->count('customer_id');
+
+        $customerWithRealisasi = (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->where('year', $targetYear)
+            ->where('real_exemplar', '>', 0)
+            ->distinct('customer_id')
+            ->count('customer_id');
+
+        $salesIdsInArea = Customer::where('area_id', $area->id)
+            ->whereNotNull('sales_id')
+            ->distinct()
+            ->pluck('sales_id');
+        $activityCount = (int) \App\Models\SalesActivity::whereIn('sales_id', $salesIdsInArea)->count();
+
+        /* ── Komposisi pasar area (fase 3) ── */
+        $segmenBreakdown = [
+            [
+                'label' => 'Negeri (BOS)',
+                'value' => (int) Customer::where('area_id', $area->id)->where('sumber_dana', 'BOS')->count(),
+                'color' => '#1d4ed8',
+            ],
+            [
+                'label' => 'Swasta',
+                'value' => (int) Customer::where('area_id', $area->id)->where('sumber_dana', 'like', 'SWA%')->count(),
+                'color' => '#f59e0b',
+            ],
+        ];
+
+        $prevRealIds = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->where('year', $prevY)
+            ->where('real_exemplar', '>', 0)
+            ->pluck('customer_id')
+            ->unique();
+        $currRealIds = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->where('year', $targetYear)
+            ->where('real_exemplar', '>', 0)
+            ->pluck('customer_id')
+            ->unique();
+
+        $customerStatusBreakdown = [
+            [
+                'label' => 'Baru',
+                'value' => $currRealIds->diff($prevRealIds)->count(),
+                'color' => '#10b981',
+            ],
+            [
+                'label' => 'Retain',
+                'value' => $prevRealIds->intersect($currRealIds)->count(),
+                'color' => '#3b82f6',
+            ],
+            [
+                'label' => 'Loss',
+                'value' => $prevRealIds->diff($currRealIds)->count(),
+                'color' => '#ef4444',
+            ],
+        ];
+
+        $salesScoreRanking = $this->buildReportRows(
+            new \Illuminate\Http\Request([
+                'area_id' => $area->id,
+                'sort' => 'total_score',
+                'dir' => 'desc',
+            ]),
+            $targetYear
+        )->take(10)->values()->all();
 
         $pageTitle = 'Dashboard Area';
         $displayName = strtoupper($area->name);
         $description = 'Ringkasan performa area dan perbandingan antar cabang dalam ' . ucwords(strtolower($area->name)) . '.';
 
-        if ($selectedCabang) {
-            $cabang = $cabangs->firstWhere('id', $selectedCabang);
-            if ($cabang) {
-                $pageTitle = 'Dashboard Cabang';
-                $displayName = strtoupper('CABANG ' . $cabang->nama_cabang);
-                $description = 'Ringkasan performa untuk Cabang ' . ucwords(strtolower($cabang->nama_cabang)) . ' pada area ' . ucwords(strtolower($area->name)) . '.';
-            }
-        }
-
         return Inertia::render('Monitoring/Area', array_merge($data, [
-            'activeNav'    => 'area',
-            'pageTitle'    => $pageTitle,
-            'areaName'     => $displayName,
-            'description'  => $description,
+            'activeNav' => 'area',
+            'pageTitle' => $pageTitle,
+            'cabangName' => $displayName,
+            'areaName' => $displayName,
+            'description' => $description,
             'provinceCode' => $area->id,
-            'cities'       => collect([]),
-            'mapMarkers'   => $mapMarkers,
-            'cabangs'      => $cabangs,
+            'cities' => collect([]),
+            'cabangs' => $cabangs,
             'selectedCabang' => $selectedCabang,
+            'ranking' => $ranking,
+            'uncovered' => $uncovered,
+            'gov' => $gov,
+            'segmenBreakdown' => $segmenBreakdown,
+            'customerStatusBreakdown' => $customerStatusBreakdown,
+            'salesScoreRanking' => $salesScoreRanking,
+            'insights' => [
+                'totalAreaCover' => $totalAreaCover,
+                'totalRealisasiTargetYear' => $totalRealisasiTargetYear,
+                'totalRealisasiLaluTargetYear' => $totalRealisasiLaluTargetYear,
+                'totalRencanaJualTargetYear' => $totalRencanaJualTargetYear,
+                'customerWithRealisasi' => $customerWithRealisasi,
+                'targetYear' => $targetYear,
+                'activityCount' => $activityCount,
+                'totalSekolah' => $data['realStats']['total_sekolah'] ?? 0,
+            ],
         ]));
     }
 
@@ -1246,10 +1430,55 @@ class MonitoringController extends Controller
     /** GET /monitoring/pengaturan */
     public function pengaturan()
     {
+        $config = \App\Models\Configuration::orderBy('id', 'desc')->first();
+        $weights = $config
+            ? $config->resolvedSalesScoreWeights()
+            : \App\Models\Configuration::defaultSalesScoreWeights();
+
         return Inertia::render('Monitoring/Pengaturan', [
             'activeNav' => 'setting',
             'status' => session('status'),
+            'salesScoreWeights' => $weights,
+            'salesScoreWeightLabels' => \App\Models\Configuration::salesScoreWeightLabels(),
+            'canEditSalesScoreWeights' => auth()->user()?->level === 'nasional',
         ]);
+    }
+
+    /** PUT /monitoring/pengaturan/sales-score-weights */
+    public function updateSalesScoreWeights(\Illuminate\Http\Request $request)
+    {
+        if (auth()->user()?->level !== 'nasional') {
+            abort(403, 'Hanya level nasional yang dapat mengubah bobot Sales Score.');
+        }
+
+        $keys = array_keys(\App\Models\Configuration::defaultSalesScoreWeights());
+        $rules = [];
+        foreach ($keys as $key) {
+            $rules["weights.{$key}"] = 'required|numeric|min:0|max:100';
+        }
+        $validated = $request->validate($rules);
+
+        $weights = [];
+        foreach ($keys as $key) {
+            $weights[$key] = round((float) $validated['weights'][$key], 2);
+        }
+
+        $sum = array_sum($weights);
+        if (abs($sum - 100) > 0.05) {
+            return back()->withErrors([
+                'weights' => "Total bobot harus 100%. Saat ini: {$sum}%.",
+            ])->withInput();
+        }
+
+        $config = \App\Models\Configuration::orderBy('id', 'desc')->first();
+        if (!$config) {
+            return back()->withErrors(['weights' => 'Konfigurasi belum tersedia.']);
+        }
+
+        $config->sales_score_weights = $weights;
+        $config->save();
+
+        return back()->with('status', 'sales-score-weights-updated');
     }
 
     /** Resolve scope helper */
@@ -2633,11 +2862,14 @@ class MonitoringController extends Controller
             // KPI SCORE CALCULATION
             // ══════════════════════════════════════════════
 
-            // 1. Area Cover Growth: current vs previous year
-            $acPrev = $acPrevCount;
+            $currentYear = $filterTahun ?: date('Y');
             $acCurr = $acCurrCount;
-            $acGrowthPct = $acPrev > 0 ? round((($acCurr - $acPrev) / $acPrev) * 100, 1) : ($acCurr > 0 ? 100 : 0);
-            // Score: growth >= 20% = 100, 0% = 50, < -20% = 0
+            $acPrev = $acPrevCount;
+
+            // Pendukung: Area Cover Growth
+            $acGrowthPct = $acPrev > 0
+                ? round((($acCurr - $acPrev) / $acPrev) * 100, 1)
+                : ($acCurr > 0 ? 100 : 0);
             if ($acGrowthPct >= 20) {
                 $acScore = 100;
             } elseif ($acGrowthPct >= 0) {
@@ -2647,13 +2879,41 @@ class MonitoringController extends Controller
             }
             $acScore = round($acScore, 1);
 
-            // 2. Intensitas Aktivitas: rata-rata kegiatan per bulan
+            // 1. Realisasi tahun lalu vs tahun ini (growth volume eksemplar)
+            $realCurr = (float) $totalRealisasiTargetYear;
+            $realPrev = (float) $totalRealisasiLaluTargetYear;
+            $realGrowthPct = $realPrev > 0
+                ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
+                : ($realCurr > 0 ? 100 : 0);
+            if ($realGrowthPct >= 20) {
+                $realisasiYoyScore = 100;
+            } elseif ($realGrowthPct >= 0) {
+                $realisasiYoyScore = 50 + ($realGrowthPct / 20) * 50;
+            } else {
+                $realisasiYoyScore = max(0, 50 + ($realGrowthPct / 20) * 50);
+            }
+            $realisasiYoyScore = round($realisasiYoyScore, 1);
+
+            // 2. Aktivitas SP vs Area Cover
+            $spCount = $kegiatanSales->filter(function ($item) {
+                return strtoupper(trim((string) ($item->aktivitas ?? ''))) === 'SP';
+            })->count();
+            $areaCoverForScore = max(1, (int) $acCurr);
+            $spVsAcPct = round(($spCount / $areaCoverForScore) * 100, 1);
+            $spVsAcScore = min(100, $spVsAcPct);
+
+            // 3. Achievement Target (realisasi / rencana jual)
+            $targetTotal = (float) $totalRencanaJualTargetYear;
+            $achievementPct = $targetTotal > 0
+                ? round(($realCurr / $targetTotal) * 100, 1)
+                : ($realCurr > 0 ? 100 : 0);
+            $achievementScore = min(100, max(0, $achievementPct));
+
+            // Pendukung: Intensitas aktivitas + chart bulanan
             $activitiesByMonth = $kegiatanSales->groupBy(function ($item) {
                 $date = $item->tanggal;
                 if (!$date) return 'unknown';
                 try {
-                    // Coba parse dengan beberapa format karena data lama mungkin d/m/Y
-                    // sedangkan data baru m/d/Y
                     if (str_contains($date, '-')) {
                         $d = \Carbon\Carbon::parse($date);
                     } else {
@@ -2676,68 +2936,133 @@ class MonitoringController extends Controller
             $totalActivities = $kegiatanSales->count();
             $activeMonths = max(1, $activitiesByMonth->count());
             $avgPerMonth = round($totalActivities / $activeMonths, 1);
-            $idealPerMonth = 20;
-            $activityScore = min(100, round(($avgPerMonth / $idealPerMonth) * 100, 1));
+            $activityScore = min(100, round(($avgPerMonth / 20) * 100, 1));
 
             $monthlyActivities = [];
-            // Daftar bulan dari Oktober sampai September (12 bulan)
             $monthsToDisplay = [
                 10 => 'Okt', 11 => 'Nov', 12 => 'Des',
                 1 => 'Jan', 2 => 'Feb', 3 => 'Mar',
                 4 => 'Apr', 5 => 'Mei', 6 => 'Jun',
                 7 => 'Jul', 8 => 'Agu', 9 => 'Sep'
             ];
-            $currentYear = $filterTahun ?: date('Y');
-            
+
             foreach ($monthsToDisplay as $m => $monthName) {
-                // Untuk Oktober, November, Desember gunakan tahun sebelumnya
                 $y = ($m >= 10) ? $currentYear - 1 : $currentYear;
                 $key = $y . '-' . str_pad($m, 2, '0', STR_PAD_LEFT);
+                $monthItems = $activitiesByMonth->has($key) ? $activitiesByMonth[$key] : collect();
+                $breakdown = $monthItems
+                    ->groupBy(function ($item) {
+                        $label = trim((string) ($item->aktivitas ?? ''));
+                        return $label !== '' ? $label : 'Tidak Diketahui';
+                    })
+                    ->map(fn ($group, $label) => [
+                        'label' => $label,
+                        'value' => $group->count(),
+                    ])
+                    ->sortByDesc('value')
+                    ->values()
+                    ->all();
+
                 $monthlyActivities[] = [
                     'month' => $monthName,
-                    'count' => $activitiesByMonth->has($key) ? $activitiesByMonth[$key]->count() : 0,
+                    'year' => (int) $y,
+                    'count' => $monthItems->count(),
+                    'breakdown' => $breakdown,
                 ];
             }
 
-            // 3. Realisasi Rate: sekolah dengan realisasi / total area cover
-            $totalAreaCover = $listSekolah->count();
+            // Pendukung: Realisasi Sekolah (sekolah ber-realisasi di Area Cover / Area Cover)
+            $areaCoverCount = max(0, (int) $acCurr);
             $sekolahDenganRealisasi = $listSekolah->filter(function ($s) {
-                return ($s->real_exemplar_current ?? 0) > 0;
+                return ((int) ($s->is_active ?? 0) === 1)
+                    && (($s->real_exemplar_current ?? 0) > 0);
             })->count();
-            $realisasiPct = $totalAreaCover > 0 ? round(($sekolahDenganRealisasi / $totalAreaCover) * 100, 1) : 0;
+            $realisasiPct = $areaCoverCount > 0
+                ? round(($sekolahDenganRealisasi / $areaCoverCount) * 100, 1)
+                : 0;
             $realisasiScore = round($realisasiPct, 1);
 
-            // Total KPI Score (equal weight: 33.3% each)
-            $totalKpiScore = round(($acScore + $activityScore + $realisasiScore) / 3, 1);
+            // Indikator aktivitas lain vs Area Cover tidak masuk penilaian
+            // (hanya SP yang dihitung di skor utama)
+
+            // Total KPI Score = weighted average of 6 indicators
+            $scoreWeights = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+                ?->resolvedSalesScoreWeights()
+                ?? \App\Models\Configuration::defaultSalesScoreWeights();
+
+            $scoreMap = [
+                'realisasi_yoy' => $realisasiYoyScore,
+                'sp_vs_ac' => $spVsAcScore,
+                'achievement' => $achievementScore,
+                'ac_growth' => $acScore,
+                'activity' => $activityScore,
+                'realisasi_sekolah' => $realisasiScore,
+            ];
+            $totalKpiScore = \App\Models\Configuration::computeWeightedSalesScore($scoreMap, $scoreWeights);
 
             $salesRep = \App\Models\Sales::find($id);
             $kpiData = [
                 'salesName' => $salesRep ? $salesRep->name : 'Unknown Sales',
                 'totalScore' => $totalKpiScore,
                 'grade' => $totalKpiScore >= 80 ? 'Sangat Baik' : ($totalKpiScore >= 60 ? 'Baik' : ($totalKpiScore >= 40 ? 'Cukup' : 'Kurang')),
+                'weights' => $scoreWeights,
                 'components' => [
                     [
-                        'label' => 'Area Cover Growth',
-                        'score' => $acScore,
-                        'detail' => "AC " . ($currentYear - 1) . ": {$acPrev} → AC {$currentYear}: {$acCurr} (" . ($acGrowthPct >= 0 ? '+' : '') . "{$acGrowthPct}%)",
-                        'icon' => 'bi-graph-up-arrow',
-                        'color' => '#10b981',
+                        'key' => 'realisasi_yoy',
+                        'label' => 'Realisasi YoY',
+                        'score' => $realisasiYoyScore,
+                        'weight' => $scoreWeights['realisasi_yoy'] ?? 0,
+                        'detail' => "Realisasi " . ($currentYear - 1) . ": " . number_format($realPrev, 0, ',', '.') . " → {$currentYear}: " . number_format($realCurr, 0, ',', '.') . " (" . ($realGrowthPct >= 0 ? '+' : '') . "{$realGrowthPct}%)",
+                        'icon' => 'bi-arrow-left-right',
+                        'color' => '#3b82f6',
                     ],
                     [
-                        'label' => 'Intensitas Aktivitas',
-                        'score' => $activityScore,
-                        'detail' => "Rata-rata {$avgPerMonth} aktivitas/bulan ({$totalActivities} total)",
+                        'key' => 'sp_vs_ac',
+                        'label' => 'SP vs Area Cover',
+                        'score' => $spVsAcScore,
+                        'weight' => $scoreWeights['sp_vs_ac'] ?? 0,
+                        'detail' => "SP {$spCount} vs Area Cover {$acCurr} ({$spVsAcPct}%)",
                         'icon' => 'bi-lightning-charge-fill',
                         'color' => '#f59e0b',
                     ],
                     [
+                        'key' => 'achievement',
+                        'label' => 'Achievement Target',
+                        'score' => $achievementScore,
+                        'weight' => $scoreWeights['achievement'] ?? 0,
+                        'detail' => "Realisasi " . number_format($realCurr, 0, ',', '.') . " / Target " . number_format($targetTotal, 0, ',', '.') . " ({$achievementPct}%)",
+                        'icon' => 'bi-trophy-fill',
+                        'color' => '#10b981',
+                    ],
+                    [
+                        'key' => 'ac_growth',
+                        'label' => 'Area Cover Growth',
+                        'score' => $acScore,
+                        'weight' => $scoreWeights['ac_growth'] ?? 0,
+                        'detail' => "AC " . ($currentYear - 1) . ": {$acPrev} → AC {$currentYear}: {$acCurr} (" . ($acGrowthPct >= 0 ? '+' : '') . "{$acGrowthPct}%)",
+                        'icon' => 'bi-graph-up-arrow',
+                        'color' => '#0d9488',
+                    ],
+                    [
+                        'key' => 'activity',
+                        'label' => 'Intensitas Aktivitas',
+                        'score' => $activityScore,
+                        'weight' => $scoreWeights['activity'] ?? 0,
+                        'detail' => "Rata-rata {$avgPerMonth} aktivitas/bulan ({$totalActivities} total)",
+                        'icon' => 'bi-activity',
+                        'color' => '#a855f7',
+                    ],
+                    [
+                        'key' => 'realisasi_sekolah',
                         'label' => 'Realisasi Sekolah',
                         'score' => $realisasiScore,
-                        'detail' => "{$sekolahDenganRealisasi} dari {$totalAreaCover} sekolah ({$realisasiPct}%)",
+                        'weight' => $scoreWeights['realisasi_sekolah'] ?? 0,
+                        'detail' => "{$sekolahDenganRealisasi} dari {$areaCoverCount} Area Cover ({$realisasiPct}%)",
                         'icon' => 'bi-check2-all',
-                        'color' => '#3b82f6',
+                        'color' => '#ef4444',
                     ],
                 ],
+                'extraIndicators' => [],
                 'monthlyActivities' => $monthlyActivities,
             ];
 
@@ -2751,6 +3076,7 @@ class MonitoringController extends Controller
                 $item['color'] = $pieColors[$index % count($pieColors)];
             }
             $kpiData['activityDistribution'] = $activityDistribution;
+            $kpiData['areaCover'] = (int) $acCurr;
 
             // Sumber Dana Distribution
             $sumberDanaDistribution = collect($areaCoverSekolah)->groupBy(function ($s) {
@@ -3509,7 +3835,32 @@ class MonitoringController extends Controller
             ->get()
             ->groupBy('sales_id');
 
-        $realisasiRows = DB::table('customers')
+        $volumeRows = DB::table('customers')
+            ->join('customer_plans', 'customers.id', '=', 'customer_plans.customer_id')
+            ->whereIn('customers.sales_id', $salesIds)
+            ->whereIn('customer_plans.year', [$year, $prevYear])
+            ->when($request->filled('area_id'), fn ($q) => $q->where('customers.area_id', $request->area_id))
+            ->when($request->filled('cabang_id'), fn ($q) => $q->where('customers.cabang_id', $request->cabang_id))
+            ->groupBy('customers.sales_id', 'customer_plans.year')
+            ->select(
+                'customers.sales_id',
+                'customer_plans.year',
+                DB::raw('SUM(customer_plans.real_exemplar) as real_sum'),
+                DB::raw('SUM(customer_plans.target_exemplar) as target_sum')
+            )
+            ->get()
+            ->groupBy('sales_id');
+
+        $schoolCountRows = DB::table('customers')
+            ->whereIn('sales_id', $salesIds)
+            ->when($request->filled('area_id'), fn ($q) => $q->where('area_id', $request->area_id))
+            ->when($request->filled('cabang_id'), fn ($q) => $q->where('cabang_id', $request->cabang_id))
+            ->groupBy('sales_id')
+            ->select('sales_id', DB::raw('COUNT(*) as total_sekolah'))
+            ->get()
+            ->keyBy('sales_id');
+
+        $schoolRealisasiRows = DB::table('customers')
             ->leftJoin('customer_plans', function ($join) use ($year) {
                 $join->on('customers.id', '=', 'customer_plans.customer_id')
                     ->where('customer_plans.year', $year);
@@ -3520,55 +3871,35 @@ class MonitoringController extends Controller
             ->groupBy('customers.sales_id')
             ->select(
                 'customers.sales_id',
-                DB::raw('COUNT(DISTINCT customers.id) as total_sekolah'),
-                DB::raw('COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi')
+                DB::raw('COUNT(DISTINCT CASE WHEN customer_plans.is_ac = 1 AND customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi')
             )
             ->get()
             ->keyBy('sales_id');
 
         $activities = \App\Models\SalesActivity::whereIn('sales_id', $salesIds)
-            ->get(['sales_id', 'tanggal'])
+            ->get(['sales_id', 'tanggal', 'aktivitas'])
             ->groupBy('sales_id');
 
         $salesList = \App\Models\Sales::whereIn('id', $salesIds)->orderBy('name')->get()->keyBy('id');
         $cabangs = \App\Models\Cabang::orderBy('nama_cabang')->get()->keyBy('id');
         $areas = \App\Models\Area::orderBy('name')->get()->keyBy('id');
-
-        $parseActivityMonth = function ($date) {
-            if (!$date) {
-                return null;
-            }
-            try {
-                if (str_contains($date, '-')) {
-                    $d = \Carbon\Carbon::parse($date);
-                } else {
-                    try {
-                        $d = \Carbon\Carbon::createFromFormat('m/d/Y', $date);
-                    } catch (\Exception $e) {
-                        try {
-                            $d = \Carbon\Carbon::createFromFormat('d/m/Y', $date);
-                        } catch (\Exception $e) {
-                            $d = \Carbon\Carbon::parse($date);
-                        }
-                    }
-                }
-                return $d->format('Y-m');
-            } catch (\Exception $e) {
-                return null;
-            }
-        };
+        $scoreWeights = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+            ?->resolvedSalesScoreWeights()
+            ?? \App\Models\Configuration::defaultSalesScoreWeights();
 
         $rows = $salesIds->map(function ($salesId) use (
             $salesList,
             $salesMeta,
             $acRows,
-            $realisasiRows,
+            $volumeRows,
+            $schoolCountRows,
+            $schoolRealisasiRows,
             $activities,
             $cabangs,
             $areas,
             $year,
             $prevYear,
-            $parseActivityMonth
+            $scoreWeights
         ) {
             $sales = $salesList->get($salesId);
             if (!$sales) {
@@ -3584,10 +3915,46 @@ class MonitoringController extends Controller
             $acForSales = $acRows->get($salesId) ?? collect();
             $acPrev = (int) ($acForSales->firstWhere('year', $prevYear)->cnt ?? 0);
             $acCurr = (int) ($acForSales->firstWhere('year', $year)->cnt ?? 0);
+
+            $volForSales = $volumeRows->get($salesId) ?? collect();
+            $realCurr = (float) ($volForSales->firstWhere('year', $year)->real_sum ?? 0);
+            $realPrev = (float) ($volForSales->firstWhere('year', $prevYear)->real_sum ?? 0);
+            $targetCurr = (float) ($volForSales->firstWhere('year', $year)->target_sum ?? 0);
+
+            $totalSekolah = (int) ($schoolCountRows->get($salesId)->total_sekolah ?? $meta->total_sekolah ?? 0);
+            $sekolahRealisasi = (int) ($schoolRealisasiRows->get($salesId)->sekolah_realisasi ?? 0);
+
+            // 1. Realisasi YoY
+            $realGrowthPct = $realPrev > 0
+                ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
+                : ($realCurr > 0 ? 100 : 0);
+            if ($realGrowthPct >= 20) {
+                $realisasiYoyScore = 100;
+            } elseif ($realGrowthPct >= 0) {
+                $realisasiYoyScore = 50 + ($realGrowthPct / 20) * 50;
+            } else {
+                $realisasiYoyScore = max(0, 50 + ($realGrowthPct / 20) * 50);
+            }
+            $realisasiYoyScore = round($realisasiYoyScore, 1);
+
+            // 2. SP vs Area Cover
+            $salesActivities = $activities->get($salesId) ?? collect();
+            $spCount = $salesActivities->filter(function ($a) {
+                return strtoupper(trim((string) ($a->aktivitas ?? ''))) === 'SP';
+            })->count();
+            $spVsAcPct = round(($spCount / max(1, $acCurr)) * 100, 1);
+            $spVsAcScore = min(100, $spVsAcPct);
+
+            // 3. Achievement Target
+            $achievementPct = $targetCurr > 0
+                ? round(($realCurr / $targetCurr) * 100, 1)
+                : ($realCurr > 0 ? 100 : 0);
+            $achievementScore = min(100, max(0, $achievementPct));
+
+            // 4. Area Cover Growth
             $acGrowthPct = $acPrev > 0
                 ? round((($acCurr - $acPrev) / $acPrev) * 100, 1)
                 : ($acCurr > 0 ? 100 : 0);
-
             if ($acGrowthPct >= 20) {
                 $acScore = 100;
             } elseif ($acGrowthPct >= 0) {
@@ -3597,25 +3964,48 @@ class MonitoringController extends Controller
             }
             $acScore = round($acScore, 1);
 
-            $salesActivities = $activities->get($salesId) ?? collect();
-            $months = $salesActivities
-                ->map(fn ($a) => $parseActivityMonth($a->tanggal))
-                ->filter()
-                ->unique();
+            // 5. Intensitas Aktivitas
+            $parseMonth = function ($date) {
+                if (!$date) return null;
+                try {
+                    if (str_contains($date, '-')) {
+                        $d = \Carbon\Carbon::parse($date);
+                    } else {
+                        try {
+                            $d = \Carbon\Carbon::createFromFormat('m/d/Y', $date);
+                        } catch (\Exception $e) {
+                            try {
+                                $d = \Carbon\Carbon::createFromFormat('d/m/Y', $date);
+                            } catch (\Exception $e) {
+                                $d = \Carbon\Carbon::parse($date);
+                            }
+                        }
+                    }
+                    return $d->format('Y-m');
+                } catch (\Exception $e) {
+                    return null;
+                }
+            };
+            $months = $salesActivities->map(fn ($a) => $parseMonth($a->tanggal))->filter()->unique();
             $totalActivities = $salesActivities->count();
             $activeMonths = max(1, $months->count());
             $avgPerMonth = round($totalActivities / $activeMonths, 1);
             $activityScore = min(100, round(($avgPerMonth / 20) * 100, 1));
 
-            $real = $realisasiRows->get($salesId);
-            $totalSekolah = (int) ($real->total_sekolah ?? $meta->total_sekolah ?? 0);
-            $sekolahRealisasi = (int) ($real->sekolah_realisasi ?? 0);
-            $realisasiPct = $totalSekolah > 0
-                ? round(($sekolahRealisasi / $totalSekolah) * 100, 1)
+            // 6. Realisasi Sekolah (ber-realisasi di AC / Area Cover)
+            $realisasiPct = $acCurr > 0
+                ? round(($sekolahRealisasi / $acCurr) * 100, 1)
                 : 0;
             $realisasiScore = round($realisasiPct, 1);
 
-            $totalScore = round(($acScore + $activityScore + $realisasiScore) / 3, 1);
+            $totalScore = \App\Models\Configuration::computeWeightedSalesScore([
+                'realisasi_yoy' => $realisasiYoyScore,
+                'sp_vs_ac' => $spVsAcScore,
+                'achievement' => $achievementScore,
+                'ac_growth' => $acScore,
+                'activity' => $activityScore,
+                'realisasi_sekolah' => $realisasiScore,
+            ], $scoreWeights);
             $grade = $totalScore >= 80
                 ? 'Sangat Baik'
                 : ($totalScore >= 60 ? 'Baik' : ($totalScore >= 40 ? 'Cukup' : 'Kurang'));
@@ -3631,9 +4021,19 @@ class MonitoringController extends Controller
                 'total_score' => $totalScore,
                 'grade' => $grade,
                 'components' => [
+                    'realisasi_yoy_score' => $realisasiYoyScore,
+                    'real_prev' => $realPrev,
+                    'real_curr' => $realCurr,
+                    'real_growth_pct' => $realGrowthPct,
+                    'sp_vs_ac_score' => $spVsAcScore,
+                    'sp_count' => $spCount,
+                    'ac_curr' => $acCurr,
+                    'sp_vs_ac_pct' => $spVsAcPct,
+                    'achievement_score' => $achievementScore,
+                    'target_curr' => $targetCurr,
+                    'achievement_pct' => $achievementPct,
                     'ac_score' => $acScore,
                     'ac_prev' => $acPrev,
-                    'ac_curr' => $acCurr,
                     'ac_growth_pct' => $acGrowthPct,
                     'activity_score' => $activityScore,
                     'avg_per_month' => $avgPerMonth,
