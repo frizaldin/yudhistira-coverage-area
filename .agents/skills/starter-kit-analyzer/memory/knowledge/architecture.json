@@ -1,0 +1,114 @@
+{
+  "layer_diagram": [
+    {
+      "layer": "Routing",
+      "evidence": "routes/web.php (foreach glob loading Domain routes)"
+    },
+    {
+      "layer": "Middleware",
+      "evidence": "app/Http/Middleware/HandleInertiaRequests.php (Inertia shared props)"
+    },
+    {
+      "layer": "Controller",
+      "evidence": "app/Http/Controllers/Admin/UserController.php (Handles validation and Inertia::render)"
+    },
+    {
+      "layer": "Service",
+      "evidence": "app/Services/ImageService.php (Handles complex filesystem logic)"
+    },
+    {
+      "layer": "Model",
+      "evidence": "app/Models/User.php (Eloquent ORM)"
+    },
+    {
+      "layer": "View",
+      "evidence": "resources/js/Pages/Dashboard/Admin/Users/Index.jsx (React Component)"
+    }
+  ],
+  "request_flow": [
+    {
+      "step": "HTTP Request",
+      "evidence": "routes/web.php"
+    },
+    {
+      "step": "Spatie Permission Check",
+      "evidence": "UserController.php:16 ($this->middleware('permission:user.view'))"
+    },
+    {
+      "step": "Controller Action",
+      "evidence": "UserController.php@index"
+    },
+    {
+      "step": "Eloquent Query",
+      "evidence": "User::with('roles')->paginate()"
+    },
+    {
+      "step": "Inertia Response",
+      "evidence": "Inertia::render('Dashboard/Admin/Users/Index', [...])"
+    }
+  ],
+  "rendering_flow": [
+    {
+      "step": "Inertia Bridge Initialization",
+      "evidence": "resources/js/app.jsx (createInertiaApp setup)"
+    },
+    {
+      "step": "Page Component Loading",
+      "evidence": "resources/js/Pages/Dashboard/Admin/Users/Index.jsx"
+    },
+    {
+      "step": "Layout Wrapper Application",
+      "evidence": "<DashboardLayout> wrapping Index.jsx"
+    },
+    {
+      "step": "UI Component Assembly",
+      "evidence": "import Card from '@/Components/UI/Card'"
+    }
+  ],
+  "data_flow": [
+    {
+      "type": "Server to Client (Page Specific)",
+      "evidence": "Inertia Props (UserController.php passing $users array directly to render)"
+    },
+    {
+      "type": "Global Shared State",
+      "evidence": "HandleInertiaRequests.php@share passing 'auth', 'flash', 'ziggy' automatically"
+    },
+    {
+      "type": "Client Form Submit",
+      "evidence": "useForm() hook in Users/Create.jsx submitting via POST (no native fetch/axios used)"
+    }
+  ],
+  "dependency_rules": [
+    {
+      "rule": "Controllers MUST validate via inline $request->validate()",
+      "evidence": "UserController.php@store"
+    },
+    {
+      "rule": "Controllers MAY use Services for complex logic to prevent Fat Controllers",
+      "evidence": "WebSettingController uses ImageService"
+    },
+    {
+      "rule": "React Pages MUST NOT fetch list data directly",
+      "evidence": "Absence of axios.get() in Pages for data lists; all data driven by Inertia props"
+    },
+    {
+      "rule": "React UI Components MUST be pure and stateless regarding domain data",
+      "evidence": "Components/UI elements receive data strictly via props, with zero Page imports"
+    }
+  ],
+  "extension_points": [
+    {
+      "point": "Domain Routes",
+      "evidence": "routes/Admin/*.php dynamically loaded by routes/web.php glob iteration"
+    },
+    {
+      "point": "CRUD Generation",
+      "evidence": "app/Console/Commands/MakeFullCrud.php handles automated scaffolding"
+    },
+    {
+      "point": "Global React State",
+      "evidence": "HandleInertiaRequests.php@share allows injecting new global props (e.g., meta defaults)"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "project": {
+    "name": "new-dashboardv2",
+    "type": "Monolithic Web Application"
+  },
+  "frameworks": {
+    "backend": "Laravel 12.0",
+    "frontend": "React 19.2.3",
+    "bridge": "Inertia.js"
+  },
+  "languages": [
+    "PHP >= 8.2",
+    "JavaScript/JSX"
+  ],
+  "package_managers": {
+    "backend": "Composer",
+    "frontend": "bun / npm"
+  },
+  "build_system": "Vite",
+  "folder_structure": {
+    "app": "Backend controllers, models, services",
+    "resources": "Frontend React components and pages",
+    "routes": "Route definitions",
+    "database": "Migrations and seeders"
+  },
+  "entry_points": [
+    "resources/js/app.jsx",
+    "routes/web.php",
+    "bootstrap/app.php"
+  ],
+  "dependencies": {
+    "backend": [
+      "inertiajs/inertia-laravel",
+      "laravel/fortify",
+      "spatie/laravel-permission"
+    ],
+    "frontend": [
+      "@inertiajs/react",
+      "@tailwindcss/vite"
+    ]
+  }
+}

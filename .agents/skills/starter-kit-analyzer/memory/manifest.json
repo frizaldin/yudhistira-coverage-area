@@ -1,0 +1,45 @@
+{
+  "skill": {
+    "name": "starter-kit-analyzer",
+    "version": "1.0.0"
+  },
+  "repository": {
+    "name": "new-dashboardv2",
+    "framework": "Laravel 11 + Inertia + React",
+    "language": [
+      "PHP",
+      "JavaScript",
+      "TypeScript"
+    ],
+    "frontend": "React + TailwindCSS + Vite",
+    "backend": "Laravel",
+    "database": "MySQL/PostgreSQL",
+    "package_manager": "bun + composer",
+    "build_tool": "vite",
+    "entry_points": [
+      "resources/js/app.jsx",
+      "bootstrap/app.php"
+    ],
+    "modules": [
+      "Admin",
+      "Member",
+      "Shared"
+    ],
+    "detected_at": "2026-07-20T10:56:10.188295",
+    "last_updated": "2026-07-20T10:56:10.188316"
+  },
+  "analysis": {
+    "discover": true,
+    "analyze": true,
+    "learn": true
+  },
+  "knowledge": {
+    "architecture": true,
+    "graph": true,
+    "conventions": true,
+    "components": true,
+    "services": true,
+    "routes": true,
+    "modules": true
+  }
+}

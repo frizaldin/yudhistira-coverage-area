@@ -1,0 +1,7 @@
+{
+  "routing": "Modular in routes/Admin/*.php, auto-loaded by web.php",
+  "controllers": "Resourceful, inline validation, Spatie permissions in constructor",
+  "frontend": "DashboardLayout is standard, UI components from Components/UI, no native HTML buttons/tables",
+  "state": "No Axios for fetching lists. Data provided by Inertia. Flash sessions for alerts.",
+  "naming": "PascalCase for React components, snake_case for DB columns"
+}

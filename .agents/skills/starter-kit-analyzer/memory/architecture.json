@@ -1,0 +1,34 @@
+{
+  "type": "Pragmatic Monolith",
+  "layers": [
+    {
+      "name": "Routing",
+      "description": "Dynamic glob loader per domain (routes/web.php)"
+    },
+    {
+      "name": "Controller",
+      "description": "Handles Request, Validation (inline), Auth checks via Spatie, and calls Inertia::render"
+    },
+    {
+      "name": "Service",
+      "description": "Stateless complex logic extraction (e.g., ImageService)"
+    },
+    {
+      "name": "Model",
+      "description": "Eloquent Active Record. Repository pattern is NOT used."
+    },
+    {
+      "name": "Inertia Middleware",
+      "description": "HandleInertiaRequests for shared state (Auth, Flash, Settings)"
+    },
+    {
+      "name": "React Page",
+      "description": "Code-splitted entry points passing data to Components"
+    },
+    {
+      "name": "React Components",
+      "description": "Atomic UI elements residing in resources/js/Components/UI"
+    }
+  ],
+  "state_flow": "Server -> HandleInertiaRequests -> Inertia -> React Props -> React Context"
+}

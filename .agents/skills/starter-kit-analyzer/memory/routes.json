@@ -1,0 +1,9 @@
+{
+  "domains": [
+    "Admin",
+    "Member",
+    "Shared",
+    "Page"
+  ],
+  "rules": "Never add logic to routes/web.php directly. Add a new file to the appropriate domain folder."
+}

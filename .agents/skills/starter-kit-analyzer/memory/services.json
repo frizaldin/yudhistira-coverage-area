@@ -1,0 +1,7 @@
+{
+  "reusable": [
+    "ImageService"
+  ],
+  "path": "app/Services",
+  "rules": "Extract complex operations (like file manipulation) from controllers into these stateless classes."
+}

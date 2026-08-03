@@ -1,0 +1,24 @@
+discovery:
+  engine:
+    - repository-engine
+  template:
+    - manifest.md
+architecture:
+  engine:
+    - architecture-engine
+    - relationship-engine
+    - dependency-engine
+    - convention-engine
+  template:
+    - architecture.md
+    - graph.md
+validation:
+  engine:
+    - validator-engine
+    - review-engine
+  template:
+    - review.md
+memory:
+  engine:
+    - memory-reader
+    - memory-writer

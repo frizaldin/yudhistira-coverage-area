@@ -1,0 +1,23 @@
+capabilities:
+  - id: core-crud
+    type: base
+    pipeline:
+      - repository-engine
+      - convention-engine
+    
+  - id: feature-crud
+    inherits: core-crud
+    requires:
+      - sidebar-analysis
+      - route-analysis
+    pipeline:
+      - generation-engine
+      - validation-engine
+
+  - id: memory-update
+    type: learning-loop
+    requires:
+      - reflection-engine
+    pipeline:
+      - diff-engine
+      - memory-writer

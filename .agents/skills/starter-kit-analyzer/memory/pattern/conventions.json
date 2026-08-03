@@ -1,0 +1,90 @@
+{
+  "naming_conventions": [
+    {
+      "rule": "React components must use PascalCase for filenames and exports.",
+      "evidence": "resources/js/Components/UI/ConfirmModal.jsx, resources/js/Pages/Dashboard/Admin/Settings.jsx",
+      "confidence": 1.0
+    },
+    {
+      "rule": "Database columns must use snake_case.",
+      "evidence": "users table (is_active, email_verified_at) mapped in User.php",
+      "confidence": 1.0
+    }
+  ],
+  "folder_conventions": [
+    {
+      "rule": "Shared, generic UI elements must be placed in resources/js/Components/UI.",
+      "evidence": "Button.jsx, Card.jsx, Pagination.jsx exist in this folder and are imported globally.",
+      "confidence": 1.0
+    },
+    {
+      "rule": "React Pages must be grouped by Domain and Module under resources/js/Pages/Dashboard/.",
+      "evidence": "resources/js/Pages/Dashboard/Admin/Users/Index.jsx",
+      "confidence": 1.0
+    }
+  ],
+  "import_conventions": [
+    {
+      "rule": "Frontend imports must use the @/ alias to resolve to resources/js/.",
+      "evidence": "import Button from '@/Components/UI/Button' seen across multiple pages.",
+      "confidence": 1.0
+    }
+  ],
+  "service_conventions": [
+    {
+      "rule": "Complex business logic, especially involving the filesystem or external APIs, must be extracted into stateless Service classes in app/Services.",
+      "evidence": "app/Services/ImageService.php encapsulates intervention/image and Storage::disk logic.",
+      "confidence": 1.0
+    },
+    {
+      "rule": "Services must not dictate HTTP responses (e.g., no Inertia::render inside Services).",
+      "evidence": "ImageService returns strings (paths), not Response objects.",
+      "confidence": 0.95
+    }
+  ],
+  "component_conventions": [
+    {
+      "rule": "Raw HTML tags (like <button> or <table>) must not be used directly for primary UI elements; use the abstraction from UI/.",
+      "evidence": "Absence of raw <button> in Users/Index.jsx; relies heavily on <Button> and <Table> from Components/UI.",
+      "confidence": 0.98
+    },
+    {
+      "rule": "Destructive actions must be protected by ConfirmModal.",
+      "evidence": "Users/Index.jsx utilizes ConfirmModal for delete actions.",
+      "confidence": 0.95
+    }
+  ],
+  "layout_conventions": [
+    {
+      "rule": "All Dashboard pages must be wrapped in the DashboardLayout component.",
+      "evidence": "resources/js/Pages/Dashboard/Admin/Users/Index.jsx and Settings.jsx both use <DashboardLayout> as the root wrapper.",
+      "confidence": 1.0
+    },
+    {
+      "rule": "Page content forms and tables must be enclosed within a Card component.",
+      "evidence": "Settings.jsx wraps its form fields in <Card>.",
+      "confidence": 1.0
+    }
+  ],
+  "routing_conventions": [
+    {
+      "rule": "Routes must be modularized into domain-specific files rather than bloating web.php.",
+      "evidence": "routes/web.php iterates over glob(routes/Admin/*.php) to load routes dynamically.",
+      "confidence": 1.0
+    }
+  ],
+  "validation_conventions": [
+    {
+      "rule": "Validation must be performed imperatively inside the controller action using $request->validate(), not via external FormRequest classes.",
+      "evidence": "app/Http/Controllers/Admin/UserController.php@store uses inline $request->validate([...]).",
+      "confidence": 0.9
+    }
+  ],
+  "permission_conventions": [
+    {
+      "rule": "Authorization checks must be bound using Spatie middleware in the Controller's constructor.",
+      "evidence": "UserController.php:16 -> $this->middleware('permission:user.view')->only(['index']);",
+      "confidence": 1.0
+    }
+  ]
+}

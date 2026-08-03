@@ -1,0 +1,10 @@
+{
+  "detected": [
+    "Users",
+    "Settings",
+    "Roles",
+    "Permissions",
+    "CMS"
+  ],
+  "generator": "php artisan make:full-crud"
+}

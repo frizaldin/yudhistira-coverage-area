@@ -46,41 +46,43 @@ function FitBounds({ markers }) {
 
 /* ── DESIGN TOKENS ── */
 const T = {
-    blue: "#1d4ed8",
-    blueSoft: "#3b82f6",
-    green: "#16a34a",
-    orange: "#d97706",
-    red: "#dc2626",
-    teal: "#0d9488",
-    purple: "#7c3aed",
-    slate: "#64748b",
+    blue: "#2563eb",
+    blueSoft: "#60a5fa",
+    green: "#10b981",
+    orange: "#f59e0b",
+    red: "#ef4444",
+    teal: "#14b8a6",
+    purple: "#8b5cf6",
+    slate: "#475569",
+    slateLight: "#94a3b8",
     text: "#0f172a",
     border: "#e2e8f0",
-    bg: "#f1f5f9",
+    bg: "#f8fafc",
     card: "#ffffff",
 };
 
 const S = {
     card: {
         background: T.card,
-        borderRadius: 12,
-        boxShadow: "0 1px 6px rgba(15,23,42,0.06)",
+        borderRadius: 16,
+        boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 0 3px rgba(15, 23, 42, 0.02)",
         border: `1px solid ${T.border}`,
+        transition: "box-shadow 0.3s ease",
     },
     th: {
-        fontSize: 10,
+        fontSize: 11.5,
         fontWeight: 700,
         color: T.slate,
-        padding: "8px 10px",
+        padding: "14px 16px",
         background: "#f8fafc",
-        borderBottom: `1px solid ${T.border}`,
-        letterSpacing: "0.3px",
+        borderBottom: `1.5px solid ${T.border}`,
+        letterSpacing: "0.5px",
         textTransform: "uppercase",
     },
     td: {
-        fontSize: 11.5,
+        fontSize: 13,
         color: T.text,
-        padding: "7px 10px",
+        padding: "14px 16px",
         borderBottom: `1px solid #f4f6f8`,
     },
 };
@@ -174,7 +176,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                 >
                     <div
                         style={{
-                            fontSize: 13,
+                            fontSize: 16,
                             fontWeight: 800,
                             color: T.text,
                             lineHeight: 1,
@@ -185,9 +187,9 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     {sub && (
                         <div
                             style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 color: T.slate,
-                                marginTop: 2,
+                                marginTop: 4,
                             }}
                         >
                             {sub}
@@ -213,10 +215,10 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                 >
                     <div
                         style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: 700,
                             color: hoveredInfo.color,
-                            marginBottom: 2,
+                            marginBottom: 4,
                             lineHeight: 1.1,
                             display: "-webkit-box",
                             WebkitLineClamp: 2,
@@ -229,7 +231,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     </div>
                     <div
                         style={{
-                            fontSize: 14,
+                            fontSize: 18,
                             fontWeight: 800,
                             color: T.text,
                             lineHeight: 1,
@@ -237,7 +239,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     >
                         {hoveredInfo.percent}%
                     </div>
-                    <div style={{ fontSize: 9, color: T.slate, marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: T.slate, marginTop: 4 }}>
                         {hoveredInfo.value.toLocaleString("id-ID")}
                     </div>
                 </div>
@@ -425,13 +427,13 @@ function MultiBarChart({ data }) {
                             width={barW}
                             height={sy(0) - sy(d.target)}
                             fill={T.teal}
-                            rx={2}
+                            rx={4}
                         />
                         <text
                             x={cx - barW - gap}
                             y={sy(d.target) - 5}
                             textAnchor="middle"
-                            fontSize={9}
+                            fontSize={10}
                             fill={T.teal}
                             fontWeight="bold"
                         >
@@ -445,13 +447,13 @@ function MultiBarChart({ data }) {
                             width={barW}
                             height={sy(0) - sy(d.real)}
                             fill={T.green}
-                            rx={2}
+                            rx={4}
                         />
                         <text
                             x={cx}
                             y={sy(d.real) - 5}
                             textAnchor="middle"
-                            fontSize={9}
+                            fontSize={10}
                             fill={T.green}
                             fontWeight="bold"
                         >
@@ -465,13 +467,13 @@ function MultiBarChart({ data }) {
                             width={barW}
                             height={sy(0) - sy(d.uncov)}
                             fill={T.red}
-                            rx={2}
+                            rx={4}
                         />
                         <text
                             x={cx + barW + gap}
                             y={sy(d.uncov) - 5}
                             textAnchor="middle"
-                            fontSize={9}
+                            fontSize={10}
                             fill={T.red}
                             fontWeight="bold"
                         >
@@ -514,8 +516,8 @@ function LeafletMap({ markers = [] }) {
                 height: 28px;
                 border-radius: 50%;
                 border: 2px solid white;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-                opacity: 0.9;
+                box-shadow: 0 4px 10px rgba(15, 23, 42, 0.2);
+                opacity: 0.95;
             "></div>
         `;
         return L.divIcon({
@@ -536,8 +538,10 @@ function LeafletMap({ markers = [] }) {
             style={{
                 height: 285,
                 width: "100%",
-                borderRadius: 10,
+                borderRadius: 16,
                 overflow: "hidden",
+                border: `1px solid ${T.border}`,
+                boxShadow: "inset 0 2px 10px rgba(0,0,0,0.02)",
             }}
         >
             <MapContainer
@@ -567,14 +571,15 @@ function LeafletMap({ markers = [] }) {
                         )}
                     >
                         <Popup>
-                            <div style={{ minWidth: "180px" }}>
+                            <div style={{ minWidth: "200px" }}>
                                 <strong
                                     style={{
                                         fontSize: "14px",
-                                        borderBottom: "1px solid #e2e8f0",
+                                        borderBottom: `1px solid ${T.border}`,
                                         display: "block",
-                                        paddingBottom: "4px",
-                                        marginBottom: "8px",
+                                        paddingBottom: "8px",
+                                        marginBottom: "10px",
+                                        color: T.text,
                                     }}
                                 >
                                     {r.label}
@@ -584,10 +589,11 @@ function LeafletMap({ markers = [] }) {
                                     style={{
                                         display: "flex",
                                         justifyContent: "space-between",
-                                        marginBottom: "4px",
+                                        marginBottom: "6px",
+                                        fontSize: "12px",
                                     }}
                                 >
-                                    <span style={{ color: "#64748b" }}>
+                                    <span style={{ color: T.slate }}>
                                         Total Sekolah (Potensi)
                                     </span>
                                     <strong>
@@ -598,10 +604,11 @@ function LeafletMap({ markers = [] }) {
                                     style={{
                                         display: "flex",
                                         justifyContent: "space-between",
-                                        marginBottom: "4px",
+                                        marginBottom: "6px",
+                                        fontSize: "12px",
                                     }}
                                 >
-                                    <span style={{ color: "#16a34a" }}>
+                                    <span style={{ color: T.green }}>
                                         Telah Tercover (Area Cover)
                                     </span>
                                     <strong>
@@ -612,10 +619,11 @@ function LeafletMap({ markers = [] }) {
                                     style={{
                                         display: "flex",
                                         justifyContent: "space-between",
-                                        marginBottom: "4px",
+                                        marginBottom: "6px",
+                                        fontSize: "12px",
                                     }}
                                 >
-                                    <span style={{ color: "#ef4444" }}>
+                                    <span style={{ color: T.red }}>
                                         Belum Tercover
                                     </span>
                                     <strong>
@@ -626,15 +634,16 @@ function LeafletMap({ markers = [] }) {
                                     style={{
                                         display: "flex",
                                         justifyContent: "space-between",
-                                        marginTop: "6px",
-                                        paddingTop: "4px",
-                                        borderTop: "1px dotted #e2e8f0",
+                                        marginTop: "10px",
+                                        paddingTop: "8px",
+                                        borderTop: `1px dashed ${T.border}`,
+                                        fontSize: "12.5px",
                                     }}
                                 >
-                                    <span style={{ fontWeight: 600 }}>
+                                    <span style={{ fontWeight: 600, color: T.text }}>
                                         Coverage (%)
                                     </span>
-                                    <strong style={{ color: "#2563eb" }}>
+                                    <strong style={{ color: T.blue }}>
                                         {r.pct !== undefined
                                             ? `${r.pct}%`
                                             : "-"}
@@ -655,20 +664,29 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
         <div
             style={{
                 ...S.card,
-                padding: "16px",
+                padding: "20px",
                 flex: 1,
                 display: "flex",
                 flexDirection: "column",
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.1)";
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = S.card.boxShadow;
             }}
         >
             <div
                 style={{
-                    fontSize: 9.5,
+                    fontSize: 10.5,
                     fontWeight: 700,
                     color: T.slate,
                     letterSpacing: "0.5px",
                     textTransform: "uppercase",
-                    marginBottom: 12,
+                    marginBottom: 16,
                 }}
             >
                 {label}
@@ -683,11 +701,11 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
             >
                 <div
                     style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 10,
+                        width: 48,
+                        height: 48,
+                        borderRadius: 12,
                         flexShrink: 0,
-                        background: `${color}18`,
+                        background: `${color}15`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -695,17 +713,17 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                 >
                     <i
                         className={`bi ${icon}`}
-                        style={{ fontSize: 18, color }}
+                        style={{ fontSize: 22, color }}
                     />
                 </div>
                 <div>
                     <div
                         style={{
-                            fontSize: 20,
-                            fontWeight: 800,
+                            fontSize: 26,
+                            fontWeight: 900,
                             color: T.text,
                             letterSpacing: "-0.5px",
-                            lineHeight: 1.1,
+                            lineHeight: 1,
                         }}
                     >
                         {value}
@@ -817,20 +835,22 @@ function Card({
             {(title || sub || headerAction) && (
                 <div
                     style={{
-                        padding: "12px 16px",
+                        padding: "16px 20px",
                         borderBottom: `1px solid ${T.border}`,
                         flexShrink: 0,
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "flex-start",
+                        background: "rgba(255,255,255,0.5)",
                     }}
                 >
                     <div>
                         <div
                             style={{
-                                fontSize: 11,
-                                fontWeight: 700,
+                                fontSize: 13,
+                                fontWeight: 800,
                                 color: T.text,
+                                letterSpacing: "-0.2px",
                             }}
                         >
                             {title}
@@ -838,9 +858,9 @@ function Card({
                         {sub && (
                             <div
                                 style={{
-                                    fontSize: 10,
+                                    fontSize: 11,
                                     color: T.slate,
-                                    marginTop: 2,
+                                    marginTop: 3,
                                 }}
                             >
                                 {sub}
@@ -850,15 +870,16 @@ function Card({
                     {headerAction && <div>{headerAction}</div>}
                 </div>
             )}
-            <div style={{ padding: noPad ? 0 : "14px 16px", flex: 1 }}>
+            <div style={{ padding: noPad ? 0 : "20px", flex: 1 }}>
                 {children}
             </div>
             {footer && (
                 <div
                     style={{
-                        padding: "9px 16px",
+                        padding: "12px 20px",
                         borderTop: `1px solid ${T.border}`,
                         textAlign: "center",
+                        background: "#fafafa",
                     }}
                 >
                     <a
@@ -868,16 +889,16 @@ function Card({
                             if (onFooterClick) onFooterClick();
                         }}
                         style={{
-                            fontSize: 10.5,
-                            color: T.blueSoft,
+                            fontSize: 11.5,
+                            color: T.blue,
                             textDecoration: "none",
-                            fontWeight: 600,
+                            fontWeight: 700,
                         }}
                     >
                         {footer}{" "}
                         <i
                             className="bi bi-chevron-right"
-                            style={{ fontSize: 9 }}
+                            style={{ fontSize: 10 }}
                         />
                     </a>
                 </div>
@@ -976,6 +997,8 @@ export default function Cabang({
     leaderboard = [],
     salesJenjangData = [],
     salesJenjangTotal = "0",
+    salesJenjangTotalRealisasi = "0",
+    potensiKecamatan = [],
     uncovered = [],
     uncoveredDana = [],
     hideFilters = false,
@@ -1004,6 +1027,7 @@ export default function Cabang({
     const [filterData, setFilterData] = useState({
         kecamatan: filters.kecamatan || "",
         tahun: filters.tahun || "",
+        sumber_dana: filters.sumber_dana || "",
     });
 
     const activeFiltersCount = Object.values(filters).filter(
@@ -1012,7 +1036,13 @@ export default function Cabang({
 
     const applyFilter = (e) => {
         e.preventDefault();
-        router.get(route(route().current()), filterData, {
+        const urlParams = new URLSearchParams(window.location.search);
+        Object.entries(filterData).forEach(([key, value]) => {
+            if (value) urlParams.set(key, value);
+            else urlParams.delete(key);
+        });
+        
+        router.get(window.location.pathname, Object.fromEntries(urlParams.entries()), {
             preserveState: true,
             preserveScroll: true,
         });
@@ -1020,10 +1050,15 @@ export default function Cabang({
     };
 
     const resetFilter = () => {
-        setFilterData({ kecamatan: "", tahun: "" });
+        setFilterData({ kecamatan: "", tahun: "", sumber_dana: "" });
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.delete("kecamatan");
+        urlParams.delete("tahun");
+        urlParams.delete("sumber_dana");
+        
         router.get(
-            route(route().current()),
-            {},
+            window.location.pathname,
+            Object.fromEntries(urlParams.entries()),
             { preserveState: true, preserveScroll: true },
         );
         setIsFilterOpen(false);
@@ -1032,6 +1067,8 @@ export default function Cabang({
 
     const [showAllRanking, setShowAllRanking] = useState(false);
     const [activeTab, setActiveTab] = useState("dashboard");
+    const [salesRankingTab, setSalesRankingTab] = useState("all");
+    const [salesWorstTab, setSalesWorstTab] = useState("all");
     const [kegiatanPage, setKegiatanPage] = useState(1);
     const kegiatanPerPage = 15;
     const [sekolahPage, setSekolahPage] = useState(1);
@@ -1063,19 +1100,7 @@ export default function Cabang({
 
     const STATS = [
         {
-            label: "Total Sekolah",
-            value: formatNumber(ts),
-            unit: "Sekolah",
-            icon: "bi-buildings-fill",
-            color: T.blue,
-            sub: null,
-            trend: null,
-            detailHref: cabangCode
-                ? route("monitoring.cabang.sekolah", cabangCode)
-                : null,
-        },
-        {
-            label: "Customer Aktif",
+            label: "Coverage Area",
             value: formatNumber(ca),
             unit: "Sekolah",
             icon: "bi-people-fill",
@@ -1202,12 +1227,12 @@ export default function Cabang({
         areaCovers.length > 0
             ? areaCovers
             : jenjang.map((j) => ({
-                  label: j.label,
-                  color: j.color,
-                  ac25: j.ac25 || 0,
-                  ac26: j.ac26 || 0,
-                  target: j.target || 0,
-              }));
+                label: j.label,
+                color: j.color,
+                ac25: j.ac25 || 0,
+                ac26: j.ac26 || 0,
+                target: j.target || 0,
+            }));
 
     const OPP = [...rankingKecamatan]
         .map((r) => ({
@@ -1324,31 +1349,38 @@ export default function Cabang({
             ━━━━━━━━━━━━━━━━━━ */}
             <div
                 style={{
-                    background: "white",
-                    padding: "14px 20px",
+                    background: "rgba(255, 255, 255, 0.8)",
+                    backdropFilter: "blur(12px)",
+                    WebkitBackdropFilter: "blur(12px)",
+                    padding: "16px 24px",
                     borderBottom: `1px solid ${T.border}`,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: 16,
                     flexWrap: "wrap",
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 40,
+                    boxShadow: "0 1px 3px rgba(15,23,42,0.02)",
                 }}
             >
                 <div>
                     <div
                         style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: 700,
-                            color: T.slate,
+                            color: T.blue,
                             letterSpacing: "1px",
                             textTransform: "uppercase",
+                            marginBottom: 4,
                         }}
                     >
                         {pageTitle}
                     </div>
                     <div
                         style={{
-                            fontSize: 22,
+                            fontSize: 24,
                             fontWeight: 900,
                             color: T.text,
                             letterSpacing: "-0.5px",
@@ -1357,7 +1389,7 @@ export default function Cabang({
                     >
                         {cabangName}
                     </div>
-                    <div style={{ fontSize: 11, color: T.slate, marginTop: 2 }}>
+                    <div style={{ fontSize: 13, color: T.slate, marginTop: 4 }}>
                         {description}
                     </div>
                 </div>
@@ -1428,11 +1460,14 @@ export default function Cabang({
                                             style={sel}
                                             value={provinceCode || ""}
                                             onChange={(e) => {
+                                                const urlParams = new URLSearchParams(window.location.search);
+                                                urlParams.delete('cabang');
                                                 router.get(
                                                     route(
                                                         "monitoring.area",
                                                         e.target.value,
                                                     ),
+                                                    Object.fromEntries(urlParams.entries())
                                                 );
                                             }}
                                         >
@@ -1473,16 +1508,22 @@ export default function Cabang({
                                             style={sel}
                                             value={selectedCabang || cabangCode || ""}
                                             onChange={(e) => {
+                                                const urlParams = new URLSearchParams(window.location.search);
+                                                if (e.target.value) {
+                                                    urlParams.set('cabang', e.target.value);
+                                                } else {
+                                                    urlParams.delete('cabang');
+                                                }
                                                 router.get(
                                                     route(
                                                         "monitoring.area",
                                                         provinceCode,
                                                     ),
-                                                    { cabang: e.target.value },
+                                                    Object.fromEntries(urlParams.entries()),
                                                     {
                                                         preserveState: true,
                                                         preserveScroll: true,
-                                                    },
+                                                    }
                                                 );
                                             }}
                                         >
@@ -1496,6 +1537,59 @@ export default function Cabang({
                                     </div>
                                 </div>
                             )}
+
+                            {/* Select Sumber Dana */}
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 7,
+                                }}
+                            >
+                                <i
+                                    className="bi bi-wallet2"
+                                    style={{ color: T.blue, fontSize: 14 }}
+                                />
+                                <div>
+                                    <div
+                                        style={{
+                                            fontSize: 9,
+                                            color: T.slate,
+                                            marginBottom: 2,
+                                        }}
+                                    >
+                                        Sumber Dana
+                                    </div>
+                                    <select
+                                        style={sel}
+                                        value={filterData.sumber_dana}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFilterData(prev => ({ ...prev, sumber_dana: val }));
+                                            
+                                            const urlParams = new URLSearchParams(window.location.search);
+                                            if (val) {
+                                                urlParams.set('sumber_dana', val);
+                                            } else {
+                                                urlParams.delete('sumber_dana');
+                                            }
+                                            
+                                            router.get(
+                                                window.location.pathname,
+                                                Object.fromEntries(urlParams.entries()),
+                                                {
+                                                    preserveState: true,
+                                                    preserveScroll: true,
+                                                }
+                                            );
+                                        }}
+                                    >
+                                        <option value="">Semua Dana</option>
+                                        <option value="BOS">BOS</option>
+                                        <option value="SWA">Swadana</option>
+                                    </select>
+                                </div>
+                            </div>
                         </>
                     )}
 
@@ -1543,18 +1637,18 @@ export default function Cabang({
             >
                 {(isSalesDetail
                     ? [
-                          { id: "dashboard", label: "Dashboard Utama" },
-                          { id: "kecamatan", label: "Kecamatan" },
-                          { id: "sekolah", label: "Sekolah" },
-                          { id: "kegiatan", label: "Kegiatan Sales" },
-                      ]
+                        { id: "dashboard", label: "Dashboard Utama" },
+                        { id: "kecamatan", label: "Kecamatan" },
+                        { id: "sekolah", label: "Sekolah" },
+                        { id: "kegiatan", label: "Kegiatan Sales" },
+                    ]
                     : [
-                          { id: "dashboard", label: "Dashboard Utama" },
-                          {
-                              id: "competitor",
-                              label: "Kompetitor & Market Share",
-                          },
-                      ]
+                        { id: "dashboard", label: "Dashboard Utama" },
+                        {
+                            id: "competitor",
+                            label: "Kompetitor & Market Share",
+                        },
+                    ]
                 ).map((tab) => (
                     <div
                         key={tab.id}
@@ -1716,11 +1810,15 @@ export default function Cabang({
                                                         ? top10Schools
                                                         : rankingKecamatan
                                                     : (isFromSalesPerformance
-                                                          ? top10Schools
-                                                          : rankingKecamatan
-                                                      ).slice(0, 10)
+                                                        ? top10Schools
+                                                        : rankingKecamatan
+                                                    ).slice(0, 10)
                                                 ).map((r, i) => (
-                                                    <tr key={i}>
+                                                    <tr key={i}
+                                                        style={{ transition: "background 0.2s ease" }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                    >
                                                         <td
                                                             style={{
                                                                 ...S.td,
@@ -1975,22 +2073,23 @@ export default function Cabang({
                                                 (j.target || 0) > 0 ||
                                                 (j.qty || 0) > 0,
                                         ).length === 0 && (
-                                            <div
-                                                style={{
-                                                    textAlign: "center",
-                                                    color: T.slate,
-                                                    fontSize: 11,
-                                                    padding: "16px 0",
-                                                }}
-                                            >
-                                                Belum ada data
-                                            </div>
-                                        )}
+                                                <div
+                                                    style={{
+                                                        textAlign: "center",
+                                                        color: T.slate,
+                                                        fontSize: 11,
+                                                        padding: "16px 0",
+                                                    }}
+                                                >
+                                                    Belum ada data
+                                                </div>
+                                            )}
                                     </div>
                                 </Card>
 
                                 {!isSalesDetail && !isFromSalesPerformance && (
-                                    <Card
+                                    <>
+                                        <Card
                                         title="Sales per Jenjang"
                                         sub="(Area Cover)"
                                         headerAction={
@@ -2074,6 +2173,7 @@ export default function Cabang({
                                                             {[
                                                                 "Jenjang",
                                                                 "Total",
+                                                                "Realisasi",
                                                                 "%",
                                                             ].map((h, i) => (
                                                                 <th
@@ -2082,7 +2182,7 @@ export default function Cabang({
                                                                         ...S.th,
                                                                         textAlign:
                                                                             i ===
-                                                                            0
+                                                                                0
                                                                                 ? "left"
                                                                                 : "right",
                                                                     }}
@@ -2095,7 +2195,11 @@ export default function Cabang({
                                                     <tbody>
                                                         {salesJenjangData.map(
                                                             (j, i) => (
-                                                                <tr key={i}>
+                                                                <tr key={i}
+                                                                    style={{ transition: "background 0.2s ease" }}
+                                                                    onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                                >
                                                                     <td
                                                                         style={{
                                                                             ...S.td,
@@ -2149,6 +2253,17 @@ export default function Cabang({
                                                                                 "right",
                                                                         }}
                                                                     >
+                                                                        {
+                                                                            j.realisasi
+                                                                        }
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "right",
+                                                                        }}
+                                                                    >
                                                                         <span
                                                                             style={{
                                                                                 fontWeight: 700,
@@ -2168,6 +2283,7 @@ export default function Cabang({
                                                             {[
                                                                 "Total",
                                                                 salesJenjangTotal,
+                                                                salesJenjangTotalRealisasi || "0",
                                                                 "100%",
                                                             ].map((v, i) => (
                                                                 <td
@@ -2177,7 +2293,7 @@ export default function Cabang({
                                                                         fontWeight: 700,
                                                                         textAlign:
                                                                             i ===
-                                                                            0
+                                                                                0
                                                                                 ? "left"
                                                                                 : "right",
                                                                         borderTop: `2px solid ${T.border}`,
@@ -2191,7 +2307,45 @@ export default function Cabang({
                                                 </table>
                                             </div>
                                         </div>
-                                    </Card>
+                                        </Card>
+                                        
+                                        <Card
+                                            title="Potensi Eksemplar"
+                                            sub="(Per Kecamatan)"
+                                        >
+                                            <div style={{ overflowX: "auto" }}>
+                                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={{ ...S.th, textAlign: "left" }}>No</th>
+                                                            <th style={{ ...S.th, textAlign: "left" }}>Kecamatan</th>
+                                                            <th style={{ ...S.th, textAlign: "right" }}>Jumlah Siswa</th>
+                                                            <th style={{ ...S.th, textAlign: "right" }}>Potensi Eksemplar</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {potensiKecamatan.map((p, i) => (
+                                                            <tr key={i}
+                                                                style={{ transition: "background 0.2s ease" }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                            >
+                                                                <td style={{ ...S.td, textAlign: "left" }}>{p.no}</td>
+                                                                <td style={{ ...S.td, fontWeight: 600, textAlign: "left" }}>{p.kecamatan}</td>
+                                                                <td style={{ ...S.td, textAlign: "right" }}>{p.siswa.toLocaleString("id-ID")}</td>
+                                                                <td style={{ ...S.td, textAlign: "right", color: T.blue, fontWeight: 700 }}>{p.potensi_eks.toLocaleString("id-ID")}</td>
+                                                            </tr>
+                                                        ))}
+                                                        {potensiKecamatan.length === 0 && (
+                                                            <tr>
+                                                                <td colSpan="4" style={{ ...S.td, textAlign: "center", color: T.slate }}>Belum ada data</td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </Card>
+                                    </>
                                 )}
                                 {isSalesDetail && (
                                     <>
@@ -2211,24 +2365,42 @@ export default function Cabang({
                                                         key={t.key}
                                                         style={{
                                                             flex: 1,
+                                                            minWidth: 120,
                                                             display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            gap: 8,
-                                                            borderRadius: 8,
-                                                            border: `1.5px solid ${t.color}28`,
-                                                            background: `${t.color}06`,
-                                                            padding: "8px 10px",
+                                                            alignItems: "center",
+                                                            gap: 12,
+                                                            borderRadius: 16,
+                                                            background: `${t.color}10`,
+                                                            padding: "16px 20px",
+                                                            transition: "transform 0.2s ease, background 0.2s ease",
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.transform = "translateY(-2px)";
+                                                            e.currentTarget.style.background = `${t.color}18`;
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.transform = "translateY(0)";
+                                                            e.currentTarget.style.background = `${t.color}10`;
                                                         }}
                                                     >
-                                                        <i
-                                                            className={`bi ${t.icon}`}
-                                                            style={{
-                                                                fontSize: 18,
-                                                                color: t.color,
-                                                                flexShrink: 0,
-                                                            }}
-                                                        />
+                                                        <div style={{
+                                                            width: 48,
+                                                            height: 48,
+                                                            borderRadius: 12,
+                                                            background: `${t.color}20`,
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            justifyContent: "center",
+                                                            flexShrink: 0
+                                                        }}>
+                                                            <i
+                                                                className={`bi ${t.icon}`}
+                                                                style={{
+                                                                    fontSize: 22,
+                                                                    color: t.color,
+                                                                }}
+                                                            />
+                                                        </div>
                                                         <div
                                                             style={{
                                                                 minWidth: 0,
@@ -2236,32 +2408,34 @@ export default function Cabang({
                                                         >
                                                             <div
                                                                 style={{
-                                                                    fontSize: 9,
+                                                                    fontSize: 10,
                                                                     fontWeight: 700,
                                                                     color: t.color,
-                                                                    letterSpacing:
-                                                                        "0.6px",
-                                                                    textTransform:
-                                                                        "uppercase",
+                                                                    letterSpacing: "0.5px",
+                                                                    textTransform: "uppercase",
+                                                                    opacity: 0.9,
                                                                 }}
                                                             >
                                                                 {t.label}
                                                             </div>
                                                             <div
                                                                 style={{
-                                                                    fontSize: 18,
+                                                                    fontSize: 24,
                                                                     fontWeight: 900,
                                                                     color: t.color,
                                                                     lineHeight: 1.1,
+                                                                    marginTop: 4,
+                                                                    marginBottom: 2,
                                                                 }}
                                                             >
                                                                 {t.value}
                                                             </div>
                                                             <div
                                                                 style={{
-                                                                    fontSize: 9.5,
+                                                                    fontSize: 11,
                                                                     fontWeight: 600,
                                                                     color: t.color,
+                                                                    opacity: 0.8,
                                                                 }}
                                                             >
                                                                 {t.pct}
@@ -2335,7 +2509,11 @@ export default function Cabang({
                                                 </thead>
                                                 <tbody>
                                                     {trlJenjang.map((j, i) => (
-                                                        <tr key={i}>
+                                                        <tr key={i}
+                                                            style={{ transition: "background 0.2s ease" }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                        >
                                                             <td
                                                                 style={{
                                                                     ...S.td,
@@ -2460,7 +2638,7 @@ export default function Cabang({
                                 </Card>
 
                                 {/* Sumber Dana */}
-                                <Card
+                                {/* <Card
                                     title="Sumber Dana"
                                     sub={`Rencana Jual ${targetYear}`}
                                     headerAction={
@@ -2569,7 +2747,7 @@ export default function Cabang({
                                             ))}
                                         </div>
                                     </div>
-                                </Card>
+                                </Card> */}
 
                                 {/* Opportunity Dana */}
                                 {UNCOVERED_DANA.length > 0 && (
@@ -2824,7 +3002,11 @@ export default function Cabang({
                                                 </thead>
                                                 <tbody>
                                                     {trlJenjang.map((j, i) => (
-                                                        <tr key={i}>
+                                                        <tr key={i}
+                                                            style={{ transition: "background 0.2s ease" }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                                        >
                                                             <td
                                                                 style={{
                                                                     ...S.td,
@@ -2908,6 +3090,30 @@ export default function Cabang({
                                         title={`Ranking Sales - ${cabangName}`}
                                         sub="Berdasarkan Coverage Tertinggi"
                                         style={{ flex: 1 }}
+                                        headerAction={
+                                            <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
+                                                {['all', 'sd', 'smp', 'sma'].map(tab => (
+                                                    <button
+                                                        key={tab}
+                                                        onClick={() => setSalesRankingTab(tab)}
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            fontSize: 11,
+                                                            fontWeight: 600,
+                                                            border: 'none',
+                                                            borderRadius: 4,
+                                                            cursor: 'pointer',
+                                                            background: salesRankingTab === tab ? '#fff' : 'transparent',
+                                                            color: salesRankingTab === tab ? T.blue : T.slate,
+                                                            boxShadow: salesRankingTab === tab ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                                                            textTransform: 'uppercase'
+                                                        }}
+                                                    >
+                                                        {tab}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        }
                                     >
                                         <div
                                             style={{
@@ -2984,7 +3190,8 @@ export default function Cabang({
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {[...timSalesPerformance]
+                                                    {((timSalesPerformance && timSalesPerformance[salesRankingTab]) || [])
+                                                        .slice()
                                                         .sort(
                                                             (a, b) =>
                                                                 b.coverage -
@@ -3050,13 +3257,13 @@ export default function Cabang({
                                                                         label={`${sales.coverage}%`}
                                                                         bg={
                                                                             sales.coverage >=
-                                                                            40
+                                                                                40
                                                                                 ? "#f0fdf4"
                                                                                 : "#fef2f2"
                                                                         }
                                                                         color={
                                                                             sales.coverage >=
-                                                                            40
+                                                                                40
                                                                                 ? T.green
                                                                                 : T.red
                                                                         }
@@ -3100,44 +3307,45 @@ export default function Cabang({
                                                                         }
                                                                         bg={
                                                                             sales.status ===
-                                                                            "Sangat Baik"
+                                                                                "Sangat Baik"
                                                                                 ? "#dcfce7"
                                                                                 : sales.status ===
                                                                                     "Baik"
-                                                                                  ? "#fef9c3"
-                                                                                  : "#fee2e2"
+                                                                                    ? "#fef9c3"
+                                                                                    : "#fee2e2"
                                                                         }
                                                                         color={
                                                                             sales.status ===
-                                                                            "Sangat Baik"
+                                                                                "Sangat Baik"
                                                                                 ? "#166534"
                                                                                 : sales.status ===
                                                                                     "Baik"
-                                                                                  ? "#854d0e"
-                                                                                  : "#991b1b"
+                                                                                    ? "#854d0e"
+                                                                                    : "#991b1b"
                                                                         }
                                                                     />
                                                                 </td>
                                                             </tr>
                                                         ))}
                                                     {(!timSalesPerformance ||
-                                                        timSalesPerformance.length ===
-                                                            0) && (
-                                                        <tr>
-                                                            <td
-                                                                colSpan="7"
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                    padding: 20,
-                                                                }}
-                                                            >
-                                                                Belum ada data
-                                                                sales
-                                                            </td>
-                                                        </tr>
-                                                    )}
+                                                        !timSalesPerformance[salesRankingTab] ||
+                                                        timSalesPerformance[salesRankingTab].length ===
+                                                        0) && (
+                                                            <tr>
+                                                                <td
+                                                                    colSpan="7"
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        textAlign:
+                                                                            "center",
+                                                                        padding: 20,
+                                                                    }}
+                                                                >
+                                                                    Belum ada data
+                                                                    sales
+                                                                </td>
+                                                            </tr>
+                                                        )}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -3148,6 +3356,30 @@ export default function Cabang({
                                         title={`Sales yang perlu ditinjau kembali - ${cabangName}`}
                                         sub="Berdasarkan Coverage Terendah"
                                         style={{ flex: 1 }}
+                                        headerAction={
+                                            <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
+                                                {['all', 'sd', 'smp', 'sma'].map(tab => (
+                                                    <button
+                                                        key={tab}
+                                                        onClick={() => setSalesWorstTab(tab)}
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            fontSize: 11,
+                                                            fontWeight: 600,
+                                                            border: 'none',
+                                                            borderRadius: 4,
+                                                            cursor: 'pointer',
+                                                            background: salesWorstTab === tab ? '#fff' : 'transparent',
+                                                            color: salesWorstTab === tab ? T.blue : T.slate,
+                                                            boxShadow: salesWorstTab === tab ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                                                            textTransform: 'uppercase'
+                                                        }}
+                                                    >
+                                                        {tab}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        }
                                     >
                                         <div
                                             style={{
@@ -3224,9 +3456,8 @@ export default function Cabang({
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {[
-                                                        ...timSalesPerformanceWorst,
-                                                    ]
+                                                    {((timSalesPerformanceWorst && timSalesPerformanceWorst[salesWorstTab]) || [])
+                                                        .slice()
                                                         .sort(
                                                             (a, b) =>
                                                                 a.coverage -
@@ -3292,13 +3523,13 @@ export default function Cabang({
                                                                         label={`${sales.coverage}%`}
                                                                         bg={
                                                                             sales.coverage >=
-                                                                            40
+                                                                                40
                                                                                 ? "#f0fdf4"
                                                                                 : "#fef2f2"
                                                                         }
                                                                         color={
                                                                             sales.coverage >=
-                                                                            40
+                                                                                40
                                                                                 ? T.green
                                                                                 : T.red
                                                                         }
@@ -3342,44 +3573,45 @@ export default function Cabang({
                                                                         }
                                                                         bg={
                                                                             sales.status ===
-                                                                            "Sangat Baik"
+                                                                                "Sangat Baik"
                                                                                 ? "#dcfce7"
                                                                                 : sales.status ===
                                                                                     "Baik"
-                                                                                  ? "#fef9c3"
-                                                                                  : "#fee2e2"
+                                                                                    ? "#fef9c3"
+                                                                                    : "#fee2e2"
                                                                         }
                                                                         color={
                                                                             sales.status ===
-                                                                            "Sangat Baik"
+                                                                                "Sangat Baik"
                                                                                 ? "#166534"
                                                                                 : sales.status ===
                                                                                     "Baik"
-                                                                                  ? "#854d0e"
-                                                                                  : "#991b1b"
+                                                                                    ? "#854d0e"
+                                                                                    : "#991b1b"
                                                                         }
                                                                     />
                                                                 </td>
                                                             </tr>
                                                         ))}
                                                     {(!timSalesPerformanceWorst ||
-                                                        timSalesPerformanceWorst.length ===
-                                                            0) && (
-                                                        <tr>
-                                                            <td
-                                                                colSpan="7"
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                    padding: 20,
-                                                                }}
-                                                            >
-                                                                Belum ada data
-                                                                sales
-                                                            </td>
-                                                        </tr>
-                                                    )}
+                                                        !timSalesPerformanceWorst[salesWorstTab] ||
+                                                        timSalesPerformanceWorst[salesWorstTab].length ===
+                                                        0) && (
+                                                            <tr>
+                                                                <td
+                                                                    colSpan="7"
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        textAlign:
+                                                                            "center",
+                                                                        padding: 20,
+                                                                    }}
+                                                                >
+                                                                    Belum ada data
+                                                                    sales
+                                                                </td>
+                                                            </tr>
+                                                        )}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -3620,13 +3852,13 @@ export default function Cabang({
                                                         label={r.status}
                                                         bg={
                                                             r.status ===
-                                                            "Customer"
+                                                                "Customer"
                                                                 ? "#f0fdf4"
                                                                 : "#fee2e2"
                                                         }
                                                         color={
                                                             r.status ===
-                                                            "Customer"
+                                                                "Customer"
                                                                 ? T.green
                                                                 : T.red
                                                         }
@@ -4341,7 +4573,7 @@ export default function Cabang({
                                                         key: "name",
                                                         dir:
                                                             s.key === "name" &&
-                                                            s.dir === "asc"
+                                                                s.dir === "asc"
                                                                 ? "desc"
                                                                 : "asc",
                                                     }))
@@ -4366,7 +4598,7 @@ export default function Cabang({
                                                         dir:
                                                             s.key ===
                                                                 "kecamatan_name" &&
-                                                            s.dir === "asc"
+                                                                s.dir === "asc"
                                                                 ? "desc"
                                                                 : "asc",
                                                     }))
@@ -4374,7 +4606,7 @@ export default function Cabang({
                                             >
                                                 Kecamatan{" "}
                                                 {sekolahSort.key ===
-                                                "kecamatan_name"
+                                                    "kecamatan_name"
                                                     ? sekolahSort.dir === "asc"
                                                         ? "↑"
                                                         : "↓"
@@ -4393,7 +4625,7 @@ export default function Cabang({
                                                         dir:
                                                             s.key ===
                                                                 "is_active" &&
-                                                            s.dir === "asc"
+                                                                s.dir === "asc"
                                                                 ? "desc"
                                                                 : "asc",
                                                     }))
@@ -4418,7 +4650,7 @@ export default function Cabang({
                                                         dir:
                                                             s.key ===
                                                                 "total_student" &&
-                                                            s.dir === "asc"
+                                                                s.dir === "asc"
                                                                 ? "desc"
                                                                 : "asc",
                                                     }))
@@ -4426,7 +4658,7 @@ export default function Cabang({
                                             >
                                                 Total Siswa{" "}
                                                 {sekolahSort.key ===
-                                                "total_student"
+                                                    "total_student"
                                                     ? sekolahSort.dir === "asc"
                                                         ? "↑"
                                                         : "↓"
@@ -4444,7 +4676,7 @@ export default function Cabang({
                                                         dir:
                                                             s.key ===
                                                                 "penerbit" &&
-                                                            s.dir === "asc"
+                                                                s.dir === "asc"
                                                                 ? "desc"
                                                                 : "asc",
                                                     }))
@@ -4469,7 +4701,7 @@ export default function Cabang({
                                                         dir:
                                                             s.key ===
                                                                 "sumber_dana" &&
-                                                            s.dir === "asc"
+                                                                s.dir === "asc"
                                                                 ? "desc"
                                                                 : "asc",
                                                     }))
@@ -4477,7 +4709,7 @@ export default function Cabang({
                                             >
                                                 Sumber Dana{" "}
                                                 {sekolahSort.key ===
-                                                "sumber_dana"
+                                                    "sumber_dana"
                                                     ? sekolahSort.dir === "asc"
                                                         ? "↑"
                                                         : "↓"
@@ -4514,9 +4746,9 @@ export default function Cabang({
                                             const pageItems =
                                                 filteredListSekolah.slice(
                                                     (sekolahPage - 1) *
-                                                        sekolahPerPage,
+                                                    sekolahPerPage,
                                                     sekolahPage *
-                                                        sekolahPerPage,
+                                                    sekolahPerPage,
                                                 );
 
                                             const groups = {};
@@ -4745,7 +4977,7 @@ export default function Cabang({
                                                         Math.min(
                                                             Math.ceil(
                                                                 filteredListSekolah.length /
-                                                                    sekolahPerPage,
+                                                                sekolahPerPage,
                                                             ),
                                                             p + 1,
                                                         ),
@@ -4755,7 +4987,7 @@ export default function Cabang({
                                                     sekolahPage ===
                                                     Math.ceil(
                                                         filteredListSekolah.length /
-                                                            sekolahPerPage,
+                                                        sekolahPerPage,
                                                     )
                                                 }
                                                 style={{
@@ -4765,26 +4997,26 @@ export default function Cabang({
                                                     border: `1px solid ${T.border}`,
                                                     backgroundColor:
                                                         sekolahPage ===
-                                                        Math.ceil(
-                                                            filteredListSekolah.length /
+                                                            Math.ceil(
+                                                                filteredListSekolah.length /
                                                                 sekolahPerPage,
-                                                        )
+                                                            )
                                                             ? "#f8fafc"
                                                             : "white",
                                                     color:
                                                         sekolahPage ===
-                                                        Math.ceil(
-                                                            filteredListSekolah.length /
+                                                            Math.ceil(
+                                                                filteredListSekolah.length /
                                                                 sekolahPerPage,
-                                                        )
+                                                            )
                                                             ? "#cbd5e1"
                                                             : T.text,
                                                     cursor:
                                                         sekolahPage ===
-                                                        Math.ceil(
-                                                            filteredListSekolah.length /
+                                                            Math.ceil(
+                                                                filteredListSekolah.length /
                                                                 sekolahPerPage,
-                                                        )
+                                                            )
                                                             ? "not-allowed"
                                                             : "pointer",
                                                 }}
@@ -5088,13 +5320,13 @@ export default function Cabang({
                                         </thead>
                                         <tbody>
                                             {kegiatanSales &&
-                                            kegiatanSales.length > 0 ? (
+                                                kegiatanSales.length > 0 ? (
                                                 kegiatanSales
                                                     .slice(
                                                         (kegiatanPage - 1) *
-                                                            kegiatanPerPage,
+                                                        kegiatanPerPage,
                                                         kegiatanPage *
-                                                            kegiatanPerPage,
+                                                        kegiatanPerPage,
                                                     )
                                                     .map((k, i) => (
                                                         <tr
@@ -5159,7 +5391,7 @@ export default function Cabang({
                                                             >
                                                                 {formatNumber(
                                                                     k.real_lalu ||
-                                                                        0,
+                                                                    0,
                                                                 )}
                                                             </td>
                                                             <td
@@ -5172,7 +5404,7 @@ export default function Cabang({
                                                             >
                                                                 {formatNumber(
                                                                     k.rencana_jual ||
-                                                                        0,
+                                                                    0,
                                                                 )}
                                                             </td>
                                                         </tr>
@@ -5222,7 +5454,7 @@ export default function Cabang({
                                                 -{" "}
                                                 {Math.min(
                                                     kegiatanPage *
-                                                        kegiatanPerPage,
+                                                    kegiatanPerPage,
                                                     kegiatanSales.length,
                                                 )}{" "}
                                                 dari {kegiatanSales.length}
@@ -5269,7 +5501,7 @@ export default function Cabang({
                                                             Math.min(
                                                                 Math.ceil(
                                                                     kegiatanSales.length /
-                                                                        kegiatanPerPage,
+                                                                    kegiatanPerPage,
                                                                 ),
                                                                 p + 1,
                                                             ),
@@ -5279,7 +5511,7 @@ export default function Cabang({
                                                         kegiatanPage ===
                                                         Math.ceil(
                                                             kegiatanSales.length /
-                                                                kegiatanPerPage,
+                                                            kegiatanPerPage,
                                                         )
                                                     }
                                                     style={{
@@ -5289,26 +5521,26 @@ export default function Cabang({
                                                         border: `1px solid ${T.border}`,
                                                         backgroundColor:
                                                             kegiatanPage ===
-                                                            Math.ceil(
-                                                                kegiatanSales.length /
+                                                                Math.ceil(
+                                                                    kegiatanSales.length /
                                                                     kegiatanPerPage,
-                                                            )
+                                                                )
                                                                 ? "#f8fafc"
                                                                 : "white",
                                                         color:
                                                             kegiatanPage ===
-                                                            Math.ceil(
-                                                                kegiatanSales.length /
+                                                                Math.ceil(
+                                                                    kegiatanSales.length /
                                                                     kegiatanPerPage,
-                                                            )
+                                                                )
                                                                 ? "#cbd5e1"
                                                                 : T.text,
                                                         cursor:
                                                             kegiatanPage ===
-                                                            Math.ceil(
-                                                                kegiatanSales.length /
+                                                                Math.ceil(
+                                                                    kegiatanSales.length /
                                                                     kegiatanPerPage,
-                                                            )
+                                                                )
                                                                 ? "not-allowed"
                                                                 : "pointer",
                                                     }}
