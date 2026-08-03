@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link, router } from "@inertiajs/react";
 import {
     T, S, Card, Badge, Donut, StatCard, KecamatanChoroplethMap,
     CompetitorChoroplethMap, Bar, CompositionCard, FitBounds
 } from "./SalesPerformanceShared";
 import { MapContainer, TileLayer, Marker, Popup, GeoJSON } from "react-leaflet";
+import VisitActivityCharts from "./VisitActivityCharts";
 
 export default function KegiatanTab(props) {
 
@@ -21,24 +22,135 @@ export default function KegiatanTab(props) {
         handleSpAreaChange, applySpFilter,
         sekolahPerPage,
         kegiatanAktivitasFilter, setKegiatanAktivitasFilter,
+        openKegiatanFromChart,
     } = props;
 
     const [kegiatanPage, setKegiatanPage] = useState(1);
+    const [sekolahAktPage, setSekolahAktPage] = useState(1);
     const kegiatanPerPage = 10;
+    const sekolahAktPerPage = 10;
     const formatNumber = (num) => new Intl.NumberFormat("id-ID").format(num);
+
+    const yearCurr =
+        Number(insights?.targetYear) ||
+        Number(filters?.tahun) ||
+        new Date().getFullYear();
+    const yearPrev = yearCurr - 1;
 
     useEffect(() => {
         setKegiatanPage(1);
     }, [kegiatanAktivitasFilter]);
 
-    const filteredKegiatan = (kegiatanSales || []).filter((k) => {
-        if (!kegiatanAktivitasFilter) return true;
-        const akt = String(k.aktivitas || "").trim() || "Tidak Diketahui";
-        return (
-            akt.toLowerCase() ===
-            String(kegiatanAktivitasFilter).trim().toLowerCase()
+    const parseKegiatanDate = (raw) => {
+        if (!raw) return 0;
+        const s = String(raw).trim();
+        try {
+            if (s.includes("-")) {
+                const d = new Date(s);
+                return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+            }
+            const parts = s.split("/");
+            if (parts.length === 3) {
+                const [a, b, c] = parts.map((p) => parseInt(p, 10));
+                const dayFirst = a > 12 ? true : a <= 12 && b > 12 ? false : true;
+                const d = dayFirst
+                    ? new Date(c, b - 1, a)
+                    : new Date(c, a - 1, b);
+                return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+            }
+            const d = new Date(s);
+            return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+        } catch {
+            return 0;
+        }
+    };
+
+    const filteredKegiatan = (kegiatanSales || [])
+        .filter((k) => {
+            if (!kegiatanAktivitasFilter) return true;
+            const akt = String(k.aktivitas || "").trim() || "Tidak Diketahui";
+            return (
+                akt.toLowerCase() ===
+                String(kegiatanAktivitasFilter).trim().toLowerCase()
+            );
+        })
+        .slice()
+        .sort(
+            (a, b) =>
+                parseKegiatanDate(b.tanggal) - parseKegiatanDate(a.tanggal),
         );
-    });
+
+    const normalizeSchoolName = (name) =>
+        String(name || "")
+            .toUpperCase()
+            .replace(/\s+/g, " ")
+            .trim();
+
+    const sekolahAktivitasRows = useMemo(() => {
+        // Basis baris = Area Cover (is_active), bukan hanya sekolah yang punya kegiatan
+        const acSchools = (listSekolah || []).filter((s) => !!s.is_active);
+        const rowsById = {};
+        const nameToId = {};
+
+        acSchools.forEach((s) => {
+            rowsById[s.id] = {
+                customer_id: s.id,
+                name: s.name || "-",
+                kecamatan: s.kecamatan_name || "-",
+                jenjang: s.jenjang || "-",
+                is_active: 1,
+                activities: {},
+                total_akt: 0,
+                real_prev: Number(s.real_exemplar_previous) || 0,
+                real_curr: Number(s.real_exemplar_current) || 0,
+            };
+            const n = normalizeSchoolName(s.name);
+            if (n && nameToId[n] == null) nameToId[n] = s.id;
+        });
+
+        (kegiatanSales || []).forEach((k) => {
+            let schoolId = null;
+            const cid = k.customer_id;
+            if (cid && rowsById[cid]) {
+                schoolId = cid;
+            } else {
+                const n = normalizeSchoolName(k.customer_name);
+                if (n && nameToId[n] != null) schoolId = nameToId[n];
+            }
+            if (!schoolId) return;
+
+            const akt =
+                String(k.aktivitas || "").trim() || "Tidak Diketahui";
+            rowsById[schoolId].activities[akt] =
+                (rowsById[schoolId].activities[akt] || 0) + 1;
+            rowsById[schoolId].total_akt += 1;
+        });
+
+        return Object.values(rowsById)
+            .map((row) => {
+                const activityList = Object.entries(row.activities)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([label, count]) => ({ label, count }));
+                return {
+                    ...row,
+                    activityList,
+                    activity_summary: activityList
+                        .map((a) => `${a.label}: ${a.count}`)
+                        .join(", "),
+                };
+            })
+            .sort((a, b) => {
+                if (b.total_akt !== a.total_akt) return b.total_akt - a.total_akt;
+                return String(a.name).localeCompare(String(b.name), "id", {
+                    sensitivity: "base",
+                });
+            });
+    }, [kegiatanSales, listSekolah]);
+
+    const sekolahAktTotalPages = Math.max(
+        1,
+        Math.ceil(sekolahAktivitasRows.length / sekolahAktPerPage),
+    );
 
     return (
         <>
@@ -50,6 +162,12 @@ export default function KegiatanTab(props) {
                             gap: 10,
                         }}
                     >
+                        <VisitActivityCharts
+                            kpiData={kpiData}
+                            insights={insights}
+                            openKegiatanFromChart={openKegiatanFromChart}
+                            resultBreakdown={resultBreakdown}
+                        />
                         <div
                             style={{
                                 display: "flex",
@@ -57,196 +175,422 @@ export default function KegiatanTab(props) {
                                 flexWrap: "wrap",
                             }}
                         >
-                            {/* Coverage Kunjungan */}
                             <Card
-                                title="Coverage Kunjungan Sekolah"
-                                style={{ flex: 1, minWidth: 280 }}
+                                title={`Sekolah & Aktivitas · Realisasi ${yearPrev}–${yearCurr}`}
+                                style={{ flex: 1, minWidth: 300 }}
+                                noPad
                             >
                                 <div
                                     style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 20,
+                                        padding: "8px 16px",
+                                        borderBottom: `1px solid ${T.border}`,
+                                        fontSize: 11,
+                                        color: T.slate,
+                                        background: "#f8fafc",
                                     }}
                                 >
-                                    <Donut
-                                        segments={visitCoverage}
-                                        label={`${visitCoverage.reduce((a, c) => a + c.value, 0) > 0 ? Math.round(((visitCoverage.find((s) => s.label === "Dikunjungi")?.value || 0) / visitCoverage.reduce((a, c) => a + c.value, 0)) * 100) : 0}%`}
-                                        sub="Terkunjungi"
-                                    />
-                                    <div style={{ flex: 1 }}>
-                                        {visitCoverage.map((s, i) => (
-                                            <div
-                                                key={i}
+                                    Ringkasan Area Cover + aktivitas &
+                                    realisasi eksemplar 2 tahun ({yearPrev} &{" "}
+                                    {yearCurr}). Total:{" "}
+                                    <strong style={{ color: T.text }}>
+                                        {sekolahAktivitasRows.length}
+                                    </strong>{" "}
+                                    sekolah Area Cover
+                                </div>
+                                <div style={{ overflowX: "auto" }}>
+                                    <table
+                                        style={{
+                                            width: "100%",
+                                            borderCollapse: "collapse",
+                                        }}
+                                    >
+                                        <thead>
+                                            <tr>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        width: 40,
+                                                        textAlign: "center",
+                                                    }}
+                                                >
+                                                    No
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "left",
+                                                    }}
+                                                >
+                                                    Nama Sekolah
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "left",
+                                                    }}
+                                                >
+                                                    Kecamatan
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "center",
+                                                    }}
+                                                >
+                                                    Jenjang
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "left",
+                                                    }}
+                                                >
+                                                    Aktivitas
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "center",
+                                                    }}
+                                                >
+                                                    Total Akt.
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "right",
+                                                    }}
+                                                >
+                                                    Realisasi {yearPrev}
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
+                                                        textAlign: "right",
+                                                    }}
+                                                >
+                                                    Realisasi {yearCurr}
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sekolahAktivitasRows.length ===
+                                            0 ? (
+                                                <tr>
+                                                    <td
+                                                        colSpan="8"
+                                                        style={{
+                                                            ...S.td,
+                                                            textAlign: "center",
+                                                            color: T.slate,
+                                                            padding: "20px 0",
+                                                        }}
+                                                    >
+                                                        Tidak ada sekolah Area
+                                                        Cover
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                sekolahAktivitasRows
+                                                    .slice(
+                                                        (sekolahAktPage - 1) *
+                                                            sekolahAktPerPage,
+                                                        sekolahAktPage *
+                                                            sekolahAktPerPage,
+                                                    )
+                                                    .map((row, idx) => (
+                                                        <tr
+                                                            key={
+                                                                row.customer_id ||
+                                                                idx
+                                                            }
+                                                            className="table-row-hover"
+                                                        >
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "center",
+                                                                    color: T.slate,
+                                                                }}
+                                                            >
+                                                                {(sekolahAktPage -
+                                                                    1) *
+                                                                    sekolahAktPerPage +
+                                                                    idx +
+                                                                    1}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    fontWeight: 700,
+                                                                }}
+                                                            >
+                                                                {row.name}
+                                                                {row.is_active ? (
+                                                                    <span
+                                                                        style={{
+                                                                            marginLeft: 6,
+                                                                            fontSize: 9,
+                                                                            fontWeight: 700,
+                                                                            color: "#059669",
+                                                                            background:
+                                                                                "#ecfdf5",
+                                                                            border: "1px solid #a7f3d0",
+                                                                            borderRadius: 4,
+                                                                            padding:
+                                                                                "1px 5px",
+                                                                        }}
+                                                                    >
+                                                                        AC
+                                                                    </span>
+                                                                ) : null}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    color: T.slate,
+                                                                }}
+                                                            >
+                                                                {row.kecamatan}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "center",
+                                                                }}
+                                                            >
+                                                                {row.jenjang}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                }}
+                                                            >
+                                                                <div
+                                                                    style={{
+                                                                        display:
+                                                                            "flex",
+                                                                        flexWrap:
+                                                                            "wrap",
+                                                                        gap: 4,
+                                                                    }}
+                                                                >
+                                                                    {row.activityList
+                                                                        .length ===
+                                                                    0 ? (
+                                                                        <span
+                                                                            style={{
+                                                                                color: T.slate,
+                                                                                fontSize: 11,
+                                                                            }}
+                                                                        >
+                                                                            —
+                                                                        </span>
+                                                                    ) : (
+                                                                        row.activityList.map(
+                                                                            (
+                                                                                a,
+                                                                            ) => (
+                                                                                <span
+                                                                                    key={
+                                                                                        a.label
+                                                                                    }
+                                                                                    style={{
+                                                                                        display:
+                                                                                            "inline-flex",
+                                                                                        alignItems:
+                                                                                            "center",
+                                                                                        gap: 4,
+                                                                                        fontSize: 10,
+                                                                                        fontWeight: 600,
+                                                                                        color: "#334155",
+                                                                                        background:
+                                                                                            "#f1f5f9",
+                                                                                        border: `1px solid ${T.border}`,
+                                                                                        borderRadius: 99,
+                                                                                        padding:
+                                                                                            "2px 8px",
+                                                                                    }}
+                                                                                >
+                                                                                    {
+                                                                                        a.label
+                                                                                    }
+                                                                                    <strong
+                                                                                        style={{
+                                                                                            color: T.blue,
+                                                                                        }}
+                                                                                    >
+                                                                                        {
+                                                                                            a.count
+                                                                                        }
+                                                                                    </strong>
+                                                                                </span>
+                                                                            ),
+                                                                        )
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "center",
+                                                                    fontWeight: 800,
+                                                                }}
+                                                            >
+                                                                {row.total_akt}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "right",
+                                                                    fontWeight: 700,
+                                                                    color:
+                                                                        row.real_prev >
+                                                                        0
+                                                                            ? T.text
+                                                                            : T.slate,
+                                                                }}
+                                                            >
+                                                                {formatNumber(
+                                                                    row.real_prev,
+                                                                )}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "right",
+                                                                    fontWeight: 700,
+                                                                    color:
+                                                                        row.real_curr >
+                                                                        0
+                                                                            ? "#059669"
+                                                                            : T.slate,
+                                                                }}
+                                                            >
+                                                                {formatNumber(
+                                                                    row.real_curr,
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {sekolahAktivitasRows.length >
+                                    sekolahAktPerPage && (
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                            padding: "10px 16px",
+                                            borderTop: `1px solid ${T.border}`,
+                                            gap: 10,
+                                            flexWrap: "wrap",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                fontSize: 11,
+                                                color: T.slate,
+                                            }}
+                                        >
+                                            {(sekolahAktPage - 1) *
+                                                sekolahAktPerPage +
+                                                1}
+                                            –
+                                            {Math.min(
+                                                sekolahAktPage *
+                                                    sekolahAktPerPage,
+                                                sekolahAktivitasRows.length,
+                                            )}{" "}
+                                            dari {sekolahAktivitasRows.length}
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                gap: 6,
+                                            }}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setSekolahAktPage((p) =>
+                                                        Math.max(1, p - 1),
+                                                    )
+                                                }
+                                                disabled={sekolahAktPage === 1}
                                                 style={{
-                                                    display: "flex",
-                                                    justifyContent:
-                                                        "space-between",
-                                                    marginBottom: 8,
+                                                    padding: "4px 12px",
                                                     fontSize: 12,
+                                                    borderRadius: 4,
+                                                    border: `1px solid ${T.border}`,
+                                                    background:
+                                                        sekolahAktPage === 1
+                                                            ? "#f8fafc"
+                                                            : "white",
+                                                    color:
+                                                        sekolahAktPage === 1
+                                                            ? "#cbd5e1"
+                                                            : T.text,
+                                                    cursor:
+                                                        sekolahAktPage === 1
+                                                            ? "not-allowed"
+                                                            : "pointer",
                                                 }}
                                             >
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 6,
-                                                        color: T.slate,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            width: 10,
-                                                            height: 10,
-                                                            borderRadius: "50%",
-                                                            backgroundColor:
-                                                                s.color,
-                                                        }}
-                                                    />
-                                                    {s.label}
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        fontWeight: 700,
-                                                        color: T.text,
-                                                    }}
-                                                >
-                                                    {s.value}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </Card>
-                            {/* Distribusi Aktivitas */}
-                            <Card
-                                title="Distribusi Aktivitas"
-                                style={{ flex: 1, minWidth: 280 }}
-                            >
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 20,
-                                    }}
-                                >
-                                    <Donut
-                                        segments={activityBreakdown}
-                                        label={activityBreakdown.reduce(
-                                            (a, c) => a + c.value,
-                                            0,
-                                        )}
-                                        sub="Total Aktv"
-                                    />
-                                    <div style={{ flex: 1 }}>
-                                        {activityBreakdown.map((s, i) => (
-                                            <div
-                                                key={i}
+                                                Prev
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setSekolahAktPage((p) =>
+                                                        Math.min(
+                                                            sekolahAktTotalPages,
+                                                            p + 1,
+                                                        ),
+                                                    )
+                                                }
+                                                disabled={
+                                                    sekolahAktPage ===
+                                                    sekolahAktTotalPages
+                                                }
                                                 style={{
-                                                    display: "flex",
-                                                    justifyContent:
-                                                        "space-between",
-                                                    marginBottom: 8,
+                                                    padding: "4px 12px",
                                                     fontSize: 12,
+                                                    borderRadius: 4,
+                                                    border: `1px solid ${T.border}`,
+                                                    background:
+                                                        sekolahAktPage ===
+                                                        sekolahAktTotalPages
+                                                            ? "#f8fafc"
+                                                            : "white",
+                                                    color:
+                                                        sekolahAktPage ===
+                                                        sekolahAktTotalPages
+                                                            ? "#cbd5e1"
+                                                            : T.text,
+                                                    cursor:
+                                                        sekolahAktPage ===
+                                                        sekolahAktTotalPages
+                                                            ? "not-allowed"
+                                                            : "pointer",
                                                 }}
                                             >
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 6,
-                                                        color: T.slate,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            width: 10,
-                                                            height: 10,
-                                                            borderRadius: "50%",
-                                                            backgroundColor:
-                                                                s.color,
-                                                        }}
-                                                    />
-                                                    {s.label}
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        fontWeight: 700,
-                                                        color: T.text,
-                                                    }}
-                                                >
-                                                    {s.value}
-                                                </div>
-                                            </div>
-                                        ))}
+                                                Next
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            </Card>
-                            {/* Hasil Kunjungan */}
-                            <Card
-                                title="Hasil Kunjungan"
-                                style={{ flex: 1, minWidth: 280 }}
-                            >
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 20,
-                                    }}
-                                >
-                                    <Donut
-                                        segments={resultBreakdown}
-                                        label={resultBreakdown.reduce(
-                                            (a, c) => a + c.value,
-                                            0,
-                                        )}
-                                        sub="Aktivitas"
-                                    />
-                                    <div style={{ flex: 1 }}>
-                                        {resultBreakdown.map((s, i) => (
-                                            <div
-                                                key={i}
-                                                style={{
-                                                    display: "flex",
-                                                    justifyContent:
-                                                        "space-between",
-                                                    marginBottom: 8,
-                                                    fontSize: 12,
-                                                }}
-                                            >
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 6,
-                                                        color: T.slate,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            width: 10,
-                                                            height: 10,
-                                                            borderRadius: "50%",
-                                                            backgroundColor:
-                                                                s.color,
-                                                        }}
-                                                    />
-                                                    {s.label}
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        fontWeight: 700,
-                                                        color: T.text,
-                                                    }}
-                                                >
-                                                    {s.value}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                )}
                             </Card>
                         </div>
+
                         <div
                             style={{
                                 display: "flex",

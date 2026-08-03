@@ -142,6 +142,28 @@ class Configuration extends Model
         return round(max(0, min(100, $positiveAvg - $penaltyPts)), 1);
     }
 
+    /**
+     * Label grade Sales Score (AI):
+     * Sangat Baik (≥80), Baik (≥60), Cukup (≥40), Kurang (≥20), Buruk (<20)
+     */
+    public static function salesScoreGrade(float $score): string
+    {
+        if ($score >= 80) {
+            return 'Sangat Baik';
+        }
+        if ($score >= 60) {
+            return 'Baik';
+        }
+        if ($score >= 40) {
+            return 'Cukup';
+        }
+        if ($score >= 20) {
+            return 'Kurang';
+        }
+
+        return 'Buruk';
+    }
+
     protected $appends = [
         'url_logo',
         'url_favicon',

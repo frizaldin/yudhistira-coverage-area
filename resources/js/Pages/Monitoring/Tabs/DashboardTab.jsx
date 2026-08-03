@@ -6,7 +6,6 @@ import {
     Card,
     Badge,
     Donut,
-    ConcentricActivityDonut,
     StatCard,
     KecamatanChoroplethMap,
     CompetitorChoroplethMap,
@@ -86,20 +85,7 @@ export default function DashboardTab(props) {
         applySpFilter,
         sekolahPerPage,
         openSekolahFromChart,
-        openKegiatanFromChart,
     } = props;
-
-    const [visitHover, setVisitHover] = useState(null);
-
-    const activityColorMap = {
-        Pendekatan: "#1d4ed8",
-        SP: "#0d9488",
-        Faktur: "#f59e0b",
-        Gagal: "#dc2626",
-        Promosi: "#8b5cf6",
-        Penagihan: "#06b6d4",
-        "Tidak Diketahui": "#94a3b8",
-    };
 
     const handleSegmenClick = (item) => {
         if (!item?.label || item.label === "Belum Ada") return;
@@ -191,11 +177,6 @@ export default function DashboardTab(props) {
         },
     });
 
-    const handleAktivitasClick = (item) => {
-        if (!item?.label || item.label === "Belum Ada") return;
-        openKegiatanFromChart?.(item.label);
-    };
-
     return (
         <>
             {activeTab === "dashboard" && (
@@ -205,7 +186,7 @@ export default function DashboardTab(props) {
                         kpiData.totalScore !== undefined &&
                         ((showScoreInfo, setShowScoreInfo) => {
                             const score = kpiData.totalScore || 0;
-                            const grade = kpiData.grade || "Kurang";
+                            const grade = kpiData.grade || "Buruk";
                             const gradeColor =
                                 score >= 80
                                     ? "#10b981"
@@ -213,7 +194,9 @@ export default function DashboardTab(props) {
                                       ? "#3b82f6"
                                       : score >= 40
                                         ? "#f59e0b"
-                                        : "#ef4444";
+                                        : score >= 20
+                                          ? "#ea580c"
+                                          : "#ef4444";
                             const gradeColorBg =
                                 score >= 80
                                     ? "#ecfdf5"
@@ -221,14 +204,10 @@ export default function DashboardTab(props) {
                                       ? "#eff6ff"
                                       : score >= 40
                                         ? "#fffbeb"
-                                        : "#fef2f2";
+                                        : score >= 20
+                                          ? "#fff7ed"
+                                          : "#fef2f2";
                             const components = kpiData.components || [];
-                            const monthlyActivities =
-                                kpiData.monthlyActivities || [];
-                            const maxActivity = Math.max(
-                                ...monthlyActivities.map((m) => m.count),
-                                1,
-                            );
 
                             // Gauge SVG params
                             const gaugeSize = 140;
@@ -249,7 +228,7 @@ export default function DashboardTab(props) {
                                 >
                                     {/* Row 1: New UI Dashboard */}
                                     <div
-                                        className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-9 gap-[10px]"
+                                        className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-8 gap-[10px]"
                                         style={{ alignItems: "stretch" }}
                                     >
                                         {/* Card 1: Profile */}
@@ -613,7 +592,65 @@ export default function DashboardTab(props) {
                                             </div>
                                         </div>
 
-                                        {/* Card 3: Rencana Jual */}
+                                        {/* Card 3: Area Cover */}
+                                        <div
+                                            style={{
+                                                background: "#8b5cf6",
+                                                borderRadius: 12,
+                                                padding: 16,
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                justifyContent: "center",
+                                                color: "#fff",
+                                                boxShadow:
+                                                    "0 1px 3px rgba(0,0,0,0.05)",
+                                                position: "relative",
+                                            }}
+                                        >
+                                            <i
+                                                className="bi bi-geo-alt-fill"
+                                                style={{
+                                                    position: "absolute",
+                                                    right: 12,
+                                                    top: 12,
+                                                    fontSize: 20,
+                                                    color: "rgba(255,255,255,0.2)",
+                                                }}
+                                            ></i>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    fontWeight: 700,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                    marginBottom: 4,
+                                                }}
+                                            >
+                                                AREA COVER (AC{" "}
+                                                {insights?.targetYear ||
+                                                    new Date().getFullYear()}
+                                                )
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 22,
+                                                    fontWeight: 800,
+                                                }}
+                                            >
+                                                {insights?.totalAreaCover?.toLocaleString(
+                                                    "id-ID",
+                                                ) || 0}
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                }}
+                                            >
+                                                Customer
+                                            </div>
+                                        </div>
+
+                                        {/* Card 4: Potensi Eksemplar dari Area Cover */}
                                         <div
                                             style={{
                                                 background: "#f59e0b",
@@ -646,10 +683,7 @@ export default function DashboardTab(props) {
                                                     marginBottom: 4,
                                                 }}
                                             >
-                                                RENCANA JUAL (Tahun{" "}
-                                                {insights?.targetYear ||
-                                                    new Date().getFullYear()}
-                                                )
+                                                POTENSI EKSEMPLAR (Area Cover)
                                             </div>
                                             <div
                                                 style={{
@@ -667,11 +701,129 @@ export default function DashboardTab(props) {
                                                     color: "rgba(255,255,255,0.8)",
                                                 }}
                                             >
+                                                Eksemplar · Tahun{" "}
+                                                {insights?.targetYear ||
+                                                    new Date().getFullYear()}
+                                            </div>
+                                        </div>
+
+                                        {/* Card 5: Realisasi Sekolah */}
+                                        <div
+                                            style={{
+                                                background: "#0ea5e9",
+                                                borderRadius: 12,
+                                                padding: 16,
+                                                color: "white",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                justifyContent: "center",
+                                                boxShadow:
+                                                    "0 1px 3px rgba(0,0,0,0.05)",
+                                                position: "relative",
+                                            }}
+                                        >
+                                            <i
+                                                className="bi bi-people-fill"
+                                                style={{
+                                                    position: "absolute",
+                                                    right: 12,
+                                                    top: 12,
+                                                    fontSize: 20,
+                                                    color: "rgba(255,255,255,0.2)",
+                                                }}
+                                            ></i>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    fontWeight: 700,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                    marginBottom: 4,
+                                                }}
+                                            >
+                                                REALISASI SEKOLAH (Tahun{" "}
+                                                {insights?.targetYear ||
+                                                    new Date().getFullYear()}
+                                                )
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 22,
+                                                    fontWeight: 800,
+                                                }}
+                                            >
+                                                {insights?.customerWithRealisasi?.toLocaleString(
+                                                    "id-ID",
+                                                ) || 0}
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                }}
+                                            >
+                                                Sekolah
+                                            </div>
+                                        </div>
+
+                                        {/* Card 6: Realisasi Eksemplar */}
+                                        <div
+                                            style={{
+                                                background: "#3b82f6",
+                                                borderRadius: 12,
+                                                padding: 16,
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                justifyContent: "center",
+                                                color: "#fff",
+                                                boxShadow:
+                                                    "0 1px 3px rgba(0,0,0,0.05)",
+                                                position: "relative",
+                                            }}
+                                        >
+                                            <i
+                                                className="bi bi-bar-chart-fill"
+                                                style={{
+                                                    position: "absolute",
+                                                    right: 12,
+                                                    top: 12,
+                                                    fontSize: 20,
+                                                    color: "rgba(255,255,255,0.2)",
+                                                }}
+                                            ></i>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    fontWeight: 700,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                    marginBottom: 4,
+                                                }}
+                                            >
+                                                REALISASI EKSEMPLAR (Tahun{" "}
+                                                {insights?.targetYear ||
+                                                    new Date().getFullYear()}
+                                                )
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 22,
+                                                    fontWeight: 800,
+                                                }}
+                                            >
+                                                {insights?.totalRealisasiTargetYear?.toLocaleString(
+                                                    "id-ID",
+                                                ) || 0}
+                                            </div>
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    color: "rgba(255,255,255,0.8)",
+                                                }}
+                                            >
                                                 Eksemplar
                                             </div>
                                         </div>
 
-                                        {/* Card 4: Achievement Target */}
+                                        {/* Card 7: Achievement Target */}
                                         <div
                                             style={{
                                                 background: "#10b981",
@@ -746,979 +898,16 @@ export default function DashboardTab(props) {
                                                 </span>
                                             </div>
                                         </div>
-
-                                        {/* Card 5: Realisasi */}
-                                        <div
-                                            style={{
-                                                background: "#3b82f6",
-                                                borderRadius: 12,
-                                                padding: 16,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                justifyContent: "center",
-                                                color: "#fff",
-                                                boxShadow:
-                                                    "0 1px 3px rgba(0,0,0,0.05)",
-                                                position: "relative",
-                                            }}
-                                        >
-                                            <i
-                                                className="bi bi-bar-chart-fill"
-                                                style={{
-                                                    position: "absolute",
-                                                    right: 12,
-                                                    top: 12,
-                                                    fontSize: 20,
-                                                    color: "rgba(255,255,255,0.2)",
-                                                }}
-                                            ></i>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    fontWeight: 700,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                    marginBottom: 4,
-                                                }}
-                                            >
-                                                REALISASI (Tahun{" "}
-                                                {insights?.targetYear ||
-                                                    new Date().getFullYear()}
-                                                )
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 22,
-                                                    fontWeight: 800,
-                                                }}
-                                            >
-                                                {insights?.totalRealisasiTargetYear?.toLocaleString(
-                                                    "id-ID",
-                                                ) || 0}
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                }}
-                                            >
-                                                Eksemplar
-                                            </div>
-                                        </div>
-
-                                        {/* Card 6: Gap Realisasi */}
-                                        <div
-                                            style={{
-                                                background: "#10b981", // Emerald green
-                                                borderRadius: 12,
-                                                padding: 16,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                justifyContent: "center",
-                                                color: "#fff",
-                                                boxShadow:
-                                                    "0 1px 3px rgba(0,0,0,0.05)",
-                                                position: "relative",
-                                            }}
-                                        >
-                                            <i
-                                                className="bi bi-graph-up-arrow"
-                                                style={{
-                                                    position: "absolute",
-                                                    right: 12,
-                                                    top: 12,
-                                                    fontSize: 20,
-                                                    color: "rgba(255,255,255,0.2)",
-                                                }}
-                                            ></i>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    fontWeight: 700,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                    marginBottom: 4,
-                                                    textTransform: "uppercase",
-                                                }}
-                                            >
-                                                GAP REALISASI (
-                                                {insights?.targetYear ||
-                                                    new Date().getFullYear()}{" "}
-                                                VS{" "}
-                                                {(insights?.targetYear ||
-                                                    new Date().getFullYear()) -
-                                                    1}
-                                                )
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 22,
-                                                    fontWeight: 800,
-                                                }}
-                                            >
-                                                {(insights?.totalRealisasiTargetYear ??
-                                                    0) -
-                                                    (insights?.totalRealisasiLaluTargetYear ??
-                                                        0) >
-                                                0
-                                                    ? "+"
-                                                    : ""}
-                                                {(
-                                                    (insights?.totalRealisasiTargetYear ??
-                                                        0) -
-                                                    (insights?.totalRealisasiLaluTargetYear ??
-                                                        0)
-                                                ).toLocaleString("id-ID")}
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                }}
-                                            >
-                                                Eksemplar &nbsp;&bull;&nbsp;
-                                                Tahun lalu:{" "}
-                                                {(
-                                                    insights?.totalRealisasiLaluTargetYear ??
-                                                    0
-                                                ).toLocaleString("id-ID")}
-                                            </div>
-                                        </div>
-
-                                        {/* Card 7: Area Cover */}
-                                        <div
-                                            style={{
-                                                background: "#8b5cf6",
-                                                borderRadius: 12,
-                                                padding: 16,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                justifyContent: "center",
-                                                color: "#fff",
-                                                boxShadow:
-                                                    "0 1px 3px rgba(0,0,0,0.05)",
-                                                position: "relative",
-                                            }}
-                                        >
-                                            <i
-                                                className="bi bi-geo-alt-fill"
-                                                style={{
-                                                    position: "absolute",
-                                                    right: 12,
-                                                    top: 12,
-                                                    fontSize: 20,
-                                                    color: "rgba(255,255,255,0.2)",
-                                                }}
-                                            ></i>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    fontWeight: 700,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                    marginBottom: 4,
-                                                }}
-                                            >
-                                                AREA COVER (AC{" "}
-                                                {insights?.targetYear ||
-                                                    new Date().getFullYear()}
-                                                )
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 22,
-                                                    fontWeight: 800,
-                                                }}
-                                            >
-                                                {insights?.totalAreaCover?.toLocaleString(
-                                                    "id-ID",
-                                                ) || 0}
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                }}
-                                            >
-                                                Customer
-                                            </div>
-                                        </div>
-
-                                        {/* Card 8: Customer Realisasi */}
-                                        <div
-                                            style={{
-                                                background: "#0ea5e9",
-                                                borderRadius: 12,
-                                                padding: 16,
-                                                color: "white",
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                justifyContent: "center",
-                                                boxShadow:
-                                                    "0 1px 3px rgba(0,0,0,0.05)",
-                                                position: "relative",
-                                            }}
-                                        >
-                                            <i
-                                                className="bi bi-people-fill"
-                                                style={{
-                                                    position: "absolute",
-                                                    right: 12,
-                                                    top: 12,
-                                                    fontSize: 20,
-                                                    color: "rgba(255,255,255,0.2)",
-                                                }}
-                                            ></i>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    fontWeight: 700,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                    marginBottom: 4,
-                                                }}
-                                            >
-                                                CUSTOMER REALISASI (Tahun{" "}
-                                                {insights?.targetYear ||
-                                                    new Date().getFullYear()}
-                                                )
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 22,
-                                                    fontWeight: 800,
-                                                }}
-                                            >
-                                                {insights?.customerWithRealisasi?.toLocaleString(
-                                                    "id-ID",
-                                                ) || 0}
-                                            </div>
-                                            <div
-                                                style={{
-                                                    fontSize: 10,
-                                                    color: "rgba(255,255,255,0.8)",
-                                                }}
-                                            >
-                                                Customer
-                                            </div>
-                                        </div>
                                     </div>
 
-                                    {/* Row 2: Grafik Kunjungan & Distribusi Aktivitas */}
+                                    {/* Row 2: Segmen Sekolah & Sumber Dana */}
                                     <div
-                                        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-[10px]"
+                                        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-[10px]"
                                         style={{
                                             marginTop: 10,
                                             alignItems: "stretch",
                                         }}
                                     >
-                                        {/* Column 3: Grafik Kunjungan */}
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                flexDirection: "column",
-                                            }}
-                                        >
-                                            {monthlyActivities.length > 0 && (
-                                                <div
-                                                    style={{
-                                                        ...S.card,
-                                                        padding: 0,
-                                                        overflow: "visible",
-                                                        display: "flex",
-                                                        flexDirection: "column",
-                                                        flex: 1,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            padding:
-                                                                "10px 14px",
-                                                            borderBottom: `1px solid ${T.border}`,
-                                                            display: "flex",
-                                                            justifyContent:
-                                                                "space-between",
-                                                            alignItems:
-                                                                "center",
-                                                            background:
-                                                                "#f8fafc",
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                display: "flex",
-                                                                alignItems:
-                                                                    "center",
-                                                                gap: 8,
-                                                            }}
-                                                        >
-                                                            <div
-                                                                style={{
-                                                                    width: 24,
-                                                                    height: 24,
-                                                                    borderRadius: 6,
-                                                                    background:
-                                                                        "#e0e7ff",
-                                                                    display:
-                                                                        "flex",
-                                                                    alignItems:
-                                                                        "center",
-                                                                    justifyContent:
-                                                                        "center",
-                                                                }}
-                                                            >
-                                                                <i
-                                                                    className="bi bi-bar-chart-fill"
-                                                                    style={{
-                                                                        fontSize: 12,
-                                                                        color: "#4f46e5",
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <div
-                                                                    style={{
-                                                                        fontSize: 11,
-                                                                        fontWeight: 700,
-                                                                        color: T.text,
-                                                                    }}
-                                                                >
-                                                                    Grafik
-                                                                    Kunjungan
-                                                                </div>
-                                                                <div
-                                                                    style={{
-                                                                        fontSize: 9.5,
-                                                                        color: T.slate,
-                                                                        marginTop: 1,
-                                                                    }}
-                                                                >
-                                                                    Tren
-                                                                    kunjungan
-                                                                    (aktivitas
-                                                                    sales)
-                                                                    bulanan di
-                                                                    tahun{" "}
-                                                                    {kpiData.year ||
-                                                                        new Date().getFullYear()}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div
-                                                            style={{
-                                                                fontSize: 11,
-                                                                fontWeight: 700,
-                                                                color: "#4f46e5",
-                                                            }}
-                                                        >
-                                                            Total:{" "}
-                                                            {monthlyActivities.reduce(
-                                                                (a, m) =>
-                                                                    a + m.count,
-                                                                0,
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            padding:
-                                                                "14px 16px 10px",
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "flex-end",
-                                                            gap: 6,
-                                                            position:
-                                                                "relative",
-                                                            overflow: "visible",
-                                                        }}
-                                                    >
-                                                        {monthlyActivities.map(
-                                                            (m, i) => {
-                                                                const barH =
-                                                                    maxActivity >
-                                                                    0
-                                                                        ? Math.max(
-                                                                              (m.count /
-                                                                                  maxActivity) *
-                                                                                  60,
-                                                                              m.count >
-                                                                                  0
-                                                                                  ? 6
-                                                                                  : 2,
-                                                                          )
-                                                                        : 2;
-                                                                const isCurrentMonth =
-                                                                    i ===
-                                                                    new Date().getMonth();
-                                                                const isHovered =
-                                                                    visitHover?.index ===
-                                                                    i;
-                                                                return (
-                                                                    <div
-                                                                        key={i}
-                                                                        style={{
-                                                                            flex: 1,
-                                                                            display:
-                                                                                "flex",
-                                                                            flexDirection:
-                                                                                "column",
-                                                                            alignItems:
-                                                                                "center",
-                                                                            gap: 4,
-                                                                            position:
-                                                                                "relative",
-                                                                            cursor: "pointer",
-                                                                        }}
-                                                                        onMouseEnter={() =>
-                                                                            setVisitHover(
-                                                                                {
-                                                                                    index: i,
-                                                                                    month: m.month,
-                                                                                    year: m.year,
-                                                                                    count: m.count,
-                                                                                    breakdown:
-                                                                                        m.breakdown ||
-                                                                                        [],
-                                                                                },
-                                                                            )
-                                                                        }
-                                                                        onMouseLeave={() =>
-                                                                            setVisitHover(
-                                                                                null,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        {isHovered && (
-                                                                            <div
-                                                                                style={{
-                                                                                    position:
-                                                                                        "absolute",
-                                                                                    bottom: "100%",
-                                                                                    left: "50%",
-                                                                                    transform:
-                                                                                        "translateX(-50%)",
-                                                                                    marginBottom: 8,
-                                                                                    zIndex: 40,
-                                                                                    minWidth: 140,
-                                                                                    background:
-                                                                                        "#0f172a",
-                                                                                    color: "#fff",
-                                                                                    borderRadius: 8,
-                                                                                    padding:
-                                                                                        "8px 10px",
-                                                                                    boxShadow:
-                                                                                        "0 10px 25px rgba(15,23,42,0.25)",
-                                                                                    pointerEvents:
-                                                                                        "none",
-                                                                                    whiteSpace:
-                                                                                        "nowrap",
-                                                                                }}
-                                                                            >
-                                                                                <div
-                                                                                    style={{
-                                                                                        fontSize: 10,
-                                                                                        fontWeight: 700,
-                                                                                        marginBottom: 6,
-                                                                                        color: "#e2e8f0",
-                                                                                    }}
-                                                                                >
-                                                                                    {
-                                                                                        m.month
-                                                                                    }
-                                                                                    {m.year
-                                                                                        ? ` ${m.year}`
-                                                                                        : ""}{" "}
-                                                                                    ·
-                                                                                    Total{" "}
-                                                                                    {
-                                                                                        m.count
-                                                                                    }
-                                                                                </div>
-                                                                                {(
-                                                                                    m.breakdown ||
-                                                                                    []
-                                                                                )
-                                                                                    .length >
-                                                                                0 ? (
-                                                                                    (
-                                                                                        m.breakdown ||
-                                                                                        []
-                                                                                    ).map(
-                                                                                        (
-                                                                                            b,
-                                                                                            bi,
-                                                                                        ) => (
-                                                                                            <div
-                                                                                                key={
-                                                                                                    bi
-                                                                                                }
-                                                                                                style={{
-                                                                                                    display:
-                                                                                                        "flex",
-                                                                                                    alignItems:
-                                                                                                        "center",
-                                                                                                    justifyContent:
-                                                                                                        "space-between",
-                                                                                                    gap: 12,
-                                                                                                    fontSize: 10,
-                                                                                                    marginBottom: 3,
-                                                                                                }}
-                                                                                            >
-                                                                                                <span
-                                                                                                    style={{
-                                                                                                        display:
-                                                                                                            "inline-flex",
-                                                                                                        alignItems:
-                                                                                                            "center",
-                                                                                                        gap: 6,
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <span
-                                                                                                        style={{
-                                                                                                            width: 7,
-                                                                                                            height: 7,
-                                                                                                            borderRadius: 2,
-                                                                                                            background:
-                                                                                                                activityColorMap[
-                                                                                                                    b
-                                                                                                                        .label
-                                                                                                                ] ||
-                                                                                                                "#94a3b8",
-                                                                                                            flexShrink: 0,
-                                                                                                        }}
-                                                                                                    />
-                                                                                                    {
-                                                                                                        b.label
-                                                                                                    }
-                                                                                                </span>
-                                                                                                <strong>
-                                                                                                    {
-                                                                                                        b.value
-                                                                                                    }
-                                                                                                </strong>
-                                                                                            </div>
-                                                                                        ),
-                                                                                    )
-                                                                                ) : (
-                                                                                    <div
-                                                                                        style={{
-                                                                                            fontSize: 10,
-                                                                                            color: "#94a3b8",
-                                                                                        }}
-                                                                                    >
-                                                                                        Tidak
-                                                                                        ada
-                                                                                        aktivitas
-                                                                                    </div>
-                                                                                )}
-                                                                                <div
-                                                                                    style={{
-                                                                                        position:
-                                                                                            "absolute",
-                                                                                        left: "50%",
-                                                                                        bottom: -5,
-                                                                                        transform:
-                                                                                            "translateX(-50%) rotate(45deg)",
-                                                                                        width: 10,
-                                                                                        height: 10,
-                                                                                        background:
-                                                                                            "#0f172a",
-                                                                                    }}
-                                                                                />
-                                                                            </div>
-                                                                        )}
-                                                                        <span
-                                                                            style={{
-                                                                                fontSize: 9.5,
-                                                                                fontWeight: 800,
-                                                                                color:
-                                                                                    m.count >
-                                                                                    0
-                                                                                        ? isCurrentMonth ||
-                                                                                          isHovered
-                                                                                            ? "#4f46e5"
-                                                                                            : T.text
-                                                                                        : T.slate,
-                                                                            }}
-                                                                        >
-                                                                            {m.count >
-                                                                            0
-                                                                                ? m.count
-                                                                                : ""}
-                                                                        </span>
-                                                                        <div
-                                                                            style={{
-                                                                                width: "100%",
-                                                                                maxWidth: 28,
-                                                                                height: barH,
-                                                                                borderRadius:
-                                                                                    "4px 4px 0 0",
-                                                                                background:
-                                                                                    isCurrentMonth ||
-                                                                                    isHovered
-                                                                                        ? "linear-gradient(180deg, #4f46e5, #818cf8)"
-                                                                                        : m.count >
-                                                                                            0
-                                                                                          ? "linear-gradient(180deg, #3b82f6, #93c5fd)"
-                                                                                          : "#f1f5f9",
-                                                                                transition:
-                                                                                    "height 0.6s ease, filter 0.2s",
-                                                                                filter: isHovered
-                                                                                    ? "brightness(1.12)"
-                                                                                    : "none",
-                                                                            }}
-                                                                        />
-                                                                        <span
-                                                                            style={{
-                                                                                fontSize: 9,
-                                                                                color:
-                                                                                    isCurrentMonth ||
-                                                                                    isHovered
-                                                                                        ? "#4f46e5"
-                                                                                        : T.slate,
-                                                                                fontWeight:
-                                                                                    isCurrentMonth ||
-                                                                                    isHovered
-                                                                                        ? 700
-                                                                                        : 500,
-                                                                                paddingTop: 2,
-                                                                                borderTop:
-                                                                                    isCurrentMonth
-                                                                                        ? "2px solid #4f46e5"
-                                                                                        : "2px solid transparent",
-                                                                            }}
-                                                                        >
-                                                                            {
-                                                                                m.month
-                                                                            }
-                                                                        </span>
-                                                                    </div>
-                                                                );
-                                                            },
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Column 4: Distribusi Aktivitas */}
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                flexDirection: "column",
-                                            }}
-                                        >
-                                            {/* Distribusi Aktivitas */}
-                                            {kpiData.activityDistribution !==
-                                                undefined && (
-                                                <div
-                                                    style={{
-                                                        ...S.card,
-                                                        padding: 0,
-                                                        overflow: "hidden",
-                                                        display: "flex",
-                                                        flexDirection: "column",
-                                                        flex: 1,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            padding:
-                                                                "10px 14px",
-                                                            borderBottom: `1px solid ${T.border}`,
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            gap: 8,
-                                                            background:
-                                                                "#f8fafc",
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                width: 24,
-                                                                height: 24,
-                                                                borderRadius: 6,
-                                                                background:
-                                                                    "#ecfdf5",
-                                                                display: "flex",
-                                                                alignItems:
-                                                                    "center",
-                                                                justifyContent:
-                                                                    "center",
-                                                            }}
-                                                        >
-                                                            <i
-                                                                className="bi bi-pie-chart-fill"
-                                                                style={{
-                                                                    fontSize: 12,
-                                                                    color: "#10b981",
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <div
-                                                                style={{
-                                                                    fontSize: 11,
-                                                                    fontWeight: 700,
-                                                                    color: T.text,
-                                                                }}
-                                                            >
-                                                                Distribusi
-                                                                Aktivitas
-                                                            </div>
-                                                            <div
-                                                                style={{
-                                                                    fontSize: 9.5,
-                                                                    color: T.slate,
-                                                                    marginTop: 1,
-                                                                }}
-                                                            >
-                                                                Tiap ring =
-                                                                aktivitas vs
-                                                                Area Cover
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            padding: "10px",
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            justifyContent:
-                                                                "center",
-                                                            gap: 12,
-                                                        }}
-                                                    >
-                                                        {(() => {
-                                                            const hasData =
-                                                                kpiData
-                                                                    .activityDistribution
-                                                                    ?.length >
-                                                                0;
-                                                            const areaCover =
-                                                                Number(
-                                                                    kpiData.areaCover ??
-                                                                        insights?.totalAreaCover ??
-                                                                        0,
-                                                                );
-                                                            const activities =
-                                                                hasData
-                                                                    ? kpiData.activityDistribution
-                                                                    : [];
-                                                            const totalAkt =
-                                                                activities.reduce(
-                                                                    (a, c) =>
-                                                                        a +
-                                                                        (Number(
-                                                                            c.value,
-                                                                        ) || 0),
-                                                                    0,
-                                                                );
-
-                                                            return (
-                                                                <>
-                                                                    <ConcentricActivityDonut
-                                                                        activities={
-                                                                            activities
-                                                                        }
-                                                                        areaCover={
-                                                                            areaCover
-                                                                        }
-                                                                        size={
-                                                                            110
-                                                                        }
-                                                                        ringWidth={
-                                                                            11
-                                                                        }
-                                                                        gap={3}
-                                                                        maxRings={
-                                                                            5
-                                                                        }
-                                                                        label={
-                                                                            areaCover
-                                                                        }
-                                                                        sub="Area Cover"
-                                                                        onRingClick={
-                                                                            handleAktivitasClick
-                                                                        }
-                                                                    />
-                                                                    <div
-                                                                        style={{
-                                                                            display:
-                                                                                "flex",
-                                                                            flexDirection:
-                                                                                "column",
-                                                                            gap: 6,
-                                                                            maxHeight: 110,
-                                                                            overflowY:
-                                                                                "auto",
-                                                                            paddingRight: 4,
-                                                                            flex: 1,
-                                                                            minWidth: 0,
-                                                                        }}
-                                                                    >
-                                                                        {hasData ? (
-                                                                            activities
-                                                                                .slice(
-                                                                                    0,
-                                                                                    5,
-                                                                                )
-                                                                                .map(
-                                                                                    (
-                                                                                        item,
-                                                                                        idx,
-                                                                                    ) => {
-                                                                                        const pct =
-                                                                                            areaCover >
-                                                                                            0
-                                                                                                ? (
-                                                                                                      (item.value /
-                                                                                                          areaCover) *
-                                                                                                      100
-                                                                                                  ).toFixed(
-                                                                                                      0,
-                                                                                                  )
-                                                                                                : 0;
-                                                                                        return (
-                                                                                            <div
-                                                                                                key={
-                                                                                                    idx
-                                                                                                }
-                                                                                                onClick={() =>
-                                                                                                    handleAktivitasClick(
-                                                                                                        item,
-                                                                                                    )
-                                                                                                }
-                                                                                                title="Klik untuk lihat detail kegiatan"
-                                                                                                style={{
-                                                                                                    display:
-                                                                                                        "flex",
-                                                                                                    alignItems:
-                                                                                                        "center",
-                                                                                                    gap: 6,
-                                                                                                    cursor: "pointer",
-                                                                                                    borderRadius: 4,
-                                                                                                    padding:
-                                                                                                        "1px 2px",
-                                                                                                }}
-                                                                                                onMouseEnter={(
-                                                                                                    e,
-                                                                                                ) =>
-                                                                                                    (e.currentTarget.style.background =
-                                                                                                        "#f1f5f9")
-                                                                                                }
-                                                                                                onMouseLeave={(
-                                                                                                    e,
-                                                                                                ) =>
-                                                                                                    (e.currentTarget.style.background =
-                                                                                                        "transparent")
-                                                                                                }
-                                                                                            >
-                                                                                                <div
-                                                                                                    style={{
-                                                                                                        width: 8,
-                                                                                                        height: 8,
-                                                                                                        borderRadius: 2,
-                                                                                                        background:
-                                                                                                            item.color,
-                                                                                                        flexShrink: 0,
-                                                                                                    }}
-                                                                                                />
-                                                                                                <div
-                                                                                                    style={{
-                                                                                                        fontSize: 9.5,
-                                                                                                        color: T.text,
-                                                                                                        fontWeight: 500,
-                                                                                                        whiteSpace:
-                                                                                                            "nowrap",
-                                                                                                        overflow:
-                                                                                                            "hidden",
-                                                                                                        textOverflow:
-                                                                                                            "ellipsis",
-                                                                                                    }}
-                                                                                                >
-                                                                                                    {
-                                                                                                        item.label
-                                                                                                    }
-                                                                                                </div>
-                                                                                                <div
-                                                                                                    style={{
-                                                                                                        fontSize: 9.5,
-                                                                                                        color: T.slate,
-                                                                                                        marginLeft:
-                                                                                                            "auto",
-                                                                                                        fontWeight: 700,
-                                                                                                        whiteSpace:
-                                                                                                            "nowrap",
-                                                                                                    }}
-                                                                                                >
-                                                                                                    {
-                                                                                                        item.value
-                                                                                                    }
-                                                                                                    <span
-                                                                                                        style={{
-                                                                                                            fontWeight: 500,
-                                                                                                            color: "#94a3b8",
-                                                                                                            marginLeft: 3,
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        (
-                                                                                                        {
-                                                                                                            pct
-                                                                                                        }
-                                                                                                        %)
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        );
-                                                                                    },
-                                                                                )
-                                                                        ) : (
-                                                                            <div
-                                                                                style={{
-                                                                                    fontSize: 10,
-                                                                                    color: T.slate,
-                                                                                    fontStyle:
-                                                                                        "italic",
-                                                                                }}
-                                                                            >
-                                                                                Belum
-                                                                                ada
-                                                                                data
-                                                                                aktivitas.
-                                                                            </div>
-                                                                        )}
-                                                                        {hasData &&
-                                                                            areaCover >
-                                                                                0 && (
-                                                                                <div
-                                                                                    style={{
-                                                                                        fontSize: 8.5,
-                                                                                        color: "#94a3b8",
-                                                                                        marginTop: 2,
-                                                                                        borderTop: `1px solid ${T.border}`,
-                                                                                        paddingTop: 4,
-                                                                                    }}
-                                                                                >
-                                                                                    Total
-                                                                                    akt.{" "}
-                                                                                    {
-                                                                                        totalAkt
-                                                                                    }{" "}
-                                                                                    ·
-                                                                                    AC{" "}
-                                                                                    {
-                                                                                        areaCover
-                                                                                    }
-                                                                                </div>
-                                                                            )}
-                                                                    </div>
-                                                                </>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
                                         {/* Column 5: Segmen Sekolah (Negeri/Swasta) */}
                                         <div
                                             style={{
@@ -1852,11 +1041,13 @@ export default function DashboardTab(props) {
                                                                                 "flex",
                                                                             flexDirection:
                                                                                 "column",
-                                                                            gap: 6,
-                                                                            maxHeight: 90,
+                                                                            gap: 8,
+                                                                            maxHeight: 130,
                                                                             overflowY:
                                                                                 "auto",
                                                                             paddingRight: 4,
+                                                                            flex: 1,
+                                                                            minWidth: 0,
                                                                         }}
                                                                     >
                                                                         {total >
@@ -1880,12 +1071,12 @@ export default function DashboardTab(props) {
                                                                                             display:
                                                                                                 "flex",
                                                                                             alignItems:
-                                                                                                "center",
+                                                                                                "flex-start",
                                                                                             gap: 6,
                                                                                             cursor: "pointer",
                                                                                             borderRadius: 4,
                                                                                             padding:
-                                                                                                "1px 2px",
+                                                                                                "2px 2px",
                                                                                         }}
                                                                                         onMouseEnter={(
                                                                                             e,
@@ -1908,31 +1099,72 @@ export default function DashboardTab(props) {
                                                                                                 background:
                                                                                                     item.color,
                                                                                                 flexShrink: 0,
+                                                                                                marginTop: 3,
                                                                                             }}
                                                                                         />
                                                                                         <div
                                                                                             style={{
-                                                                                                fontSize: 9.5,
-                                                                                                color: T.text,
-                                                                                                fontWeight: 500,
+                                                                                                flex: 1,
+                                                                                                minWidth: 0,
                                                                                             }}
                                                                                         >
-                                                                                            {
-                                                                                                item.label
-                                                                                            }
-                                                                                        </div>
-                                                                                        <div
-                                                                                            style={{
-                                                                                                fontSize: 9.5,
-                                                                                                color: T.slate,
-                                                                                                marginLeft:
-                                                                                                    "auto",
-                                                                                                fontWeight: 700,
-                                                                                            }}
-                                                                                        >
-                                                                                            {
-                                                                                                item.value
-                                                                                            }
+                                                                                            <div
+                                                                                                style={{
+                                                                                                    display:
+                                                                                                        "flex",
+                                                                                                    alignItems:
+                                                                                                        "center",
+                                                                                                    gap: 6,
+                                                                                                }}
+                                                                                            >
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        fontSize: 9.5,
+                                                                                                        color: T.text,
+                                                                                                        fontWeight: 600,
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {
+                                                                                                        item.label
+                                                                                                    }
+                                                                                                </div>
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        fontSize: 9.5,
+                                                                                                        color: T.slate,
+                                                                                                        marginLeft:
+                                                                                                            "auto",
+                                                                                                        fontWeight: 700,
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {
+                                                                                                        item.value
+                                                                                                    }
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            <div
+                                                                                                style={{
+                                                                                                    fontSize: 8.5,
+                                                                                                    color: "#64748b",
+                                                                                                    marginTop: 2,
+                                                                                                    lineHeight: 1.35,
+                                                                                                }}
+                                                                                            >
+                                                                                                Realisasi{" "}
+                                                                                                {Number(
+                                                                                                    item.realisasi ??
+                                                                                                        0,
+                                                                                                ).toLocaleString(
+                                                                                                    "id-ID",
+                                                                                                )}{" "}
+                                                                                                · Siswa{" "}
+                                                                                                {Number(
+                                                                                                    item.potensi_siswa ??
+                                                                                                        0,
+                                                                                                ).toLocaleString(
+                                                                                                    "id-ID",
+                                                                                                )}
+                                                                                            </div>
                                                                                         </div>
                                                                                     </div>
                                                                                 ),
@@ -2095,11 +1327,13 @@ export default function DashboardTab(props) {
                                                                                 "flex",
                                                                             flexDirection:
                                                                                 "column",
-                                                                            gap: 6,
-                                                                            maxHeight: 90,
+                                                                            gap: 8,
+                                                                            maxHeight: 130,
                                                                             overflowY:
                                                                                 "auto",
                                                                             paddingRight: 4,
+                                                                            flex: 1,
+                                                                            minWidth: 0,
                                                                         }}
                                                                     >
                                                                         {total >
@@ -2123,12 +1357,12 @@ export default function DashboardTab(props) {
                                                                                             display:
                                                                                                 "flex",
                                                                                             alignItems:
-                                                                                                "center",
+                                                                                                "flex-start",
                                                                                             gap: 6,
                                                                                             cursor: "pointer",
                                                                                             borderRadius: 4,
                                                                                             padding:
-                                                                                                "1px 2px",
+                                                                                                "2px 2px",
                                                                                         }}
                                                                                         onMouseEnter={(
                                                                                             e,
@@ -2151,31 +1385,72 @@ export default function DashboardTab(props) {
                                                                                                 background:
                                                                                                     item.color,
                                                                                                 flexShrink: 0,
+                                                                                                marginTop: 3,
                                                                                             }}
                                                                                         />
                                                                                         <div
                                                                                             style={{
-                                                                                                fontSize: 9.5,
-                                                                                                color: T.text,
-                                                                                                fontWeight: 500,
+                                                                                                flex: 1,
+                                                                                                minWidth: 0,
                                                                                             }}
                                                                                         >
-                                                                                            {
-                                                                                                item.label
-                                                                                            }
-                                                                                        </div>
-                                                                                        <div
-                                                                                            style={{
-                                                                                                fontSize: 9.5,
-                                                                                                color: T.slate,
-                                                                                                marginLeft:
-                                                                                                    "auto",
-                                                                                                fontWeight: 700,
-                                                                                            }}
-                                                                                        >
-                                                                                            {
-                                                                                                item.value
-                                                                                            }
+                                                                                            <div
+                                                                                                style={{
+                                                                                                    display:
+                                                                                                        "flex",
+                                                                                                    alignItems:
+                                                                                                        "center",
+                                                                                                    gap: 6,
+                                                                                                }}
+                                                                                            >
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        fontSize: 9.5,
+                                                                                                        color: T.text,
+                                                                                                        fontWeight: 600,
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {
+                                                                                                        item.label
+                                                                                                    }
+                                                                                                </div>
+                                                                                                <div
+                                                                                                    style={{
+                                                                                                        fontSize: 9.5,
+                                                                                                        color: T.slate,
+                                                                                                        marginLeft:
+                                                                                                            "auto",
+                                                                                                        fontWeight: 700,
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {
+                                                                                                        item.value
+                                                                                                    }
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            <div
+                                                                                                style={{
+                                                                                                    fontSize: 8.5,
+                                                                                                    color: "#64748b",
+                                                                                                    marginTop: 2,
+                                                                                                    lineHeight: 1.35,
+                                                                                                }}
+                                                                                            >
+                                                                                                Realisasi{" "}
+                                                                                                {Number(
+                                                                                                    item.realisasi ??
+                                                                                                        0,
+                                                                                                ).toLocaleString(
+                                                                                                    "id-ID",
+                                                                                                )}{" "}
+                                                                                                · Siswa{" "}
+                                                                                                {Number(
+                                                                                                    item.potensi_siswa ??
+                                                                                                        0,
+                                                                                                ).toLocaleString(
+                                                                                                    "id-ID",
+                                                                                                )}
+                                                                                            </div>
                                                                                         </div>
                                                                                     </div>
                                                                                 ),

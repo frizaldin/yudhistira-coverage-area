@@ -18,6 +18,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
+import Swal from "sweetalert2";
 
 let DefaultIcon = L.icon({
     iconUrl: icon,
@@ -26,6 +27,163 @@ let DefaultIcon = L.icon({
     iconAnchor: [12, 41],
 });
 L.Marker.prototype.options.icon = DefaultIcon;
+
+function openSalesPageGuide() {
+    const section = (id, title, body) => `
+        <div id="${id}" style="margin-bottom:18px; scroll-margin-top:8px;">
+            <div style="font-size:13px; font-weight:800; color:#0f172a; margin-bottom:6px; padding-bottom:4px; border-bottom:1px solid #e2e8f0;">${title}</div>
+            <div style="font-size:12px; color:#334155; line-height:1.55;">${body}</div>
+        </div>
+    `;
+
+    const html = `
+        <div style="text-align:left; max-height:70vh; overflow:auto; padding-right:4px;">
+            <div style="position:sticky; top:0; background:#fff; z-index:2; padding-bottom:10px; margin-bottom:12px; border-bottom:1px solid #e2e8f0;">
+                <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:8px;">Daftar Isi</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    ${[
+                        ["isi-halaman", "Isi Halaman"],
+                        ["kpi-cards", "Kartu KPI"],
+                        ["sales-score", "Sales Score (AI)"],
+                        ["trl", "Tahan–Rebut–Lepas"],
+                        ["segmen", "Segmen & Sumber Dana"],
+                        ["tabs", "Tab Lain"],
+                        ["catatan", "Catatan"],
+                    ]
+                        .map(
+                            ([id, label]) => `
+                        <button type="button"
+                            onclick="(function(el){var root=el.closest('.swal2-html-container');var t=root&&root.querySelector('#${id}'); if(t) t.scrollIntoView({behavior:'smooth',block:'start'});})(this)"
+                            style="display:inline-block; padding:4px 10px; border-radius:99px; background:#f1f5f9; border:1px solid #e2e8f0; color:#1e40af; font-size:11px; font-weight:700; cursor:pointer;">
+                            ${label}
+                        </button>
+                    `,
+                        )
+                        .join("")}
+                </div>
+            </div>
+
+            ${section(
+                "isi-halaman",
+                "1. Isi Halaman",
+                `
+                <p style="margin:0 0 8px;">Halaman ini menampilkan performa <strong>satu sales</strong> untuk tahun filter yang dipilih. Tab yang tersedia:</p>
+                <ul style="margin:0; padding-left:18px;">
+                    <li><strong>Dashboard Utama</strong> — skor, KPI, TRL, segmen, chart distribusi</li>
+                    <li><strong>Kecamatan</strong> — daftar kecamatan coverage sales</li>
+                    <li><strong>Sekolah</strong> — daftar sekolah + kolom realisasi</li>
+                    <li><strong>Kegiatan Sales</strong> — grafik kunjungan, distribusi aktivitas, riwayat kegiatan</li>
+                    <li><strong>Rekomendasi</strong> — analisis / rekomendasi area cover</li>
+                </ul>
+                `,
+            )}
+
+            ${section(
+                "kpi-cards",
+                "2. Kartu KPI (baris atas)",
+                `
+                <ul style="margin:0; padding-left:18px;">
+                    <li><strong>Profil</strong> — nama, kode sales, area</li>
+                    <li><strong>Sales Score (AI)</strong> — skor berbobot 0–100 + grade</li>
+                    <li><strong>Area Cover</strong> — jumlah sekolah AC tahun berjalan</li>
+                    <li><strong>Potensi Eksemplar (Area Cover)</strong> — total rencana jual / target eksemplar di AC</li>
+                    <li><strong>Realisasi Sekolah</strong> — jumlah sekolah yang punya realisasi &gt; 0</li>
+                    <li><strong>Realisasi Eksemplar</strong> — total volume realisasi tahun berjalan</li>
+                    <li><strong>Achievement Target</strong> — Realisasi Eksemplar ÷ Potensi Eksemplar × 100%</li>
+                </ul>
+                `,
+            )}
+
+            ${section(
+                "sales-score",
+                "3. Sales Score (AI) — rumus & bobot",
+                `
+                <p style="margin:0 0 8px;"><strong>5 indikator positif</strong> (total bobot harus 100%):</p>
+                <ol style="margin:0 0 10px; padding-left:18px;">
+                    <li><strong>Realisasi YoY</strong> — tahun ini ≥ tahun lalu → 100; jika turun → (tahun ini ÷ tahun lalu) × 100</li>
+                    <li><strong>Customer Realisasi vs Area Cover</strong> — (jumlah sekolah ber-realisasi ÷ Area Cover) × 100</li>
+                    <li><strong>Achievement Target</strong> — (realisasi eksemplar ÷ target) × 100</li>
+                    <li><strong>Tahan vs Area Cover</strong> — (Tahan ÷ Area Cover) × 100</li>
+                    <li><strong>Rebut vs Area Cover</strong> — (Rebut ÷ Area Cover) × 100</li>
+                </ol>
+                <p style="margin:0 0 8px;"><strong>Lepas vs Area Cover</strong> = pengurang <em>eksternal</em> (di luar 100%):</p>
+                <ul style="margin:0 0 10px; padding-left:18px;">
+                    <li>Nilai Lepas = (Lepas ÷ Area Cover) × 100</li>
+                    <li>Potongan skor = (nilai Lepas ÷ 100) × bobot Lepas</li>
+                    <li>Contoh: Lepas 86,7% &amp; bobot 1% → potong ≈ 0,87 poin</li>
+                </ul>
+                <p style="margin:0 0 8px;"><strong>Skor akhir</strong> = rata-rata berbobot 5 indikator − potongan Lepas (dibatasi 0–100).</p>
+                <p style="margin:0 0 6px;"><strong>Grade:</strong></p>
+                <ul style="margin:0; padding-left:18px;">
+                    <li>≥ 80 Sangat Baik · ≥ 60 Baik · ≥ 40 Cukup · ≥ 20 Kurang · &lt; 20 Buruk</li>
+                </ul>
+                <p style="margin:8px 0 0; color:#64748b; font-size:11px;">Bobot bisa diubah di menu Pengaturan (level nasional).</p>
+                `,
+            )}
+
+            ${section(
+                "trl",
+                "4. Tahan – Rebut – Lepas",
+                `
+                <p style="margin:0 0 8px;">Dihitung dari sekolah <strong>Area Cover</strong> saja. Total Tahan + Rebut + Lepas = Area Cover.</p>
+                <ul style="margin:0; padding-left:18px;">
+                    <li><strong>Tahan</strong> — tahun lalu ada realisasi <strong>dan</strong> tahun ini ada realisasi</li>
+                    <li><strong>Rebut</strong> — tahun lalu tidak realisasi <strong>dan</strong> tahun ini ada realisasi</li>
+                    <li><strong>Lepas</strong> — tahun ini <strong>tidak</strong> ada realisasi (termasuk yang belum pernah realisasi)</li>
+                </ul>
+                `,
+            )}
+
+            ${section(
+                "segmen",
+                "5. Segmen Sekolah & Sumber Dana",
+                `
+                <ul style="margin:0; padding-left:18px;">
+                    <li>Donut = jumlah sekolah AC per kategori</li>
+                    <li><strong>Realisasi</strong> = total eksemplar realisasi di kategori tersebut</li>
+                    <li><strong>Siswa</strong> = total potensi siswa di kategori tersebut</li>
+                    <li>Negeri (BOS) ≈ sumber dana BOS; Swasta ≈ sumber dana SWA*</li>
+                </ul>
+                `,
+            )}
+
+            ${section(
+                "tabs",
+                "6. Tab Sekolah & Kegiatan Sales",
+                `
+                <ul style="margin:0; padding-left:18px;">
+                    <li><strong>Sekolah</strong> — daftar sekolah sales + kolom Realisasi (tahun filter)</li>
+                    <li><strong>Kegiatan Sales</strong> — Grafik Kunjungan bulanan, Distribusi Aktivitas (vs Area Cover), coverage kunjungan, riwayat kegiatan</li>
+                    <li>Nilai <strong>SP</strong> di distribusi aktivitas disetel sama dengan jumlah Customer Realisasi</li>
+                </ul>
+                `,
+            )}
+
+            ${section(
+                "catatan",
+                "7. Catatan penting",
+                `
+                <ul style="margin:0; padding-left:18px;">
+                    <li>Semua angka mengikuti filter <strong>tahun</strong> di URL/form</li>
+                    <li>Area Cover = sekolah dengan flag AC pada tahun berjalan</li>
+                    <li>Klik info (ⓘ) pada kartu Sales Score untuk detail indikator &amp; bobot</li>
+                </ul>
+                `,
+            )}
+        </div>
+    `;
+
+    Swal.fire({
+        title: "Panduan Halaman Sales",
+        html,
+        width: 720,
+        confirmButtonText: "Tutup",
+        confirmButtonColor: "#4f46e5",
+        customClass: {
+            popup: "swal-page-guide",
+        },
+    });
+}
 
 export default function SalesPerformanceDetail({
     activeNav = "cabang",
@@ -643,6 +801,35 @@ export default function SalesPerformanceDetail({
                         flexWrap: "wrap",
                     }}
                 >
+                    {isSalesDetail && (
+                        <button
+                            type="button"
+                            onClick={openSalesPageGuide}
+                            style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                color: "#4338ca",
+                                fontSize: 13,
+                                fontWeight: 700,
+                                padding: "6px 12px",
+                                borderRadius: 6,
+                                border: "1px solid #c7d2fe",
+                                background: "#eef2ff",
+                                cursor: "pointer",
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#e0e7ff";
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#eef2ff";
+                            }}
+                            title="Daftar isi & panduan perhitungan halaman ini"
+                        >
+                            <i className="bi bi-journal-text" />
+                            Panduan Halaman
+                        </button>
+                    )}
                     {backUrl && (
                         <Link
                             href={backUrl}

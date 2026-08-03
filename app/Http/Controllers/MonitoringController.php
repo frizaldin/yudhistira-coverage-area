@@ -3048,7 +3048,7 @@ class MonitoringController extends Controller
             $kpiData = [
                 'salesName' => $salesRep ? $salesRep->name : 'Unknown Sales',
                 'totalScore' => $totalKpiScore,
-                'grade' => $totalKpiScore >= 80 ? 'Sangat Baik' : ($totalKpiScore >= 60 ? 'Baik' : ($totalKpiScore >= 40 ? 'Cukup' : 'Kurang')),
+                'grade' => \App\Models\Configuration::salesScoreGrade($totalKpiScore),
                 'weights' => $scoreWeights,
                 'components' => [
                     [
@@ -3155,7 +3155,16 @@ class MonitoringController extends Controller
                 $sd = strtoupper(trim($s->sumber_dana ?? ''));
                 return empty($sd) ? 'LAINNYA/KOSONG' : $sd;
             })->map(function ($group, $key) {
-                return ['label' => $key, 'value' => $group->count()];
+                return [
+                    'label' => $key,
+                    'value' => $group->count(),
+                    'realisasi' => round((float) $group->sum(function ($s) {
+                        return (float) ($s->real_exemplar_current ?? 0);
+                    }), 0),
+                    'potensi_siswa' => (int) $group->sum(function ($s) {
+                        return (int) ($s->total_student ?? 0);
+                    }),
+                ];
             })->values()->sortByDesc('value')->values()->toArray();
 
             $sdColors = ['#059669', '#2563eb', '#d97706', '#9333ea', '#e11d48', '#0891b2'];
@@ -3226,6 +3235,10 @@ class MonitoringController extends Controller
 
             $segmentNegeri = 0;
             $segmentSwasta = 0;
+            $segmentNegeriRealisasi = 0.0;
+            $segmentSwastaRealisasi = 0.0;
+            $segmentNegeriSiswa = 0;
+            $segmentSwastaSiswa = 0;
 
             $trlgPerJenjang = [];
             foreach (['SD', 'SMP', 'SMA', 'SMK'] as $jenjang) {
@@ -3239,11 +3252,18 @@ class MonitoringController extends Controller
                     $trlgPerJenjang[$jenjang] = ['tahan' => 0, 'rebut' => 0, 'lepas' => 0, 'gagal' => 0];
                 }
 
+                $realCurrVal = (float) ($s->real_exemplar_current ?? 0);
+                $siswaVal = (int) ($s->total_student ?? 0);
+
                 $sumberDana = strtoupper(trim($s->sumber_dana ?? ''));
                 if ($sumberDana === 'BOS') {
                     $segmentNegeri++;
+                    $segmentNegeriRealisasi += $realCurrVal;
+                    $segmentNegeriSiswa += $siswaVal;
                 } elseif (strpos($sumberDana, 'SWA') === 0) {
                     $segmentSwasta++;
+                    $segmentSwastaRealisasi += $realCurrVal;
+                    $segmentSwastaSiswa += $siswaVal;
                 }
 
                 // Logika TRL (semua sekolah Area Cover harus masuk salah satu):
@@ -3304,8 +3324,20 @@ class MonitoringController extends Controller
 
             $kpiData['year'] = $currentYear;
             $kpiData['segmenSekolah'] = [
-                ['label' => 'Negeri (BOS)', 'value' => $segmentNegeri, 'color' => '#1d4ed8'],
-                ['label' => 'Swasta', 'value' => $segmentSwasta, 'color' => '#f59e0b']
+                [
+                    'label' => 'Negeri (BOS)',
+                    'value' => $segmentNegeri,
+                    'realisasi' => round($segmentNegeriRealisasi, 0),
+                    'potensi_siswa' => $segmentNegeriSiswa,
+                    'color' => '#1d4ed8',
+                ],
+                [
+                    'label' => 'Swasta',
+                    'value' => $segmentSwasta,
+                    'realisasi' => round($segmentSwastaRealisasi, 0),
+                    'potensi_siswa' => $segmentSwastaSiswa,
+                    'color' => '#f59e0b',
+                ],
             ];
 
             return \Inertia\Inertia::render('Monitoring/SalesPerformanceDetail', array_merge($data, [
@@ -3829,6 +3861,7 @@ class MonitoringController extends Controller
                 'baik' => $rows->where('grade', 'Baik')->count(),
                 'cukup' => $rows->where('grade', 'Cukup')->count(),
                 'kurang' => $rows->where('grade', 'Kurang')->count(),
+                'buruk' => $rows->where('grade', 'Buruk')->count(),
             ],
             'filterOptions' => [
                 'areas' => \App\Models\Area::select('id', 'name')->orderBy('name')->get(),
@@ -4114,9 +4147,7 @@ class MonitoringController extends Controller
                 'rebut_vs_ac' => $rebutVsAcScore,
                 'lepas_vs_ac' => $lepasVsAcScore,
             ], $scoreWeights);
-            $grade = $totalScore >= 80
-                ? 'Sangat Baik'
-                : ($totalScore >= 60 ? 'Baik' : ($totalScore >= 40 ? 'Cukup' : 'Kurang'));
+            $grade = \App\Models\Configuration::salesScoreGrade($totalScore);
 
             return [
                 'sales_id' => $salesId,

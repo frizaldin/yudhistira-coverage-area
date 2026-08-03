@@ -18,6 +18,7 @@ function gradeColor(score) {
     if (score >= 80) return { fg: "#059669", bg: "#ecfdf5", border: "#a7f3d0" };
     if (score >= 60) return { fg: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" };
     if (score >= 40) return { fg: "#d97706", bg: "#fffbeb", border: "#fde68a" };
+    if (score >= 20) return { fg: "#ea580c", bg: "#fff7ed", border: "#fed7aa" };
     return { fg: "#dc2626", bg: "#fef2f2", border: "#fecaca" };
 }
 
@@ -152,9 +153,30 @@ export default function Report({
             bg: "#ecfdf5",
         },
         {
+            label: "Baik",
+            value: summary?.baik ?? 0,
+            icon: "bi-hand-thumbs-up-fill",
+            color: "#2563eb",
+            bg: "#eff6ff",
+        },
+        {
+            label: "Cukup",
+            value: summary?.cukup ?? 0,
+            icon: "bi-dash-circle-fill",
+            color: "#d97706",
+            bg: "#fffbeb",
+        },
+        {
             label: "Kurang",
             value: summary?.kurang ?? 0,
             icon: "bi-exclamation-triangle-fill",
+            color: "#ea580c",
+            bg: "#fff7ed",
+        },
+        {
+            label: "Buruk",
+            value: summary?.buruk ?? 0,
+            icon: "bi-x-octagon-fill",
             color: "#dc2626",
             bg: "#fef2f2",
         },
