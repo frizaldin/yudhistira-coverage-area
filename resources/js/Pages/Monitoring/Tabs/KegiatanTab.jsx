@@ -98,6 +98,7 @@ export default function KegiatanTab(props) {
                 name: s.name || "-",
                 kecamatan: s.kecamatan_name || "-",
                 jenjang: s.jenjang || "-",
+                total_siswa: Number(s.total_student) || 0,
                 is_active: 1,
                 activities: {},
                 total_akt: 0,
@@ -242,6 +243,14 @@ export default function KegiatanTab(props) {
                                                 <th
                                                     style={{
                                                         ...S.th,
+                                                        textAlign: "right",
+                                                    }}
+                                                >
+                                                    Siswa
+                                                </th>
+                                                <th
+                                                    style={{
+                                                        ...S.th,
                                                         textAlign: "left",
                                                     }}
                                                 >
@@ -278,7 +287,7 @@ export default function KegiatanTab(props) {
                                             0 ? (
                                                 <tr>
                                                     <td
-                                                        colSpan="8"
+                                                        colSpan="9"
                                                         style={{
                                                             ...S.td,
                                                             textAlign: "center",
@@ -362,6 +371,20 @@ export default function KegiatanTab(props) {
                                                                 }}
                                                             >
                                                                 {row.jenjang}
+                                                            </td>
+                                                            <td
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "right",
+                                                                    fontWeight: 600,
+                                                                    color: T.text,
+                                                                }}
+                                                            >
+                                                                {formatNumber(
+                                                                    row.total_siswa ||
+                                                                        0,
+                                                                )}
                                                             </td>
                                                             <td
                                                                 style={{
