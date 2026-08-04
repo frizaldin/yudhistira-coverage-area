@@ -4661,4 +4661,227 @@ class MonitoringController extends Controller
             ? $rows->sortBy($sort)->values()
             : $rows->sortByDesc($sort)->values();
     }
+
+    /**
+     * GET /monitoring/cabang/{cabangCode}/trl-detail
+     * Detail TRL per Sales per Jenjang + list sekolah per kategori TRL
+     */
+    public function detailTrl($cabangCode)
+    {
+        $cabang = \App\Models\Cabang::findOrFail($cabangCode);
+
+        $user = auth()->user();
+        if ($user) {
+            if ($user->level === 'area' && $user->area_id != $cabang->area_id) abort(403);
+            if ($user->level === 'cabang' && $user->cabang_id != $cabang->id) abort(403);
+            if ($user->level === 'sales') {
+                $sales = \App\Models\Sales::find($user->sales_id);
+                if (!$sales || $sales->cabang_id != $cabang->id) abort(403);
+            }
+        }
+
+        // salesIds dari customers (karena sales tidak punya kolom cabang_id)
+        $salesIds = \App\Models\Customer::where('cabang_id', $cabang->id)
+            ->whereNotNull('sales_id')
+            ->pluck('sales_id')
+            ->unique()
+            ->values();
+        $jenjangList = ['SD', 'SMP', 'SMA', 'SMK'];
+
+        // — Filter params
+        $filterSales  = request('sales_id');
+        $filterJenjang = request('jenjang');
+        $filterStatus  = request('trl_status'); // tahan|rebut|lepas|gagal
+
+        // — TRL per Sales per Jenjang (aggregasi)
+        $planQuery = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)
+            ->whereNotNull('jenjang')
+            ->selectRaw('sales_id, jenjang,
+                SUM(tahan_customer) as tahan,
+                SUM(rebut_customer) as rebut,
+                SUM(lepas_customer) as lepas,
+                SUM(gagal_customer) as gagal')
+            ->groupBy('sales_id', 'jenjang');
+
+        if ($filterSales) {
+            $planQuery->where('sales_id', $filterSales);
+        }
+        if ($filterJenjang) {
+            $planQuery->where('jenjang', $filterJenjang);
+        }
+
+        $planRows = $planQuery->get();
+        $salesMap = \App\Models\Sales::whereIn('id', $salesIds->toArray())->pluck('name', 'id');
+
+        $trlBySales = $planRows->map(function ($r) use ($salesMap) {
+            return [
+                'sales_id'   => $r->sales_id,
+                'sales_name' => $salesMap[$r->sales_id] ?? 'Unknown',
+                'jenjang'    => $r->jenjang,
+                'tahan'      => (int) $r->tahan,
+                'rebut'      => (int) $r->rebut,
+                'lepas'      => (int) $r->lepas,
+                'gagal'      => (int) $r->gagal,
+                'total'      => (int)$r->tahan + (int)$r->rebut + (int)$r->lepas + (int)$r->gagal,
+            ];
+        })->sortBy(['sales_name', 'jenjang'])->values();
+
+        // — List Sekolah dengan TRL status
+        // TRL status ditentukan dari field is_active + apakah ada di sales_plan
+        // Logika: 
+        //   tahan = punya sales + is_active = 1 (customer aktif tahun ini & tahun lalu)
+        //   rebut = punya sales + is_active = 1 + baru masuk (tidak ada di prev year)  
+        //   lepas = punya sales + is_active = 0 + ada di prev year
+        //   gagal = punya sales + is_active = 0 + tidak ada di prev year (2 tahun berturut)
+        // Namun karena data trl_status belum ada di customer table,
+        // kita gunakan is_active sebagai proxy: aktif=tahan/rebut, tidak aktif=lepas/gagal
+
+        $cfg = \App\Models\Configuration::query()->first(['target_year', 'prev_year']);
+        $targetYear = (int) ($cfg->target_year ?? date('Y'));
+        $prevYear   = $targetYear - 1;
+
+        $customerQuery = \App\Models\Customer::where('cabang_id', $cabang->id)
+            ->whereNotNull('sales_id')
+            ->with('sales:id,name');
+
+        if ($filterSales) {
+            $customerQuery->where('sales_id', $filterSales);
+        }
+        if ($filterJenjang) {
+            $customerQuery->where('jenjang', $filterJenjang);
+        }
+
+        // Determine TRL status per customer:
+        // We check customer_plans for prev year and target year real_exemplar > 0
+        $customerIds = (clone $customerQuery)->pluck('id');
+
+        // Customers with activity in prevYear
+        $activeLastYear = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->where('year', $prevYear)->where('real_exemplar', '>', 0)
+            ->pluck('customer_id')->flip();
+
+        // Customers with activity in targetYear
+        $activeThisYear = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+            ->where('year', $targetYear)->where('real_exemplar', '>', 0)
+            ->pluck('customer_id')->flip();
+
+        $sekolah = (clone $customerQuery)
+            ->select('id', 'name', 'kecamatan_name', 'jenjang', 'sumber_dana',
+                     'is_active', 'total_student', 'sales_id')
+            ->orderBy('name')
+            ->paginate(50)
+            ->withQueryString()
+            ->through(function ($c) use ($activeLastYear, $activeThisYear, $filterStatus) {
+                $hadLastYear  = isset($activeLastYear[$c->id]);
+                $hadThisYear  = isset($activeThisYear[$c->id]);
+
+                // TRL classification
+                if ($hadLastYear && $hadThisYear) {
+                    $status = 'tahan';
+                } elseif (!$hadLastYear && $hadThisYear) {
+                    $status = 'rebut';
+                } elseif ($hadLastYear && !$hadThisYear) {
+                    $status = 'lepas';
+                } else {
+                    $status = 'gagal';
+                }
+
+                return [
+                    'id'           => $c->id,
+                    'nama_sekolah' => $c->name,
+                    'kecamatan'    => $c->kecamatan_name,
+                    'kabupaten'    => null,
+                    'jenjang'      => $c->jenjang,
+                    'sumber_dana'  => $c->sumber_dana,
+                    'is_active'    => (bool) $c->is_active,
+                    'total_student'=> (int) ($c->total_student ?? 0),
+                    'sales_name'   => $c->sales->name ?? 'Unknown',
+                    'sales_id'     => $c->sales_id,
+                    'trl_status'   => $status,
+                ];
+            });
+
+        // Filter by trl_status after pagination (apply pre-filter if given)
+        // For accurate filtering, re-query with trl_status as computed field:
+        if ($filterStatus) {
+            // rebuild with status filter — we need all IDs first
+            $allCustomers = (clone $customerQuery)
+                ->select('id', 'name', 'kecamatan_name', 'jenjang', 'sumber_dana',
+                         'is_active', 'total_student', 'sales_id')
+                ->orderBy('name')
+                ->get();
+
+            $filtered = $allCustomers->filter(function ($c) use ($activeLastYear, $activeThisYear, $filterStatus) {
+                $hadLastYear = isset($activeLastYear[$c->id]);
+                $hadThisYear = isset($activeThisYear[$c->id]);
+                if ($hadLastYear && $hadThisYear) $status = 'tahan';
+                elseif (!$hadLastYear && $hadThisYear) $status = 'rebut';
+                elseif ($hadLastYear && !$hadThisYear) $status = 'lepas';
+                else $status = 'gagal';
+                return $status === $filterStatus;
+            })->map(function ($c) use ($activeLastYear, $activeThisYear) {
+                $hadLastYear = isset($activeLastYear[$c->id]);
+                $hadThisYear = isset($activeThisYear[$c->id]);
+                if ($hadLastYear && $hadThisYear) $status = 'tahan';
+                elseif (!$hadLastYear && $hadThisYear) $status = 'rebut';
+                elseif ($hadLastYear && !$hadThisYear) $status = 'lepas';
+                else $status = 'gagal';
+                return [
+                    'id'           => $c->id,
+                    'nama_sekolah' => $c->name,
+                    'kecamatan'    => $c->kecamatan_name,
+                    'kabupaten'    => null,
+                    'jenjang'      => $c->jenjang,
+                    'sumber_dana'  => $c->sumber_dana,
+                    'is_active'    => (bool) $c->is_active,
+                    'total_student'=> (int) ($c->total_student ?? 0),
+                    'sales_name'   => $c->sales->name ?? 'Unknown',
+                    'sales_id'     => $c->sales_id,
+                    'trl_status'   => $status,
+                ];
+            })->values();
+
+            // Manual pagination of filtered result
+            $page    = (int) (request('page', 1));
+            $perPage = 50;
+            $total   = $filtered->count();
+            $sekolah = new \Illuminate\Pagination\LengthAwarePaginator(
+                $filtered->slice(($page - 1) * $perPage, $perPage)->values(),
+                $total, $perPage, $page,
+                ['path' => request()->url(), 'query' => request()->query()]
+            );
+        }
+
+        // — Summary totals
+        $allPlan = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)->whereNull('jenjang');
+        $summary = [
+            'tahan' => (int) $allPlan->sum('tahan_customer'),
+            'rebut' => (int) (clone $allPlan)->sum('rebut_customer'),
+            'lepas' => (int) (clone $allPlan)->sum('lepas_customer'),
+            'gagal' => (int) (clone $allPlan)->sum('gagal_customer'),
+        ];
+
+        // — Sales list for filter dropdown
+        $salesList = \App\Models\Sales::whereIn('id', $salesIds->toArray())
+            ->orderBy('name')->get(['id', 'name']);
+
+        return \Inertia\Inertia::render('Monitoring/Detail/TrlDetail', [
+            'activeNav'   => 'cabang',
+            'cabangName'  => $cabang->nama_cabang,
+            'cabangCode'  => $cabang->id,
+            'backUrl'     => route('monitoring.area.select') . '?cabang=' . $cabang->id,
+            'targetYear'  => $targetYear,
+            'prevYear'    => $prevYear,
+            'summary'     => $summary,
+            'trlBySales'  => $trlBySales,
+            'sekolah'     => $sekolah,
+            'salesList'   => $salesList,
+            'jenjangList' => $jenjangList,
+            'filters'     => [
+                'sales_id'   => $filterSales,
+                'jenjang'    => $filterJenjang,
+                'trl_status' => $filterStatus,
+            ],
+        ]);
+    }
 }

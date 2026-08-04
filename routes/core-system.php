@@ -91,6 +91,7 @@ Route::prefix('monitoring')->name('monitoring.')->group(function () {
         Route::get('/sales-jenjang',      [MonitoringController::class, 'detailSalesJenjang'])->name('sales-jenjang');
         Route::get('/sales-jenjang-kecamatan', [MonitoringController::class, 'detailSalesJenjangKecamatan'])->name('sales-jenjang-kecamatan');
         Route::get('/kompetitor',         [MonitoringController::class, 'detailKompetitorCabang'])->name('kompetitor');
+        Route::get('/trl-detail',         [MonitoringController::class, 'detailTrl'])->name('trl-detail');
     });
 });
 
