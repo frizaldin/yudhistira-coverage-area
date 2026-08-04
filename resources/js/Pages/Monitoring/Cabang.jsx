@@ -1760,7 +1760,7 @@ export default function Cabang({
                                 alignItems: "start",
                             }}
                         >
-                            {/* Left col: Ranking + Area Cover per Jenjang */}
+                            {/* Left col: Ranking + Sales per Jenjang */}
                             <div
                                 style={{
                                     minWidth: 0,
@@ -2085,199 +2085,6 @@ export default function Cabang({
                                         </div>
                                     </Card>
                                 )}
-
-                                {/* Area Cover per Jenjang */}
-                                <Card
-                                    title="Area Cover per Jenjang"
-                                    sub={`AC ${prevYear} vs Target ${targetYear}`}
-                                >
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: 8,
-                                        }}
-                                    >
-                                        {JENJANG.filter(
-                                            (j) =>
-                                                (j.ac25 || 0) > 0 ||
-                                                (j.target || 0) > 0 ||
-                                                (j.qty || 0) > 0,
-                                        ).map((j, i) => {
-                                            const ac25 = j.ac25 || j.qty || 0;
-                                            const tar = j.target || 0;
-                                            const maxVal = Math.max(
-                                                ac25,
-                                                tar,
-                                                1,
-                                            );
-                                            return (
-                                                <div key={i}>
-                                                    <div
-                                                        style={{
-                                                            display: "flex",
-                                                            justifyContent:
-                                                                "space-between",
-                                                            marginBottom: 3,
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                display: "flex",
-                                                                alignItems:
-                                                                    "center",
-                                                                gap: 5,
-                                                            }}
-                                                        >
-                                                            <div
-                                                                style={{
-                                                                    width: 9,
-                                                                    height: 9,
-                                                                    borderRadius: 2,
-                                                                    background:
-                                                                        j.color,
-                                                                    flexShrink: 0,
-                                                                }}
-                                                            />
-                                                            <span
-                                                                style={{
-                                                                    fontSize: 11,
-                                                                    fontWeight: 700,
-                                                                    color: T.text,
-                                                                }}
-                                                            >
-                                                                {j.label}
-                                                            </span>
-                                                        </div>
-                                                        <div
-                                                            style={{
-                                                                fontSize: 10,
-                                                                color: T.slate,
-                                                            }}
-                                                        >
-                                                            AC {prevYear}:{" "}
-                                                            <strong
-                                                                style={{
-                                                                    color: j.color,
-                                                                }}
-                                                            >
-                                                                {formatNumber(
-                                                                    ac25,
-                                                                )}
-                                                            </strong>
-                                                            {tar > 0 && (
-                                                                <>
-                                                                    {" "}
-                                                                    &nbsp;|&nbsp;
-                                                                    Target:{" "}
-                                                                    <strong
-                                                                        style={{
-                                                                            color: T.orange,
-                                                                        }}
-                                                                    >
-                                                                        {formatNumber(
-                                                                            tar,
-                                                                        )}
-                                                                    </strong>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            marginBottom: 2,
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                fontSize: 9,
-                                                                color: T.slate,
-                                                                marginBottom: 1,
-                                                            }}
-                                                        >
-                                                            AC {prevYear}
-                                                        </div>
-                                                        <div
-                                                            style={{
-                                                                height: 7,
-                                                                background:
-                                                                    "#e2e8f0",
-                                                                borderRadius: 6,
-                                                                overflow:
-                                                                    "hidden",
-                                                            }}
-                                                        >
-                                                            <div
-                                                                style={{
-                                                                    width: `${maxVal > 0 ? (ac25 / maxVal) * 100 : 0}%`,
-                                                                    height: "100%",
-                                                                    background:
-                                                                        j.color,
-                                                                    borderRadius: 6,
-                                                                    transition:
-                                                                        "width .4s",
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    {tar > 0 && (
-                                                        <div>
-                                                            <div
-                                                                style={{
-                                                                    fontSize: 9,
-                                                                    color: T.slate,
-                                                                    marginBottom: 1,
-                                                                }}
-                                                            >
-                                                                Target{" "}
-                                                                {targetYear}
-                                                            </div>
-                                                            <div
-                                                                style={{
-                                                                    height: 7,
-                                                                    background:
-                                                                        "#e2e8f0",
-                                                                    borderRadius: 6,
-                                                                    overflow:
-                                                                        "hidden",
-                                                                }}
-                                                            >
-                                                                <div
-                                                                    style={{
-                                                                        width: `${(tar / maxVal) * 100}%`,
-                                                                        height: "100%",
-                                                                        background:
-                                                                            T.orange,
-                                                                        borderRadius: 6,
-                                                                        transition:
-                                                                            "width .4s",
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                        {JENJANG.filter(
-                                            (j) =>
-                                                (j.ac25 || 0) > 0 ||
-                                                (j.target || 0) > 0 ||
-                                                (j.qty || 0) > 0,
-                                        ).length === 0 && (
-                                                <div
-                                                    style={{
-                                                        textAlign: "center",
-                                                        color: T.slate,
-                                                        fontSize: 11,
-                                                        padding: "16px 0",
-                                                    }}
-                                                >
-                                                    Belum ada data
-                                                </div>
-                                            )}
-                                    </div>
-                                </Card>
 
                                 {!isSalesDetail && !isFromSalesPerformance && (
                                     <>
@@ -3257,7 +3064,7 @@ export default function Cabang({
                                     {/* Worst Ranking Sales */}
                                     <Card
                                         title={`Sales yang perlu ditinjau kembali - ${cabangName}`}
-                                        sub="Berdasarkan Coverage Terendah"
+                                        sub="Berdasarkan Realisasi Customer vs Area Cover"
                                         noPad
                                         headerAction={
                                             <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
@@ -3319,7 +3126,7 @@ export default function Cabang({
                                                                     "center",
                                                             }}
                                                         >
-                                                            Area Cover/Tot
+                                                            Real/AC
                                                         </th>
                                                         <th
                                                             style={{
@@ -3328,7 +3135,7 @@ export default function Cabang({
                                                                     "center",
                                                             }}
                                                         >
-                                                            Coverage
+                                                            % Realisasi
                                                         </th>
                                                         <th
                                                             style={{
@@ -3365,8 +3172,8 @@ export default function Cabang({
                                                         .slice()
                                                         .sort(
                                                             (a, b) =>
-                                                                a.coverage -
-                                                                b.coverage,
+                                                                (a.realisasi_pct ?? 0) -
+                                                                (b.realisasi_pct ?? 0),
                                                         )
                                                         .map((sales, idx) => (
                                                             <tr
@@ -3409,12 +3216,12 @@ export default function Cabang({
                                                                         }}
                                                                     >
                                                                         {formatNumber(
-                                                                            sales.aktif,
+                                                                            sales.real_customer ?? 0,
                                                                         )}
                                                                     </strong>{" "}
                                                                     /{" "}
                                                                     {formatNumber(
-                                                                        sales.total_sekolah,
+                                                                        sales.aktif,
                                                                     )}
                                                                 </td>
                                                                 <td
@@ -3425,15 +3232,15 @@ export default function Cabang({
                                                                     }}
                                                                 >
                                                                     <Badge
-                                                                        label={`${sales.coverage}%`}
+                                                                        label={`${sales.realisasi_pct ?? 0}%`}
                                                                         bg={
-                                                                            sales.coverage >=
+                                                                            (sales.realisasi_pct ?? 0) >=
                                                                                 40
                                                                                 ? "#f0fdf4"
                                                                                 : "#fef2f2"
                                                                         }
                                                                         color={
-                                                                            sales.coverage >=
+                                                                            (sales.realisasi_pct ?? 0) >=
                                                                                 40
                                                                                 ? T.green
                                                                                 : T.red
@@ -3474,22 +3281,22 @@ export default function Cabang({
                                                                 >
                                                                     <Badge
                                                                         label={
-                                                                            sales.status
+                                                                            sales.realisasi_status || sales.status
                                                                         }
                                                                         bg={
-                                                                            sales.status ===
+                                                                            (sales.realisasi_status || sales.status) ===
                                                                                 "Sangat Baik"
                                                                                 ? "#dcfce7"
-                                                                                : sales.status ===
+                                                                                : (sales.realisasi_status || sales.status) ===
                                                                                     "Baik"
                                                                                     ? "#fef9c3"
                                                                                     : "#fee2e2"
                                                                         }
                                                                         color={
-                                                                            sales.status ===
+                                                                            (sales.realisasi_status || sales.status) ===
                                                                                 "Sangat Baik"
                                                                                 ? "#166534"
-                                                                                : sales.status ===
+                                                                                : (sales.realisasi_status || sales.status) ===
                                                                                     "Baik"
                                                                                     ? "#854d0e"
                                                                                     : "#991b1b"

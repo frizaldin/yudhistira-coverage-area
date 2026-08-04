@@ -214,6 +214,15 @@ class MonitoringController extends Controller
             if ($coverage >= 70) $status = 'Sangat Baik';
             elseif ($coverage >= 40) $status = 'Baik';
 
+            // Customer realisasi (customer_plans.real_exemplar > 0) vs Area Cover
+            $realCustomer = (clone $qBase)->whereHas('customerPlans', function ($q) use ($realisasiYear) {
+                $q->where('year', $realisasiYear)->where('real_exemplar', '>', 0);
+            })->count();
+            $realisasiPct = $ak > 0 ? round(($realCustomer / $ak) * 100, 2) : 0;
+            $realisasiStatus = 'Kurang';
+            if ($realisasiPct >= 70) $realisasiStatus = 'Sangat Baik';
+            elseif ($realisasiPct >= 40) $realisasiStatus = 'Baik';
+
             $target_eksemplar = $targetAgg[$sales->id] ?? 0;
             $planAgg = $salesPlanAgg2->get($sales->id);
             $real_eksemplar = $planAgg ? $planAgg->real_eks : 0;
@@ -227,6 +236,9 @@ class MonitoringController extends Controller
                 'total_sekolah' => $ts,
                 'aktif' => $ak,
                 'coverage' => $coverage,
+                'real_customer' => $realCustomer,
+                'realisasi_pct' => $realisasiPct,
+                'realisasi_status' => $realisasiStatus,
                 'target_eksemplar' => (int)$target_eksemplar,
                 'real_eksemplar' => (int)$real_eksemplar,
                 'pencapaian' => $pencapaian,
@@ -244,6 +256,14 @@ class MonitoringController extends Controller
                 $stJ = 'Kurang';
                 if ($covJ >= 70) $stJ = 'Sangat Baik';
                 elseif ($covJ >= 40) $stJ = 'Baik';
+
+                $realJ = (clone $qJ)->whereHas('customerPlans', function ($q) use ($realisasiYear) {
+                    $q->where('year', $realisasiYear)->where('real_exemplar', '>', 0);
+                })->count();
+                $realPctJ = $akJ > 0 ? round(($realJ / $akJ) * 100, 2) : 0;
+                $realStJ = 'Kurang';
+                if ($realPctJ >= 70) $realStJ = 'Sangat Baik';
+                elseif ($realPctJ >= 40) $realStJ = 'Baik';
                 
                 $pAggJ = null;
                 if ($salesPlanByJenjang->has($sales->id)) {
@@ -256,6 +276,9 @@ class MonitoringController extends Controller
                     'total_sekolah' => $tsJ,
                     'aktif' => $akJ,
                     'coverage' => $covJ,
+                    'real_customer' => $realJ,
+                    'realisasi_pct' => $realPctJ,
+                    'realisasi_status' => $realStJ,
                     'target_eksemplar' => 0,
                     'real_eksemplar' => (int)($pAggJ ? $pAggJ->real_eks : 0),
                     'pencapaian' => 0,
@@ -275,7 +298,15 @@ class MonitoringController extends Controller
                 return $b['score'] <=> $a['score'];
             });
             $timSalesPerformance[$key] = array_slice($timSalesData[$key], 0, 10);
-            $timSalesPerformanceWorst[$key] = array_slice(array_reverse($timSalesData[$key]), 0, 5);
+
+            // Worst: realisasi customer vs area cover (terendah)
+            $worstSorted = $timSalesData[$key];
+            usort($worstSorted, function ($a, $b) {
+                $cmp = $a['realisasi_pct'] <=> $b['realisasi_pct'];
+                if ($cmp !== 0) return $cmp;
+                return $b['aktif'] <=> $a['aktif']; // AC lebih besar lebih prioritas ditinjau
+            });
+            $timSalesPerformanceWorst[$key] = array_slice($worstSorted, 0, 5);
         }
 
         $bosValue = \App\Models\SalesCityPlan::whereIn('sales_id', $salesIds)->where('sumber_dana', 'BOS')->sum('target_customer');
