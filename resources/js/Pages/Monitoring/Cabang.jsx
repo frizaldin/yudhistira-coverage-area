@@ -2542,6 +2542,24 @@ export default function Cabang({
                                         <Card
                                             title="Tahan – Rebut – Lepas – Gagal"
                                             sub={`(${cabangName})`}
+                                            headerAction={
+                                                cabangCode ? (
+                                                    <Link
+                                                        href={route("monitoring.cabang.trl-detail", cabangCode)}
+                                                        style={{
+                                                            fontSize: 10,
+                                                            color: T.blue,
+                                                            fontWeight: 600,
+                                                            textDecoration: "none",
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: 3,
+                                                        }}
+                                                    >
+                                                        Detail <i className="bi bi-arrow-right" style={{ fontSize: 10 }} />
+                                                    </Link>
+                                                ) : null
+                                            }
                                         >
                                             <div
                                                 style={{
@@ -2884,6 +2902,11 @@ export default function Cabang({
                                                 </thead>
                                                 <tbody>
                                                     {((timSalesPerformance && timSalesPerformance[salesRankingTab]) || [])
+                                                        .filter(sales => {
+                                                            const sn = (sales.name || '').toLowerCase();
+                                                            const cn = (cabangName || '').toLowerCase().replace(/^cabang\s+/, '');
+                                                            return sn !== `kantor ${cn}` && sn !== cn;
+                                                        })
                                                         .slice()
                                                         .sort(
                                                             (a, b) =>
@@ -3169,6 +3192,11 @@ export default function Cabang({
                                                 </thead>
                                                 <tbody>
                                                     {((timSalesPerformanceWorst && timSalesPerformanceWorst[salesWorstTab]) || [])
+                                                        .filter(sales => {
+                                                            const sn = (sales.name || '').toLowerCase();
+                                                            const cn = (cabangName || '').toLowerCase().replace(/^cabang\s+/, '');
+                                                            return sn !== `kantor ${cn}` && sn !== cn;
+                                                        })
                                                         .slice()
                                                         .sort(
                                                             (a, b) =>
