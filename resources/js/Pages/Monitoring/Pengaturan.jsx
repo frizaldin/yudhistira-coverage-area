@@ -593,7 +593,7 @@ export default function Pengaturan({
                 style={{
                     background: "white",
                     padding: "14px 20px",
-                    borderBottom: `1px solid ${T.border}`,
+                borderBottom: `1px solid ${T.border}`,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",

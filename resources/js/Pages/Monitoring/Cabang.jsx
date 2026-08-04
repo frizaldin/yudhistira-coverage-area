@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Head, router, Link, usePage } from "@inertiajs/react";
 import MonitoringLayout from "@/Layouts/MonitoringLayout";
 import SelectReact from "@/Components/Element/SelectReact";
+import JenjangFocusTab from "./Tabs/JenjangFocusTab";
 import {
     MapContainer,
     TileLayer,
@@ -64,25 +65,24 @@ const T = {
 const S = {
     card: {
         background: T.card,
-        borderRadius: 16,
-        boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 0 3px rgba(15, 23, 42, 0.02)",
+        borderRadius: 12,
+        boxShadow: "0 1px 6px rgba(15,23,42,0.06)",
         border: `1px solid ${T.border}`,
-        transition: "box-shadow 0.3s ease",
     },
     th: {
-        fontSize: 11.5,
+        fontSize: 10,
         fontWeight: 700,
         color: T.slate,
-        padding: "14px 16px",
+        padding: "8px 10px",
         background: "#f8fafc",
-        borderBottom: `1.5px solid ${T.border}`,
-        letterSpacing: "0.5px",
+        borderBottom: `1px solid ${T.border}`,
+        letterSpacing: "0.3px",
         textTransform: "uppercase",
     },
     td: {
-        fontSize: 13,
+        fontSize: 11.5,
         color: T.text,
-        padding: "14px 16px",
+        padding: "7px 10px",
         borderBottom: `1px solid #f4f6f8`,
     },
 };
@@ -176,7 +176,7 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                 >
                     <div
                         style={{
-                            fontSize: 16,
+                            fontSize: 13,
                             fontWeight: 800,
                             color: T.text,
                             lineHeight: 1,
@@ -187,9 +187,9 @@ function Donut({ segments, size = 120, ring = 26, label, sub }) {
                     {sub && (
                         <div
                             style={{
-                                fontSize: 11,
+                                fontSize: 9,
                                 color: T.slate,
-                                marginTop: 4,
+                                marginTop: 2,
                             }}
                         >
                             {sub}
@@ -536,7 +536,7 @@ function LeafletMap({ markers = [] }) {
     return (
         <div
             style={{
-                height: 285,
+                height: 240,
                 width: "100%",
                 borderRadius: 16,
                 overflow: "hidden",
@@ -664,29 +664,20 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
         <div
             style={{
                 ...S.card,
-                padding: "20px",
+                padding: "16px",
                 flex: 1,
                 display: "flex",
                 flexDirection: "column",
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-2px)";
-                e.currentTarget.style.boxShadow = "0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.1)";
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = S.card.boxShadow;
             }}
         >
             <div
                 style={{
-                    fontSize: 10.5,
+                    fontSize: 9.5,
                     fontWeight: 700,
                     color: T.slate,
                     letterSpacing: "0.5px",
                     textTransform: "uppercase",
-                    marginBottom: 16,
+                    marginBottom: 12,
                 }}
             >
                 {label}
@@ -701,11 +692,11 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
             >
                 <div
                     style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 12,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
                         flexShrink: 0,
-                        background: `${color}15`,
+                        background: `${color}18`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -713,17 +704,17 @@ function StatCard({ label, value, unit, icon, color, sub, trend, detailHref }) {
                 >
                     <i
                         className={`bi ${icon}`}
-                        style={{ fontSize: 22, color }}
+                        style={{ fontSize: 14, color }}
                     />
                 </div>
                 <div>
                     <div
                         style={{
-                            fontSize: 26,
-                            fontWeight: 900,
+                            fontSize: 20,
+                            fontWeight: 800,
                             color: T.text,
                             letterSpacing: "-0.5px",
-                            lineHeight: 1,
+                            lineHeight: 1.1,
                         }}
                     >
                         {value}
@@ -835,22 +826,20 @@ function Card({
             {(title || sub || headerAction) && (
                 <div
                     style={{
-                        padding: "16px 20px",
+                        padding: "12px 16px",
                         borderBottom: `1px solid ${T.border}`,
                         flexShrink: 0,
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "flex-start",
-                        background: "rgba(255,255,255,0.5)",
                     }}
                 >
                     <div>
                         <div
                             style={{
-                                fontSize: 13,
-                                fontWeight: 800,
+                                fontSize: 11,
+                                fontWeight: 700,
                                 color: T.text,
-                                letterSpacing: "-0.2px",
                             }}
                         >
                             {title}
@@ -858,9 +847,9 @@ function Card({
                         {sub && (
                             <div
                                 style={{
-                                    fontSize: 11,
+                                    fontSize: 10,
                                     color: T.slate,
-                                    marginTop: 3,
+                                    marginTop: 2,
                                 }}
                             >
                                 {sub}
@@ -870,16 +859,15 @@ function Card({
                     {headerAction && <div>{headerAction}</div>}
                 </div>
             )}
-            <div style={{ padding: noPad ? 0 : "20px", flex: 1 }}>
+            <div style={{ padding: noPad ? 0 : "14px 16px", flex: 1 }}>
                 {children}
             </div>
             {footer && (
                 <div
                     style={{
-                        padding: "12px 20px",
+                        padding: "9px 16px",
                         borderTop: `1px solid ${T.border}`,
                         textAlign: "center",
-                        background: "#fafafa",
                     }}
                 >
                     <a
@@ -889,16 +877,16 @@ function Card({
                             if (onFooterClick) onFooterClick();
                         }}
                         style={{
-                            fontSize: 11.5,
-                            color: T.blue,
+                            fontSize: 10.5,
+                            color: T.blueSoft,
                             textDecoration: "none",
-                            fontWeight: 700,
+                            fontWeight: 600,
                         }}
                     >
                         {footer}{" "}
                         <i
                             className="bi bi-chevron-right"
-                            style={{ fontSize: 10 }}
+                            style={{ fontSize: 9 }}
                         />
                     </a>
                 </div>
@@ -986,6 +974,7 @@ export default function Cabang({
     trlJenjang = [],
     salesPerformance = [],
     rankingKecamatan = [],
+    rankingPeraihanPotensi = [],
     top10Schools = [],
     mapMarkers = [],
     schools = [],
@@ -999,6 +988,7 @@ export default function Cabang({
     salesJenjangTotal = "0",
     salesJenjangTotalRealisasi = "0",
     potensiKecamatan = [],
+    jenjangFocus = {},
     uncovered = [],
     uncoveredDana = [],
     hideFilters = false,
@@ -1112,42 +1102,6 @@ export default function Cabang({
                 : null,
         },
         {
-            label: "Coverage",
-            value: coveragePct,
-            unit: null,
-            icon: "bi-check-circle-fill",
-            color: T.blue,
-            sub: `${coveragePct} dari Total Sekolah`,
-            trend: null,
-            detailHref: cabangCode
-                ? route("monitoring.cabang.coverage", cabangCode)
-                : null,
-        },
-        {
-            label: "Opportunity",
-            value: formatNumber(opportunity),
-            unit: "Sekolah",
-            icon: "bi-bullseye",
-            color: T.orange,
-            sub: `${oppPct} dari Total Sekolah`,
-            trend: null,
-            detailHref: cabangCode
-                ? route("monitoring.cabang.opportunity", cabangCode)
-                : null,
-        },
-        {
-            label: "Total Target Eksemplar",
-            value: formatNumber(realStats.target_eksemplar),
-            unit: "Eks",
-            icon: "bi-journal-text",
-            color: T.purple,
-            sub: null,
-            trend: null,
-            detailHref: cabangCode
-                ? route("monitoring.cabang.target-eksemplar", cabangCode)
-                : null,
-        },
-        {
             label: "Total Siswa (Area)",
             value: formatNumber(realStats.total_siswa),
             unit: "Siswa",
@@ -1157,6 +1111,34 @@ export default function Cabang({
             trend: null,
             detailHref: cabangCode
                 ? route("monitoring.cabang.siswa", cabangCode)
+                : null,
+        },
+        {
+            label: "Potensi Eksemplar",
+            value: formatNumber(realStats.potensi_eksemplar),
+            unit: "Eks",
+            icon: "bi-lightning-charge-fill",
+            color: "#7c3aed",
+            sub:
+                String(filters?.sumber_dana || "").toUpperCase() === "BOS"
+                    ? "BOS: siswa × 1,5"
+                    : "Agregasi potensi sekolah",
+            trend: null,
+            detailHref: null,
+        },
+        {
+            label: "Realisasi Eksemplar",
+            value: formatNumber(realStats.real_eksemplar),
+            unit: "Eks",
+            icon: "bi-journal-check",
+            color: T.blue,
+            sub:
+                (realStats.potensi_eksemplar || 0) > 0
+                    ? `${(((realStats.real_eksemplar || 0) / realStats.potensi_eksemplar) * 100).toFixed(1)}% dari Potensi · ${filters?.tahun || targetYear}`
+                    : `Tahun ${filters?.tahun || targetYear}`,
+            trend: null,
+            detailHref: cabangCode
+                ? route("monitoring.cabang.target-eksemplar", cabangCode)
                 : null,
         },
     ];
@@ -1220,6 +1202,12 @@ export default function Cabang({
     const DANA = dana.length > 0 ? dana : [];
     const UNCOVERED_DANA = uncoveredDana.length > 0 ? uncoveredDana : [];
     const JENJANG = jenjang;
+    const salesJenjangDisplay = (salesJenjangData || []).filter((j) => {
+        const total = parseInt(String(j.total || "0").replace(/\./g, ""), 10) || 0;
+        // Sembunyikan DLL/anomali sangat kecil yang mengganggu tampilan
+        if (String(j.label).toUpperCase() === "DLL" && total <= 1) return false;
+        return total > 0;
+    });
     const SCHOOLS = schools;
     const TRL = trl;
     const TREND = trend.length > 0 ? trend : [];
@@ -1349,10 +1337,8 @@ export default function Cabang({
             ━━━━━━━━━━━━━━━━━━ */}
             <div
                 style={{
-                    background: "rgba(255, 255, 255, 0.8)",
-                    backdropFilter: "blur(12px)",
-                    WebkitBackdropFilter: "blur(12px)",
-                    padding: "16px 24px",
+                    background: "white",
+                    padding: "14px 20px",
                     borderBottom: `1px solid ${T.border}`,
                     display: "flex",
                     alignItems: "center",
@@ -1362,26 +1348,24 @@ export default function Cabang({
                     position: "sticky",
                     top: 0,
                     zIndex: 40,
-                    boxShadow: "0 1px 3px rgba(15,23,42,0.02)",
                 }}
             >
                 <div>
                     <div
                         style={{
-                            fontSize: 11,
+                            fontSize: 10,
                             fontWeight: 700,
-                            color: T.blue,
+                            color: T.slate,
                             letterSpacing: "1px",
                             textTransform: "uppercase",
-                            marginBottom: 4,
                         }}
                     >
                         {pageTitle}
                     </div>
                     <div
                         style={{
-                            fontSize: 24,
-                            fontWeight: 900,
+                            fontSize: 22,
+                            fontWeight: 800,
                             color: T.text,
                             letterSpacing: "-0.5px",
                             lineHeight: 1.15,
@@ -1389,7 +1373,7 @@ export default function Cabang({
                     >
                         {cabangName}
                     </div>
-                    <div style={{ fontSize: 13, color: T.slate, marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: T.slate, marginTop: 2 }}>
                         {description}
                     </div>
                 </div>
@@ -1644,6 +1628,7 @@ export default function Cabang({
                     ]
                     : [
                         { id: "dashboard", label: "Dashboard Utama" },
+                        { id: "jenjang", label: "Fokus Jenjang" },
                         {
                             id: "competitor",
                             label: "Kompetitor & Market Share",
@@ -1654,8 +1639,8 @@ export default function Cabang({
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         style={{
-                            padding: "14px 0",
-                            fontSize: 12,
+                            padding: "10px 0",
+                            fontSize: 11,
                             fontWeight: 700,
                             color: activeTab === tab.id ? T.blue : T.slate,
                             borderBottom: `2px solid ${activeTab === tab.id ? T.blue : "transparent"}`,
@@ -1764,19 +1749,21 @@ export default function Cabang({
                             ))}
                         </div>
 
-                        {/* ── R2: RANKING KECAMATAN | PETA | TRL & SALES ── */}
+                        {/* ── R2: RANKING | PETA | SALES ── */}
                         <div
                             style={{
-                                display: "flex",
+                                display: "grid",
+                                gridTemplateColumns: isSalesDetail
+                                    ? "1fr 1.4fr"
+                                    : "minmax(0, 1.1fr) minmax(0, 1.15fr) minmax(0, 1fr)",
                                 gap: 10,
-                                alignItems: "flex-start",
+                                alignItems: "start",
                             }}
                         >
                             {/* Left col: Ranking + Area Cover per Jenjang */}
                             <div
                                 style={{
-                                    flex: isSalesDetail ? 1 : 0.8,
-                                    minWidth: 280,
+                                    minWidth: 0,
                                     display: "flex",
                                     flexDirection: "column",
                                     gap: 10,
@@ -1787,110 +1774,315 @@ export default function Cabang({
                                         title={
                                             isFromSalesPerformance
                                                 ? `Ranking Sekolah (Realisasi Tertinggi ${prevYear})`
-                                                : "Ranking Kecamatan - Coverage (%)"
+                                                : "Ranking Peraihan Potensi"
+                                        }
+                                        sub={
+                                            isFromSalesPerformance
+                                                ? null
+                                                : `BOS: siswa × 1,5 · ${filters?.tahun || targetYear}`
                                         }
                                         footer={
                                             isFromSalesPerformance
                                                 ? "Lihat Semua Sekolah"
-                                                : "Lihat Semua Kecamatan"
+                                                : showAllRanking
+                                                  ? "Tampilkan Top 8"
+                                                  : "Lihat Top 50"
                                         }
                                         onFooterClick={() =>
-                                            setShowAllRanking(true)
+                                            setShowAllRanking((v) => !v)
                                         }
+                                        noPad
                                     >
-                                        <table
+                                        <div
                                             style={{
-                                                width: "100%",
-                                                borderCollapse: "collapse",
+                                                overflowX: "auto",
+                                                maxHeight: showAllRanking
+                                                    ? 420
+                                                    : 300,
+                                                overflowY: "auto",
                                             }}
                                         >
-                                            <tbody>
-                                                {(showAllRanking
-                                                    ? isFromSalesPerformance
-                                                        ? top10Schools
-                                                        : rankingKecamatan
-                                                    : (isFromSalesPerformance
-                                                        ? top10Schools
-                                                        : rankingKecamatan
-                                                    ).slice(0, 10)
-                                                ).map((r, i) => (
-                                                    <tr key={i}
-                                                        style={{ transition: "background 0.2s ease" }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
-                                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                                                    >
-                                                        <td
+                                            <table
+                                                style={{
+                                                    width: "100%",
+                                                    borderCollapse: "collapse",
+                                                }}
+                                            >
+                                                <thead>
+                                                    <tr>
+                                                        <th
                                                             style={{
-                                                                ...S.td,
-                                                                width: 24,
-                                                                paddingLeft: 0,
+                                                                ...S.th,
+                                                                width: 32,
+                                                                textAlign:
+                                                                    "center",
                                                             }}
                                                         >
-                                                            {i + 1}
-                                                        </td>
-                                                        <td
+                                                            No
+                                                        </th>
+                                                        <th
                                                             style={{
-                                                                ...S.td,
-                                                                fontWeight: 600,
+                                                                ...S.th,
+                                                                textAlign:
+                                                                    "left",
                                                             }}
                                                         >
-                                                            {r.name}
-                                                        </td>
-                                                        <td
+                                                            Nama Sekolah
+                                                        </th>
+                                                        <th
                                                             style={{
-                                                                ...S.td,
-                                                                minWidth: 100,
-                                                                paddingRight: 0,
+                                                                ...S.th,
+                                                                textAlign:
+                                                                    "right",
                                                             }}
+                                                        >
+                                                            Siswa
+                                                        </th>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign:
+                                                                    "right",
+                                                            }}
+                                                        >
+                                                            Potensi
+                                                        </th>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign:
+                                                                    "right",
+                                                            }}
+                                                        >
+                                                            Realisasi
+                                                        </th>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign:
+                                                                    "right",
+                                                                paddingRight: 12,
+                                                            }}
+                                                        >
+                                                            % Peraihan
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {(isFromSalesPerformance
+                                                        ? showAllRanking
+                                                            ? top10Schools
+                                                            : (
+                                                                  top10Schools ||
+                                                                  []
+                                                              ).slice(0, 10)
+                                                        : showAllRanking
+                                                          ? rankingPeraihanPotensi
+                                                          : (
+                                                                rankingPeraihanPotensi ||
+                                                                []
+                                                            ).slice(0, 8)
+                                                    ).map((r, i) => (
+                                                        <tr
+                                                            key={r.id || i}
+                                                            style={{
+                                                                transition:
+                                                                    "background 0.2s ease",
+                                                            }}
+                                                            onMouseEnter={(e) =>
+                                                                (e.currentTarget.style.background =
+                                                                    "#f8fafc")
+                                                            }
+                                                            onMouseLeave={(e) =>
+                                                                (e.currentTarget.style.background =
+                                                                    "transparent")
+                                                            }
                                                         >
                                                             {isFromSalesPerformance ? (
-                                                                <div
-                                                                    style={{
-                                                                        display:
-                                                                            "flex",
-                                                                        justifyContent:
-                                                                            "space-between",
-                                                                        alignItems:
-                                                                            "center",
-                                                                    }}
-                                                                >
-                                                                    <span
+                                                                <>
+                                                                    <td
                                                                         style={{
-                                                                            fontSize: 12,
-                                                                            color: T.text,
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "center",
+                                                                            color: T.slate,
+                                                                        }}
+                                                                    >
+                                                                        {i + 1}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            fontWeight: 600,
+                                                                        }}
+                                                                    >
+                                                                        {
+                                                                            r.name
+                                                                        }
+                                                                    </td>
+                                                                    <td
+                                                                        colSpan={
+                                                                            4
+                                                                        }
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "right",
+                                                                            paddingRight: 12,
                                                                         }}
                                                                     >
                                                                         {r.real_exemplar?.toLocaleString(
                                                                             "id-ID",
                                                                         )}{" "}
-                                                                        eks
-                                                                    </span>
-                                                                    <span
-                                                                        style={{
-                                                                            fontSize: 11,
-                                                                            color: T.slate,
-                                                                            marginLeft: 4,
-                                                                        }}
-                                                                    >
-                                                                        (
+                                                                        eks (
                                                                         {
                                                                             r.persentase
                                                                         }
                                                                         %)
-                                                                    </span>
-                                                                </div>
+                                                                    </td>
+                                                                </>
                                                             ) : (
-                                                                <Bar
-                                                                    value={
-                                                                        r.pct
-                                                                    }
-                                                                />
+                                                                <>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "center",
+                                                                            color: T.slate,
+                                                                        }}
+                                                                    >
+                                                                        {r.no ||
+                                                                            i +
+                                                                                1}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            fontWeight: 600,
+                                                                        }}
+                                                                    >
+                                                                        <div>
+                                                                            {
+                                                                                r.name
+                                                                            }
+                                                                        </div>
+                                                                        <div
+                                                                            style={{
+                                                                                fontSize: 9,
+                                                                                color: T.slate,
+                                                                                fontWeight: 500,
+                                                                                marginTop: 1,
+                                                                            }}
+                                                                        >
+                                                                            {
+                                                                                r.jenjang
+                                                                            }{" "}
+                                                                            ·{" "}
+                                                                            {
+                                                                                r.kecamatan
+                                                                            }
+                                                                        </div>
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "right",
+                                                                        }}
+                                                                    >
+                                                                        {formatNumber(
+                                                                            r.siswa,
+                                                                        )}
+                                                                        {r.siswa_estimated ? (
+                                                                            <span
+                                                                                style={{
+                                                                                    display:
+                                                                                        "block",
+                                                                                    fontSize: 8,
+                                                                                    color: T.slate,
+                                                                                    fontWeight: 500,
+                                                                                }}
+                                                                            >
+                                                                                ~estimasi
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "right",
+                                                                            fontWeight: 700,
+                                                                            color: "#7c3aed",
+                                                                        }}
+                                                                    >
+                                                                        {formatNumber(
+                                                                            r.potensi,
+                                                                        )}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "right",
+                                                                            fontWeight: 700,
+                                                                            color: T.blue,
+                                                                        }}
+                                                                    >
+                                                                        {formatNumber(
+                                                                            r.realisasi,
+                                                                        )}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            textAlign:
+                                                                                "right",
+                                                                            paddingRight: 12,
+                                                                            fontWeight: 800,
+                                                                            color:
+                                                                                (r.pct ||
+                                                                                    0) >=
+                                                                                50
+                                                                                    ? T.green
+                                                                                    : (r.pct ||
+                                                                                            0) >=
+                                                                                        20
+                                                                                      ? T.orange
+                                                                                      : T.red,
+                                                                        }}
+                                                                    >
+                                                                        {r.pct}
+                                                                        %
+                                                                    </td>
+                                                                </>
                                                             )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                        </tr>
+                                                    ))}
+                                                    {!isFromSalesPerformance &&
+                                                        (rankingPeraihanPotensi ||
+                                                            [])
+                                                            .length === 0 && (
+                                                            <tr>
+                                                                <td
+                                                                    colSpan="6"
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        textAlign:
+                                                                            "center",
+                                                                        color: T.slate,
+                                                                        padding: 16,
+                                                                    }}
+                                                                >
+                                                                    Belum ada
+                                                                    data
+                                                                    ranking
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </Card>
                                 )}
 
@@ -1903,7 +2095,7 @@ export default function Cabang({
                                         style={{
                                             display: "flex",
                                             flexDirection: "column",
-                                            gap: 10,
+                                            gap: 8,
                                         }}
                                     >
                                         {JENJANG.filter(
@@ -2141,15 +2333,15 @@ export default function Cabang({
                                         <div
                                             style={{
                                                 display: "flex",
-                                                gap: 16,
-                                                alignItems: "center",
+                                                gap: 12,
+                                                alignItems: "stretch",
                                             }}
                                         >
                                             <Donut
-                                                segments={salesJenjangData.map(
+                                                segments={salesJenjangDisplay.map(
                                                     (j) => ({
                                                         value: parseFloat(
-                                                            j.pct.replace(
+                                                            String(j.pct).replace(
                                                                 ",",
                                                                 ".",
                                                             ),
@@ -2157,194 +2349,103 @@ export default function Cabang({
                                                         color: j.color,
                                                     }),
                                                 )}
-                                                size={100}
-                                                ring={24}
+                                                size={78}
+                                                ring={18}
+                                                label={salesJenjangTotal}
+                                                sub="AC"
                                             />
-                                            <div style={{ flex: 1 }}>
-                                                <table
+                                            <div
+                                                style={{
+                                                    flex: 1,
+                                                    minWidth: 0,
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    gap: 4,
+                                                    justifyContent: "center",
+                                                }}
+                                            >
+                                                <div
                                                     style={{
-                                                        width: "100%",
-                                                        borderCollapse:
-                                                            "collapse",
+                                                        display: "grid",
+                                                        gridTemplateColumns:
+                                                            "1fr 44px 44px 48px",
+                                                        gap: 4,
+                                                        fontSize: 9,
+                                                        fontWeight: 700,
+                                                        color: T.slate,
+                                                        textTransform: "uppercase",
+                                                        paddingBottom: 2,
+                                                        borderBottom: `1px solid ${T.border}`,
                                                     }}
                                                 >
-                                                    <thead>
-                                                        <tr>
-                                                            {[
-                                                                "Jenjang",
-                                                                "Total",
-                                                                "Realisasi",
-                                                                "%",
-                                                            ].map((h, i) => (
-                                                                <th
-                                                                    key={i}
-                                                                    style={{
-                                                                        ...S.th,
-                                                                        textAlign:
-                                                                            i ===
-                                                                                0
-                                                                                ? "left"
-                                                                                : "right",
-                                                                    }}
-                                                                >
-                                                                    {h}
-                                                                </th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {salesJenjangData.map(
-                                                            (j, i) => (
-                                                                <tr key={i}
-                                                                    style={{ transition: "background 0.2s ease" }}
-                                                                    onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
-                                                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                                                                >
-                                                                    <td
-                                                                        style={{
-                                                                            ...S.td,
-                                                                        }}
-                                                                    >
-                                                                        <div
-                                                                            style={{
-                                                                                display:
-                                                                                    "flex",
-                                                                                alignItems:
-                                                                                    "center",
-                                                                                gap: 5,
-                                                                            }}
-                                                                        >
-                                                                            <div
-                                                                                style={{
-                                                                                    width: 8,
-                                                                                    height: 8,
-                                                                                    borderRadius: 2,
-                                                                                    background:
-                                                                                        j.color,
-                                                                                    flexShrink: 0,
-                                                                                }}
-                                                                            />
-                                                                            <span
-                                                                                style={{
-                                                                                    fontWeight: 600,
-                                                                                }}
-                                                                            >
-                                                                                {
-                                                                                    j.label
-                                                                                }
-                                                                            </span>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td
-                                                                        style={{
-                                                                            ...S.td,
-                                                                            textAlign:
-                                                                                "right",
-                                                                        }}
-                                                                    >
-                                                                        {
-                                                                            j.total
-                                                                        }
-                                                                    </td>
-                                                                    <td
-                                                                        style={{
-                                                                            ...S.td,
-                                                                            textAlign:
-                                                                                "right",
-                                                                        }}
-                                                                    >
-                                                                        {
-                                                                            j.realisasi
-                                                                        }
-                                                                    </td>
-                                                                    <td
-                                                                        style={{
-                                                                            ...S.td,
-                                                                            textAlign:
-                                                                                "right",
-                                                                        }}
-                                                                    >
-                                                                        <span
-                                                                            style={{
-                                                                                fontWeight: 700,
-                                                                                color: j.color,
-                                                                            }}
-                                                                        >
-                                                                            {
-                                                                                j.pct
-                                                                            }
-                                                                            %
-                                                                        </span>
-                                                                    </td>
-                                                                </tr>
-                                                            ),
-                                                        )}
-                                                        <tr>
-                                                            {[
-                                                                "Total",
-                                                                salesJenjangTotal,
-                                                                salesJenjangTotalRealisasi || "0",
-                                                                "100%",
-                                                            ].map((v, i) => (
-                                                                <td
-                                                                    key={i}
-                                                                    style={{
-                                                                        ...S.th,
-                                                                        fontWeight: 700,
-                                                                        textAlign:
-                                                                            i ===
-                                                                                0
-                                                                                ? "left"
-                                                                                : "right",
-                                                                        borderTop: `2px solid ${T.border}`,
-                                                                    }}
-                                                                >
-                                                                    {v}
-                                                                </td>
-                                                            ))}
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
+                                                    <span>Jenjang</span>
+                                                    <span style={{ textAlign: "right" }}>
+                                                        Tot
+                                                    </span>
+                                                    <span style={{ textAlign: "right" }}>
+                                                        Real
+                                                    </span>
+                                                    <span style={{ textAlign: "right" }}>
+                                                        %
+                                                    </span>
+                                                </div>
+                                                {salesJenjangDisplay.map((j, i) => (
+                                                    <div
+                                                        key={i}
+                                                        style={{
+                                                            display: "grid",
+                                                            gridTemplateColumns:
+                                                                "1fr 44px 44px 48px",
+                                                            gap: 4,
+                                                            alignItems: "center",
+                                                            fontSize: 11,
+                                                        }}
+                                                    >
+                                                        <span
+                                                            style={{
+                                                                display: "inline-flex",
+                                                                alignItems: "center",
+                                                                gap: 5,
+                                                                fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            <span
+                                                                style={{
+                                                                    width: 7,
+                                                                    height: 7,
+                                                                    borderRadius: 2,
+                                                                    background: j.color,
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            />
+                                                            {j.label}
+                                                        </span>
+                                                        <span style={{ textAlign: "right" }}>
+                                                            {j.total}
+                                                        </span>
+                                                        <span
+                                                            style={{
+                                                                textAlign: "right",
+                                                                fontWeight: 700,
+                                                                color: T.blue,
+                                                            }}
+                                                        >
+                                                            {j.realisasi}
+                                                        </span>
+                                                        <span
+                                                            style={{
+                                                                textAlign: "right",
+                                                                fontWeight: 800,
+                                                                color: j.color,
+                                                            }}
+                                                        >
+                                                            {j.pct}%
+                                                        </span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-                                        </Card>
-                                        
-                                        <Card
-                                            title="Potensi Eksemplar"
-                                            sub="(Per Kecamatan)"
-                                        >
-                                            <div style={{ overflowX: "auto" }}>
-                                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                                    <thead>
-                                                        <tr>
-                                                            <th style={{ ...S.th, textAlign: "left" }}>No</th>
-                                                            <th style={{ ...S.th, textAlign: "left" }}>Kecamatan</th>
-                                                            <th style={{ ...S.th, textAlign: "right" }}>Jumlah Siswa</th>
-                                                            <th style={{ ...S.th, textAlign: "right" }}>Potensi Eksemplar</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {potensiKecamatan.map((p, i) => (
-                                                            <tr key={i}
-                                                                style={{ transition: "background 0.2s ease" }}
-                                                                onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
-                                                                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                                                            >
-                                                                <td style={{ ...S.td, textAlign: "left" }}>{p.no}</td>
-                                                                <td style={{ ...S.td, fontWeight: 600, textAlign: "left" }}>{p.kecamatan}</td>
-                                                                <td style={{ ...S.td, textAlign: "right" }}>{p.siswa.toLocaleString("id-ID")}</td>
-                                                                <td style={{ ...S.td, textAlign: "right", color: T.blue, fontWeight: 700 }}>{p.potensi_eks.toLocaleString("id-ID")}</td>
-                                                            </tr>
-                                                        ))}
-                                                        {potensiKecamatan.length === 0 && (
-                                                            <tr>
-                                                                <td colSpan="4" style={{ ...S.td, textAlign: "center", color: T.slate }}>Belum ada data</td>
-                                                            </tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </Card>
+                                    </Card>
                                     </>
                                 )}
                                 {isSalesDetail && (
@@ -2365,28 +2466,19 @@ export default function Cabang({
                                                         key={t.key}
                                                         style={{
                                                             flex: 1,
-                                                            minWidth: 120,
+                                                            minWidth: 100,
                                                             display: "flex",
                                                             alignItems: "center",
-                                                            gap: 12,
-                                                            borderRadius: 16,
+                                                            gap: 10,
+                                                            borderRadius: 10,
                                                             background: `${t.color}10`,
-                                                            padding: "16px 20px",
-                                                            transition: "transform 0.2s ease, background 0.2s ease",
-                                                        }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.transform = "translateY(-2px)";
-                                                            e.currentTarget.style.background = `${t.color}18`;
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.transform = "translateY(0)";
-                                                            e.currentTarget.style.background = `${t.color}10`;
+                                                            padding: "10px 12px",
                                                         }}
                                                     >
                                                         <div style={{
-                                                            width: 48,
-                                                            height: 48,
-                                                            borderRadius: 12,
+                                                            width: 36,
+                                                            height: 36,
+                                                            borderRadius: 8,
                                                             background: `${t.color}20`,
                                                             display: "flex",
                                                             alignItems: "center",
@@ -2396,7 +2488,7 @@ export default function Cabang({
                                                             <i
                                                                 className={`bi ${t.icon}`}
                                                                 style={{
-                                                                    fontSize: 22,
+                                                                    fontSize: 14,
                                                                     color: t.color,
                                                                 }}
                                                             />
@@ -2408,7 +2500,7 @@ export default function Cabang({
                                                         >
                                                             <div
                                                                 style={{
-                                                                    fontSize: 10,
+                                                                    fontSize: 9,
                                                                     fontWeight: 700,
                                                                     color: t.color,
                                                                     letterSpacing: "0.5px",
@@ -2420,19 +2512,19 @@ export default function Cabang({
                                                             </div>
                                                             <div
                                                                 style={{
-                                                                    fontSize: 24,
-                                                                    fontWeight: 900,
+                                                                    fontSize: 18,
+                                                                    fontWeight: 800,
                                                                     color: t.color,
                                                                     lineHeight: 1.1,
-                                                                    marginTop: 4,
-                                                                    marginBottom: 2,
+                                                                    marginTop: 2,
+                                                                    marginBottom: 1,
                                                                 }}
                                                             >
                                                                 {t.value}
                                                             </div>
                                                             <div
                                                                 style={{
-                                                                    fontSize: 11,
+                                                                    fontSize: 10,
                                                                     fontWeight: 600,
                                                                     color: t.color,
                                                                     opacity: 0.8,
@@ -2449,7 +2541,6 @@ export default function Cabang({
                                         {/* TRL per Jenjang */}
                                         <Card
                                             title={`Tahan - Rebut - Lepas - Gagal (Per Jenjang)`}
-                                            style={{ flex: 1 }}
                                             noPad
                                         >
                                             <table
@@ -2581,17 +2672,18 @@ export default function Cabang({
                                 )}
                             </div>
 
-                            {/* Middle col: Peta + Sumber Dana */}
+                            {/* Middle col: Peta + TRL */}
                             <div
                                 style={{
-                                    flex: 1.2,
+                                    minWidth: 0,
                                     display: "flex",
                                     flexDirection: "column",
                                     gap: 10,
                                 }}
                             >
                                 <Card
-                                    title={`Peta Coverage ${cabangName} (Kecamatan)`}
+                                    title={`Peta Coverage`}
+                                    sub={cabangName}
                                 >
                                     <LeafletMap
                                         markers={mapMarkers}
@@ -2637,229 +2729,6 @@ export default function Cabang({
                                     </div>
                                 </Card>
 
-                                {/* Sumber Dana */}
-                                {/* <Card
-                                    title="Sumber Dana"
-                                    sub={`Rencana Jual ${targetYear}`}
-                                    headerAction={
-                                        <Link
-                                            href={route(
-                                                "monitoring.cabang.sumber-dana",
-                                                cabangCode,
-                                            )}
-                                            style={{
-                                                fontSize: 10,
-                                                color: T.blue,
-                                                fontWeight: 600,
-                                                textDecoration: "none",
-                                            }}
-                                        >
-                                            Detail
-                                        </Link>
-                                    }
-                                >
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 20,
-                                        }}
-                                    >
-                                        <Donut
-                                            segments={DANA.filter(
-                                                (d) => d.value > 0,
-                                            )}
-                                            size={110}
-                                            ring={26}
-                                            label={
-                                                DANA.reduce(
-                                                    (s, d) =>
-                                                        s + (d.value || 0),
-                                                    0,
-                                                ) + "%"
-                                            }
-                                            sub="Total"
-                                        />
-                                        <div style={{ flex: 1 }}>
-                                            {DANA.map((d, i) => (
-                                                <div
-                                                    key={i}
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        justifyContent:
-                                                            "space-between",
-                                                        marginBottom: 10,
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            gap: 6,
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                width: 10,
-                                                                height: 10,
-                                                                borderRadius: 3,
-                                                                background:
-                                                                    d.color,
-                                                                flexShrink: 0,
-                                                            }}
-                                                        />
-                                                        <span
-                                                            style={{
-                                                                fontSize: 12,
-                                                                fontWeight: 700,
-                                                                color: T.text,
-                                                            }}
-                                                        >
-                                                            {d.label}
-                                                        </span>
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            textAlign: "right",
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                fontSize: 17,
-                                                                fontWeight: 800,
-                                                                color: d.color,
-                                                            }}
-                                                        >
-                                                            {d.value}%
-                                                        </div>
-                                                        <div
-                                                            style={{
-                                                                fontSize: 9.5,
-                                                                color: T.slate,
-                                                            }}
-                                                        >
-                                                            {d.sekolah} Cust
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </Card> */}
-
-                                {/* Opportunity Dana */}
-                                {UNCOVERED_DANA.length > 0 && (
-                                    <Card
-                                        title="Analisa Opportunity"
-                                        sub="(Belum Dicover)"
-                                    >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 20,
-                                            }}
-                                        >
-                                            <Donut
-                                                segments={UNCOVERED_DANA.filter(
-                                                    (d) => d.value > 0,
-                                                )}
-                                                size={110}
-                                                ring={26}
-                                                label={formatNumber(
-                                                    UNCOVERED_DANA.reduce(
-                                                        (sum, d) =>
-                                                            sum +
-                                                            parseInt(
-                                                                (
-                                                                    d.sekolah ||
-                                                                    "0"
-                                                                )
-                                                                    .toString()
-                                                                    .replace(
-                                                                        /\./g,
-                                                                        "",
-                                                                    ),
-                                                            ),
-                                                        0,
-                                                    ),
-                                                )}
-                                                sub="Sekolah"
-                                            />
-                                            <div style={{ flex: 1 }}>
-                                                {UNCOVERED_DANA.map((d, i) => (
-                                                    <div
-                                                        key={i}
-                                                        style={{
-                                                            display: "flex",
-                                                            alignItems:
-                                                                "center",
-                                                            justifyContent:
-                                                                "space-between",
-                                                            marginBottom: 10,
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                display: "flex",
-                                                                alignItems:
-                                                                    "center",
-                                                                gap: 6,
-                                                            }}
-                                                        >
-                                                            <div
-                                                                style={{
-                                                                    width: 10,
-                                                                    height: 10,
-                                                                    borderRadius: 3,
-                                                                    background:
-                                                                        d.color,
-                                                                    flexShrink: 0,
-                                                                }}
-                                                            />
-                                                            <span
-                                                                style={{
-                                                                    fontSize: 12,
-                                                                    fontWeight: 700,
-                                                                    color: T.text,
-                                                                }}
-                                                            >
-                                                                {d.label}
-                                                            </span>
-                                                        </div>
-                                                        <div
-                                                            style={{
-                                                                textAlign:
-                                                                    "right",
-                                                            }}
-                                                        >
-                                                            <div
-                                                                style={{
-                                                                    fontSize: 17,
-                                                                    fontWeight: 800,
-                                                                    color: d.color,
-                                                                }}
-                                                            >
-                                                                {d.value}%
-                                                            </div>
-                                                            <div
-                                                                style={{
-                                                                    fontSize: 9.5,
-                                                                    color: T.slate,
-                                                                }}
-                                                            >
-                                                                {d.sekolah} Cust
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </Card>
-                                )}
-
                                 {!isSalesDetail && (
                                     <>
                                         {/* TRL */}
@@ -2881,17 +2750,17 @@ export default function Cabang({
                                                             display: "flex",
                                                             alignItems:
                                                                 "center",
-                                                            gap: 8,
+                                                            gap: 6,
                                                             borderRadius: 8,
-                                                            border: `1.5px solid ${t.color}28`,
+                                                            border: `1px solid ${t.color}28`,
                                                             background: `${t.color}06`,
-                                                            padding: "8px 10px",
+                                                            padding: "7px 8px",
                                                         }}
                                                     >
                                                         <i
                                                             className={`bi ${t.icon}`}
                                                             style={{
-                                                                fontSize: 18,
+                                                                fontSize: 14,
                                                                 color: t.color,
                                                                 flexShrink: 0,
                                                             }}
@@ -2916,8 +2785,8 @@ export default function Cabang({
                                                             </div>
                                                             <div
                                                                 style={{
-                                                                    fontSize: 18,
-                                                                    fontWeight: 900,
+                                                                    fontSize: 15,
+                                                                    fontWeight: 800,
                                                                     color: t.color,
                                                                     lineHeight: 1.1,
                                                                 }}
@@ -2942,7 +2811,6 @@ export default function Cabang({
                                         {/* TRL per Jenjang */}
                                         <Card
                                             title={`Tahan - Rebut - Lepas - Gagal (Per Jenjang)`}
-                                            style={{ flex: 1 }}
                                             noPad
                                         >
                                             <table
@@ -3078,18 +2946,17 @@ export default function Cabang({
                             {!isSalesDetail && !isFromSalesPerformance && (
                                 <div
                                     style={{
-                                        flex: 1,
+                                        minWidth: 0,
                                         display: "flex",
                                         flexDirection: "column",
                                         gap: 10,
-                                        minWidth: 350,
                                     }}
                                 >
                                     {/* Ranking Sales */}
                                     <Card
                                         title={`Ranking Sales - ${cabangName}`}
                                         sub="Berdasarkan Coverage Tertinggi"
-                                        style={{ flex: 1 }}
+                                        noPad
                                         headerAction={
                                             <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
                                                 {['all', 'sd', 'smp', 'sma'].map(tab => (
@@ -3119,6 +2986,8 @@ export default function Cabang({
                                             style={{
                                                 width: "100%",
                                                 overflowX: "auto",
+                                                maxHeight: 280,
+                                                overflowY: "auto",
                                             }}
                                         >
                                             <table
@@ -3126,6 +2995,7 @@ export default function Cabang({
                                                     width: "100%",
                                                     borderCollapse: "collapse",
                                                     textAlign: "left",
+                                                    tableLayout: "fixed",
                                                 }}
                                             >
                                                 <thead>
@@ -3133,12 +3003,14 @@ export default function Cabang({
                                                         <th
                                                             style={{
                                                                 ...S.th,
-                                                                paddingLeft: 16,
+                                                                padding: "8px 8px 8px 12px",
+                                                                fontSize: 10,
+                                                                width: "8%",
                                                             }}
                                                         >
                                                             No
                                                         </th>
-                                                        <th style={{ ...S.th }}>
+                                                        <th style={{ ...S.th, padding: "8px 6px", fontSize: 10, width: "34%" }}>
                                                             Sales
                                                         </th>
                                                         <th
@@ -3146,43 +3018,57 @@ export default function Cabang({
                                                                 ...S.th,
                                                                 textAlign:
                                                                     "center",
+                                                                padding: "8px 4px",
+                                                                fontSize: 10,
+                                                                width: "16%",
                                                             }}
                                                         >
-                                                            Area Cover/Tot
+                                                            AC/Tot
                                                         </th>
                                                         <th
                                                             style={{
                                                                 ...S.th,
                                                                 textAlign:
                                                                     "center",
+                                                                padding: "8px 4px",
+                                                                fontSize: 10,
+                                                                width: "14%",
                                                             }}
                                                         >
-                                                            Coverage
+                                                            Cov
                                                         </th>
                                                         <th
                                                             style={{
                                                                 ...S.th,
                                                                 textAlign:
                                                                     "center",
+                                                                padding: "8px 4px",
+                                                                fontSize: 10,
+                                                                width: "10%",
                                                             }}
                                                         >
-                                                            Tahan
+                                                            Th
                                                         </th>
                                                         <th
                                                             style={{
                                                                 ...S.th,
                                                                 textAlign:
                                                                     "center",
+                                                                padding: "8px 4px",
+                                                                fontSize: 10,
+                                                                width: "10%",
                                                             }}
                                                         >
-                                                            Rebut
+                                                            Rb
                                                         </th>
                                                         <th
                                                             style={{
                                                                 ...S.th,
                                                                 textAlign:
                                                                     "center",
-                                                                paddingRight: 16,
+                                                                padding: "8px 10px 8px 4px",
+                                                                fontSize: 10,
+                                                                width: "18%",
                                                             }}
                                                         >
                                                             Status
@@ -3202,14 +3088,17 @@ export default function Cabang({
                                                                 key={idx}
                                                                 style={{
                                                                     borderTop: `1px solid ${T.slate}20`,
+                                                                    transition: "background 0.15s ease",
                                                                 }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"}
+                                                                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                                                             >
                                                                 <td
                                                                     style={{
                                                                         ...S.td,
-                                                                        paddingLeft: 16,
+                                                                        padding: "7px 8px 7px 12px",
                                                                         color: T.slate,
-                                                                        width: 24,
+                                                                        fontSize: 11,
                                                                     }}
                                                                 >
                                                                     {idx + 1}
@@ -3217,9 +3106,15 @@ export default function Cabang({
                                                                 <td
                                                                     style={{
                                                                         ...S.td,
+                                                                        padding: "7px 6px",
                                                                         fontWeight: 600,
                                                                         color: T.blue,
+                                                                        fontSize: 11,
+                                                                        overflow: "hidden",
+                                                                        textOverflow: "ellipsis",
+                                                                        whiteSpace: "nowrap",
                                                                     }}
+                                                                    title={sales.name}
                                                                 >
                                                                     {sales.name}
                                                                 </td>
@@ -3230,6 +3125,7 @@ export default function Cabang({
                                                                             "center",
                                                                         color: T.slate,
                                                                         fontSize: 11,
+                                                                        padding: "7px 4px",
                                                                     }}
                                                                 >
                                                                     <strong
@@ -3240,8 +3136,8 @@ export default function Cabang({
                                                                         {formatNumber(
                                                                             sales.aktif,
                                                                         )}
-                                                                    </strong>{" "}
-                                                                    /{" "}
+                                                                    </strong>
+                                                                    /
                                                                     {formatNumber(
                                                                         sales.total_sekolah,
                                                                     )}
@@ -3251,6 +3147,7 @@ export default function Cabang({
                                                                         ...S.td,
                                                                         textAlign:
                                                                             "center",
+                                                                        padding: "7px 4px",
                                                                     }}
                                                                 >
                                                                     <Badge
@@ -3275,6 +3172,9 @@ export default function Cabang({
                                                                         textAlign:
                                                                             "center",
                                                                         color: T.green,
+                                                                        padding: "7px 4px",
+                                                                        fontSize: 11,
+                                                                        fontWeight: 700,
                                                                     }}
                                                                 >
                                                                     {formatNumber(
@@ -3287,6 +3187,9 @@ export default function Cabang({
                                                                         textAlign:
                                                                             "center",
                                                                         color: T.blue,
+                                                                        padding: "7px 4px",
+                                                                        fontSize: 11,
+                                                                        fontWeight: 700,
                                                                     }}
                                                                 >
                                                                     {formatNumber(
@@ -3298,7 +3201,7 @@ export default function Cabang({
                                                                         ...S.td,
                                                                         textAlign:
                                                                             "center",
-                                                                        paddingRight: 16,
+                                                                        padding: "7px 10px 7px 4px",
                                                                     }}
                                                                 >
                                                                     <Badge
@@ -3355,7 +3258,7 @@ export default function Cabang({
                                     <Card
                                         title={`Sales yang perlu ditinjau kembali - ${cabangName}`}
                                         sub="Berdasarkan Coverage Terendah"
-                                        style={{ flex: 1 }}
+                                        noPad
                                         headerAction={
                                             <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
                                                 {['all', 'sd', 'smp', 'sma'].map(tab => (
@@ -3385,6 +3288,8 @@ export default function Cabang({
                                             style={{
                                                 width: "100%",
                                                 overflowX: "auto",
+                                                maxHeight: 200,
+                                                overflowY: "auto",
                                             }}
                                         >
                                             <table
@@ -3616,18 +3521,194 @@ export default function Cabang({
                                             </table>
                                         </div>
                                     </Card>
+
+                                    <Card
+                                        title="Potensi per Kecamatan"
+                                        sub="Siswa & potensi (×1,5)"
+                                        noPad
+                                    >
+                                        <div
+                                            style={{
+                                                overflowX: "auto",
+                                                maxHeight: 220,
+                                                overflowY: "auto",
+                                            }}
+                                        >
+                                            <table
+                                                style={{
+                                                    width: "100%",
+                                                    borderCollapse: "collapse",
+                                                }}
+                                            >
+                                                <thead>
+                                                    <tr>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign: "left",
+                                                                padding: "8px 10px 8px 14px",
+                                                                fontSize: 10,
+                                                            }}
+                                                        >
+                                                            No
+                                                        </th>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign: "left",
+                                                                padding: "8px 10px",
+                                                                fontSize: 10,
+                                                            }}
+                                                        >
+                                                            Kecamatan
+                                                        </th>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign: "right",
+                                                                padding: "8px 10px",
+                                                                fontSize: 10,
+                                                            }}
+                                                        >
+                                                            Siswa
+                                                        </th>
+                                                        <th
+                                                            style={{
+                                                                ...S.th,
+                                                                textAlign: "right",
+                                                                padding: "8px 14px 8px 10px",
+                                                                fontSize: 10,
+                                                            }}
+                                                        >
+                                                            Potensi Eks.
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {potensiKecamatan.map(
+                                                        (p, i) => (
+                                                            <tr
+                                                                key={i}
+                                                                style={{
+                                                                    transition:
+                                                                        "background 0.2s ease",
+                                                                }}
+                                                                onMouseEnter={(e) =>
+                                                                (e.currentTarget.style.background =
+                                                                    "#f8fafc")
+                                                                }
+                                                                onMouseLeave={(e) =>
+                                                                (e.currentTarget.style.background =
+                                                                    "transparent")
+                                                                }
+                                                            >
+                                                                <td
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        textAlign:
+                                                                            "left",
+                                                                        padding:
+                                                                            "7px 10px 7px 14px",
+                                                                        fontSize: 11,
+                                                                    }}
+                                                                >
+                                                                    {p.no}
+                                                                </td>
+                                                                <td
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        fontWeight: 600,
+                                                                        textAlign:
+                                                                            "left",
+                                                                        padding:
+                                                                            "7px 10px",
+                                                                        fontSize: 11,
+                                                                    }}
+                                                                >
+                                                                    {
+                                                                        p.kecamatan
+                                                                    }
+                                                                </td>
+                                                                <td
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        textAlign:
+                                                                            "right",
+                                                                        padding:
+                                                                            "7px 10px",
+                                                                        fontSize: 11,
+                                                                    }}
+                                                                >
+                                                                    {p.siswa.toLocaleString(
+                                                                        "id-ID",
+                                                                    )}
+                                                                </td>
+                                                                <td
+                                                                    style={{
+                                                                        ...S.td,
+                                                                        textAlign:
+                                                                            "right",
+                                                                        color: T.blue,
+                                                                        fontWeight: 700,
+                                                                        padding:
+                                                                            "7px 14px 7px 10px",
+                                                                        fontSize: 11,
+                                                                    }}
+                                                                >
+                                                                    {p.potensi_eks.toLocaleString(
+                                                                        "id-ID",
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ),
+                                                    )}
+                                                    {potensiKecamatan.length ===
+                                                        0 && (
+                                                        <tr>
+                                                            <td
+                                                                colSpan="4"
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "center",
+                                                                    color: T.slate,
+                                                                }}
+                                                            >
+                                                                Belum ada data
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </Card>
                                 </div>
                             )}
                         </div>
 
-                        {/* ── R3: OPP KECAMATAN | STRATEGIC | PRA AREA & TREND ── */}
-                        <div style={{ display: "flex", gap: 10 }}>
+                        {/* ── R3: OPP + STRATEGIC, lalu grafik full-width ── */}
+                        <div
+                            style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 10,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: isSalesDetail
+                                        ? "1fr"
+                                        : "minmax(0, 1fr) minmax(0, 1.15fr)",
+                                    gap: 10,
+                                    alignItems: "start",
+                                }}
+                            >
                             {/* Opportunity Kecamatan (Belum Tercover) */}
                             {!isSalesDetail && (
                                 <Card
                                     title="Kecamatan Belum Tercover (Top 10)"
                                     footer="Lihat Semua Kecamatan"
-                                    style={{ flex: 1 }}
                                     noPad
                                 >
                                     <table
@@ -3756,9 +3837,8 @@ export default function Cabang({
                             {/* Strategic School */}
                             <Card
                                 title="Strategic School"
-                                sub="Top 5 Berdasarkan Total Siswa"
+                                sub="Top 5 Area Cover · Total Siswa"
                                 footer="Lihat Semua Strategic School"
-                                style={{ flex: 1.2 }}
                                 noPad
                             >
                                 <table
@@ -3802,7 +3882,7 @@ export default function Cabang({
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {SCHOOLS.map((r) => (
+                                        {SCHOOLS.slice(0, 5).map((r) => (
                                             <tr key={r.no}>
                                                 <td
                                                     style={{
@@ -3852,13 +3932,17 @@ export default function Cabang({
                                                         label={r.status}
                                                         bg={
                                                             r.status ===
-                                                                "Customer"
+                                                                    "Customer" ||
+                                                            r.status ===
+                                                                "Area Cover"
                                                                 ? "#f0fdf4"
                                                                 : "#fee2e2"
                                                         }
                                                         color={
                                                             r.status ===
-                                                                "Customer"
+                                                                "Customer" ||
+                                                            r.status ===
+                                                                "Area Cover"
                                                                 ? T.green
                                                                 : T.red
                                                         }
@@ -3866,18 +3950,34 @@ export default function Cabang({
                                                 </td>
                                             </tr>
                                         ))}
+                                        {SCHOOLS.length === 0 && (
+                                            <tr>
+                                                <td
+                                                    colSpan="6"
+                                                    style={{
+                                                        ...S.td,
+                                                        textAlign: "center",
+                                                        color: T.slate,
+                                                        padding: 16,
+                                                    }}
+                                                >
+                                                    Belum ada sekolah Area Cover
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
                             </Card>
+                            </div>
 
-                            {/* Pra Area & Trend */}
+                            {/* Grafik: 3 kolom penuh tanpa space kosong */}
                             <div
                                 style={{
-                                    flex: 0.8,
-                                    display: "flex",
-                                    flexDirection: "column",
+                                    display: "grid",
+                                    gridTemplateColumns:
+                                        "repeat(3, minmax(0, 1fr))",
                                     gap: 10,
-                                    minWidth: 280,
+                                    alignItems: "stretch",
                                 }}
                             >
                                 <Card title="Pra Area Cover (2027)">
@@ -3968,7 +4068,6 @@ export default function Cabang({
                                 <Card
                                     title={`Trend Coverage ${cabangName}`}
                                     sub="3 Tahun Terakhir"
-                                    style={{ flex: 1 }}
                                 >
                                     <LineChart data={TREND} />
                                 </Card>
@@ -3976,7 +4075,6 @@ export default function Cabang({
                                 <Card
                                     title="Rencana vs Realisasi Jual Cust"
                                     sub="Berdasarkan Tahun"
-                                    style={{ flex: 1 }}
                                 >
                                     <div
                                         style={{
@@ -4193,6 +4291,10 @@ export default function Cabang({
                             </div>
                         )}
                     </>
+                )}
+
+                {activeTab === "jenjang" && (
+                    <JenjangFocusTab jenjangFocus={jenjangFocus} />
                 )}
 
                 {activeTab === "competitor" && (

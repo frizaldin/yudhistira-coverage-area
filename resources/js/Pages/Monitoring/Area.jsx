@@ -3019,7 +3019,6 @@ export default function Area({
                                         {/* TRL per Jenjang */}
                                         <Card
                                             title={`Tahan - Rebut - Lepas - Gagal (Per Jenjang)`}
-                                            style={{ flex: 1 }}
                                             noPad
                                         >
                                             <table
@@ -3504,7 +3503,6 @@ export default function Area({
                                         {/* TRL per Jenjang */}
                                         <Card
                                             title={`Tahan - Rebut - Lepas - Gagal (Per Jenjang)`}
-                                            style={{ flex: 1 }}
                                             noPad
                                         >
                                             <table

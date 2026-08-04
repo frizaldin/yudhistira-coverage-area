@@ -118,8 +118,36 @@ class MonitoringController extends Controller
             })->count();
 
         $targetEksemplar = \App\Models\SalesAreaCover::whereIn('sales_id', $salesIds)->sum('target_exemplar');
-        $realEksemplar = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)->whereNull('jenjang')->sum('real_exemplar');
+
+        // Realisasi eksemplar dari customer_plans (SalesPlan sering 0 / tidak terisi)
+        $cfgYears = \App\Models\Configuration::query()->first(['target_year', 'prev_year']);
+        $realisasiYear = (int) (request('tahun') ?: ($cfgYears->target_year ?? date('Y')));
+        $customerIdsForReal = (clone $customerQuery)->pluck('id');
+        $realEksemplar = $customerIdsForReal->isEmpty()
+            ? 0
+            : (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIdsForReal)
+                ->where('year', $realisasiYear)
+                ->sum('real_exemplar');
+
         $totalSiswa = (clone $customerQuery)->sum('total_student') ?? 0;
+
+        // Potensi eksemplar: BOS = siswa × 1.5; selain itu agregasi per sekolah
+        $sumberDanaReq = strtoupper((string) request('sumber_dana', ''));
+        if ($sumberDanaReq === 'BOS') {
+            $potensiEksemplar = (int) ceil($totalSiswa * 1.5);
+        } else {
+            $potensiEksemplar = (int) (clone $customerQuery)
+                ->get(['total_student', 'sumber_dana', 'potensi_sekolah'])
+                ->sum(function ($c) {
+                    $siswa = (int) ($c->total_student ?? 0);
+                    $sd = strtoupper((string) ($c->sumber_dana ?? ''));
+                    if (str_contains($sd, 'BOS')) {
+                        return (int) ceil($siswa * 1.5);
+                    }
+                    $ps = (int) ($c->potensi_sekolah ?? 0);
+                    return $ps > 0 ? $ps : $siswa;
+                });
+        }
 
         $totalRencanaJual = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)->whereNull('jenjang')->sum('target_customer');
         $realisasiJual = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)->whereNull('jenjang')->sum('real_customer');
@@ -397,8 +425,96 @@ class MonitoringController extends Controller
         }
         $rankingKecamatan = array_slice($rankingKecamatan, 0, 50);
 
+        // Ranking peraihan potensi per sekolah
+        $rankingSchools = (clone $customerQuery)
+            ->whereNotNull('sales_id')
+            ->get(['id', 'name', 'kecamatan_name', 'jenjang', 'total_student', 'sumber_dana', 'potensi_sekolah', 'is_active']);
+
+        $rankingPlansByCustomer = $rankingSchools->isEmpty()
+            ? collect()
+            : \App\Models\CustomerPlan::whereIn('customer_id', $rankingSchools->pluck('id'))
+                ->where('year', $realisasiYear)
+                ->selectRaw('customer_id, SUM(real_exemplar) as real_eks, SUM(potential_exemplar) as pot_eks')
+                ->groupBy('customer_id')
+                ->get()
+                ->keyBy('customer_id');
+
+        $rankingPeraihanPotensi = $rankingSchools->map(function ($c) use ($sumberDanaReq, $rankingPlansByCustomer) {
+            $siswaDb = (int) ($c->total_student ?? 0);
+            $sd = strtoupper((string) ($c->sumber_dana ?? ''));
+            $isBos = $sumberDanaReq === 'BOS' || str_contains($sd, 'BOS');
+
+            $plan = $rankingPlansByCustomer->get($c->id);
+            $real = (int) ($plan->real_eks ?? 0);
+            $planPotensi = (int) ($plan->pot_eks ?? 0);
+            $masterPotensi = (int) ($c->potensi_sekolah ?? 0);
+
+            // Data total_student sering corrupt (0/1). Prioritas potensi:
+            // 1) siswa valid (>1) × 1.5 untuk BOS
+            // 2) potential_exemplar di customer_plans
+            // 3) potensi_sekolah master
+            $siswa = $siswaDb;
+            $potensi = 0;
+            $siswaEstimated = false;
+
+            if ($isBos && $siswaDb > 1) {
+                $potensi = (int) ceil($siswaDb * 1.5);
+            } elseif ($planPotensi > 0) {
+                $potensi = $planPotensi;
+                if ($siswaDb <= 1) {
+                    $siswa = (int) max(1, round($planPotensi / 1.5));
+                    $siswaEstimated = true;
+                }
+            } elseif ($masterPotensi > 0) {
+                $potensi = $masterPotensi;
+                if ($siswaDb <= 1) {
+                    $siswa = (int) max(1, round($masterPotensi / 1.5));
+                    $siswaEstimated = true;
+                }
+            } elseif (!$isBos && $siswaDb > 0) {
+                $potensi = $siswaDb;
+            } else {
+                return null; // tidak cukup data untuk ranking
+            }
+
+            if ($potensi < 10) {
+                return null; // skip data tidak masuk akal
+            }
+
+            $pct = $potensi > 0 ? round(($real / $potensi) * 100, 1) : 0.0;
+
+            return [
+                'id' => $c->id,
+                'name' => $c->name,
+                'kecamatan' => $c->kecamatan_name ?: '-',
+                'jenjang' => $c->jenjang ?: '-',
+                'siswa' => $siswa,
+                'siswa_estimated' => $siswaEstimated,
+                'potensi' => $potensi,
+                'realisasi' => $real,
+                'pct' => $pct,
+                'is_active' => (bool) $c->is_active,
+            ];
+        })
+            ->filter()
+            ->sort(function ($a, $b) {
+                if ($b['pct'] !== $a['pct']) {
+                    return $b['pct'] <=> $a['pct'];
+                }
+                return $b['realisasi'] <=> $a['realisasi'];
+            })
+            ->values()
+            ->take(50)
+            ->map(function ($row, $i) {
+                $row['no'] = $i + 1;
+                return $row;
+            })
+            ->toArray();
+
+        // Top sekolah Area Cover (is_active) by total siswa
         $schools = (clone $customerQuery)
             ->with('cabang')
+            ->where('is_active', true)
             ->whereNotNull('total_student')
             ->orderBy('total_student', 'desc')
             ->take(10)
@@ -408,9 +524,10 @@ class MonitoringController extends Controller
                     'no' => $i + 1,
                     'name' => $c->name,
                     'grade' => $c->jenjang ?: 'N/A',
-                    'branch' => $c->cabang ? $c->cabang->nama_cabang : ($c->kecamatan_name ?: 'N/A'),
+                    'branch' => $c->kecamatan_name ?: ($c->cabang ? $c->cabang->nama_cabang : 'N/A'),
                     'siswa' => number_format($c->total_student, 0, ',', '.'),
-                    'status' => $c->is_active ? 'Customer' : 'Belum Customer',
+                    'status' => 'Area Cover',
+                    'potensi' => number_format((int) ($c->potensi_sekolah ?? 0), 0, ',', '.'),
                 ];
             })->toArray();
 
@@ -503,6 +620,7 @@ class MonitoringController extends Controller
                 'customer_aktif' => $customerAktif,
                 'target_eksemplar' => $targetEksemplar,
                 'real_eksemplar' => $realEksemplar,
+                'potensi_eksemplar' => $potensiEksemplar,
                 'total_siswa' => $totalSiswa,
                 'total_rencana_jual' => $totalRencanaJual,
                 'realisasi_jual' => $realisasiJual,
@@ -514,6 +632,7 @@ class MonitoringController extends Controller
             'timSalesPerformance' => $timSalesPerformance,
             'timSalesPerformanceWorst' => $timSalesPerformanceWorst,
             'rankingKecamatan' => $rankingKecamatan,
+            'rankingPeraihanPotensi' => $rankingPeraihanPotensi,
             'mapMarkers' => $mapMarkers,
             'schools' => $schools,
             'dana' => $danaData,
@@ -540,12 +659,209 @@ class MonitoringController extends Controller
             'salesJenjangData' => $salesJenjangData,
             'salesJenjangTotal' => $salesJenjangTotal,
             'salesJenjangTotalRealisasi' => $salesJenjangTotalRealisasi,
+            'jenjangFocus' => $this->buildJenjangFocusData($customerQuery),
             // also need uncoveredAnalysis as a fallback? In new component, we just use uncovered?
             // Actually the components in Area.jsx expect "top10Schools" for schools, or "schools".
             // It expects "salesPerformance" instead of "timSalesPerformance" or they are mapped?
             // In Cabang.jsx: it passes "timSalesPerformance". Area.jsx expects it too since it's a clone.
             // Also need "salesPerformance" which is different.
             // I'll ensure all keys are preserved.
+        ];
+    }
+
+    /**
+     * Fokus data jenjang: realisasi YoY (eksemplar + customer), sekolah baru,
+     * growth Area Cover — dikelompokkan per kota/kab & per kecamatan.
+     */
+    private function buildJenjangFocusData($customerQuery): array
+    {
+        $cfg = \App\Models\Configuration::query()->first();
+        $year = (int) (request('tahun') ?: ($cfg->target_year ?? date('Y')));
+        $prev = $year - 1;
+        $jenjangOrder = ['SD', 'SMP', 'SMA', 'SMK', 'DLL'];
+
+        $emptyMetrics = static function () {
+            return [
+                'ac_prev' => 0,
+                'ac_curr' => 0,
+                'real_eks_prev' => 0,
+                'real_eks_curr' => 0,
+                'real_cust_prev' => 0,
+                'real_cust_curr' => 0,
+                'sekolah_baru' => 0,
+                'potensi' => 0,
+                'siswa' => 0,
+            ];
+        };
+
+        $sumberDanaFilter = strtoupper((string) request('sumber_dana', ''));
+
+        $customers = (clone $customerQuery)
+            ->whereNotNull('sales_id')
+            ->get(['id', 'kecamatan_name', 'jenjang', 'sales_id', 'total_student', 'sumber_dana', 'potensi_sekolah']);
+
+        if ($customers->isEmpty()) {
+            return [
+                'year' => $year,
+                'prev_year' => $prev,
+                'summary' => [],
+                'by_kota' => [],
+                'by_kecamatan' => [],
+            ];
+        }
+
+        $ids = $customers->pluck('id');
+
+        $plansByCustomer = \App\Models\CustomerPlan::whereIn('customer_id', $ids)
+            ->whereIn('year', [$year, $prev])
+            ->selectRaw('customer_id, year, MAX(is_ac) as is_ac, SUM(real_exemplar) as real_eks')
+            ->groupBy('customer_id', 'year')
+            ->get()
+            ->groupBy('customer_id');
+
+        $hadHistory = \App\Models\CustomerPlan::whereIn('customer_id', $ids)
+            ->where('year', '<', $year)
+            ->where(function ($q) {
+                $q->where('is_ac', 1)->orWhere('real_exemplar', '>', 0);
+            })
+            ->distinct()
+            ->pluck('customer_id')
+            ->flip();
+
+        $summary = [];
+        $byKota = [];
+        $byKecamatan = [];
+
+        $bump = static function (&$bucket, string $group, string $jenjang, array $delta) use ($emptyMetrics) {
+            if (!isset($bucket[$group][$jenjang])) {
+                $bucket[$group][$jenjang] = $emptyMetrics();
+            }
+            foreach ($delta as $k => $v) {
+                $bucket[$group][$jenjang][$k] += $v;
+            }
+        };
+
+        foreach ($customers as $c) {
+            $jenjang = strtoupper(trim((string) ($c->jenjang ?: 'DLL')));
+            if (!in_array($jenjang, $jenjangOrder, true)) {
+                $jenjang = 'DLL';
+            }
+
+            $raw = trim((string) ($c->kecamatan_name ?? ''));
+            $parts = array_values(array_filter(array_map('trim', explode(',', $raw)), static fn ($p) => $p !== ''));
+            $kecamatanLabel = $raw !== '' ? $raw : 'Tidak Diketahui';
+            $kota = count($parts) > 1 ? $parts[count($parts) - 1] : 'Tanpa Kota/Kab';
+
+            $cp = $plansByCustomer->get($c->id) ?? collect();
+            $prevRow = $cp->firstWhere('year', $prev);
+            $currRow = $cp->firstWhere('year', $year);
+
+            $acPrev = ((int) ($prevRow->is_ac ?? 0)) === 1 ? 1 : 0;
+            $acCurr = ((int) ($currRow->is_ac ?? 0)) === 1 ? 1 : 0;
+            $eksPrev = (int) ($prevRow->real_eks ?? 0);
+            $eksCurr = (int) ($currRow->real_eks ?? 0);
+            $custPrev = $eksPrev > 0 ? 1 : 0;
+            $custCurr = $eksCurr > 0 ? 1 : 0;
+            $sekolahBaru = ($acCurr === 1 && !isset($hadHistory[$c->id])) ? 1 : 0;
+
+            $siswa = (int) ($c->total_student ?? 0);
+            $sumberSekolah = strtoupper((string) ($c->sumber_dana ?? ''));
+            $isBos = $sumberDanaFilter === 'BOS'
+                || str_contains($sumberSekolah, 'BOS');
+            // BOS: potensi = jumlah siswa × 1.5; selain itu pakai potensi_sekolah (fallback siswa)
+            $potensi = $isBos
+                ? (int) ceil($siswa * 1.5)
+                : (int) (($c->potensi_sekolah ?? 0) > 0 ? $c->potensi_sekolah : $siswa);
+
+            $delta = [
+                'ac_prev' => $acPrev,
+                'ac_curr' => $acCurr,
+                'real_eks_prev' => $eksPrev,
+                'real_eks_curr' => $eksCurr,
+                'real_cust_prev' => $custPrev,
+                'real_cust_curr' => $custCurr,
+                'sekolah_baru' => $sekolahBaru,
+                'potensi' => $potensi,
+                'siswa' => $siswa,
+            ];
+
+            if (!isset($summary[$jenjang])) {
+                $summary[$jenjang] = $emptyMetrics();
+            }
+            foreach ($delta as $k => $v) {
+                $summary[$jenjang][$k] += $v;
+            }
+
+            $bump($byKota, $kota, $jenjang, $delta);
+            $bump($byKecamatan, $kecamatanLabel, $jenjang, $delta);
+        }
+
+        $finalizeGroup = static function (array $bucket, array $jenjangOrder) {
+            $out = [];
+            foreach ($bucket as $group => $jenjangMap) {
+                $rows = [];
+                $totals = [
+                    'ac_prev' => 0,
+                    'ac_curr' => 0,
+                    'real_eks_prev' => 0,
+                    'real_eks_curr' => 0,
+                    'real_cust_prev' => 0,
+                    'real_cust_curr' => 0,
+                    'sekolah_baru' => 0,
+                    'potensi' => 0,
+                    'siswa' => 0,
+                ];
+                foreach ($jenjangOrder as $j) {
+                    if (!isset($jenjangMap[$j])) {
+                        continue;
+                    }
+                    $m = $jenjangMap[$j];
+                    $growth = $m['ac_prev'] > 0
+                        ? round((($m['ac_curr'] - $m['ac_prev']) / $m['ac_prev']) * 100, 1)
+                        : ($m['ac_curr'] > 0 ? 100.0 : 0.0);
+                    $rows[] = array_merge(['jenjang' => $j], $m, ['ac_growth' => $growth]);
+                    foreach ($totals as $k => $_) {
+                        $totals[$k] += $m[$k];
+                    }
+                }
+                if (empty($rows)) {
+                    continue;
+                }
+                $totalsGrowth = $totals['ac_prev'] > 0
+                    ? round((($totals['ac_curr'] - $totals['ac_prev']) / $totals['ac_prev']) * 100, 1)
+                    : ($totals['ac_curr'] > 0 ? 100.0 : 0.0);
+                $out[] = [
+                    'group' => $group,
+                    'rows' => $rows,
+                    'totals' => array_merge($totals, ['ac_growth' => $totalsGrowth]),
+                ];
+            }
+
+            usort($out, static function ($a, $b) {
+                return $b['totals']['ac_curr'] <=> $a['totals']['ac_curr'];
+            });
+
+            return $out;
+        };
+
+        $summaryRows = [];
+        foreach ($jenjangOrder as $j) {
+            if (!isset($summary[$j])) {
+                continue;
+            }
+            $m = $summary[$j];
+            $growth = $m['ac_prev'] > 0
+                ? round((($m['ac_curr'] - $m['ac_prev']) / $m['ac_prev']) * 100, 1)
+                : ($m['ac_curr'] > 0 ? 100.0 : 0.0);
+            $summaryRows[] = array_merge(['jenjang' => $j], $m, ['ac_growth' => $growth]);
+        }
+
+        return [
+            'year' => $year,
+            'prev_year' => $prev,
+            'summary' => $summaryRows,
+            'by_kota' => $finalizeGroup($byKota, $jenjangOrder),
+            'by_kecamatan' => $finalizeGroup($byKecamatan, $jenjangOrder),
         ];
     }
 
