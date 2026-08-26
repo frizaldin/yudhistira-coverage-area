@@ -2,10 +2,89 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Link, router } from "@inertiajs/react";
 import {
     T, S, Card, Badge, Donut, StatCard, KecamatanChoroplethMap,
-    CompetitorChoroplethMap, Bar, CompositionCard, FitBounds
+    CompetitorChoroplethMap, Bar, CompositionCard, FitBounds, PrioritySchoolsCard
 } from "./SalesPerformanceShared";
 import { MapContainer, TileLayer, Marker, Popup, GeoJSON } from "react-leaflet";
 import VisitActivityCharts from "./VisitActivityCharts";
+
+function getPageNumbers(current, last) {
+    if (last <= 7) {
+        return Array.from({ length: last }, (_, i) => i + 1);
+    }
+    if (current <= 4) {
+        return [1, 2, 3, 4, 5, "...", last];
+    }
+    if (current >= last - 3) {
+        return [1, "...", last - 4, last - 3, last - 2, last - 1, last];
+    }
+    return [1, "...", current - 1, current, current + 1, "...", last];
+}
+
+function NumberedPagination({ current, last, onPage }) {
+    if (last <= 1) return null;
+    const pages = getPageNumbers(current, last);
+    const btnBase = {
+        padding: "4px 10px",
+        fontSize: 12,
+        borderRadius: 6,
+        minWidth: 32,
+        textAlign: "center",
+    };
+
+    return (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+            <button
+                type="button"
+                onClick={() => onPage(current - 1)}
+                disabled={current === 1}
+                style={{
+                    ...btnBase,
+                    border: `1px solid ${T.border}`,
+                    background: "white",
+                    color: current === 1 ? "#cbd5e1" : T.text,
+                    cursor: current === 1 ? "not-allowed" : "pointer",
+                }}
+            >
+                ‹
+            </button>
+            {pages.map((p, idx) => (
+                <button
+                    key={`${p}-${idx}`}
+                    type="button"
+                    onClick={() => p !== "..." && onPage(p)}
+                    disabled={p === "..."}
+                    style={{
+                        ...btnBase,
+                        border:
+                            p === "..."
+                                ? "none"
+                                : `1px solid ${p === current ? T.blue : T.border}`,
+                        background: p === current ? T.blue : "white",
+                        color: p === current ? "white" : T.text,
+                        cursor: p === "..." ? "default" : "pointer",
+                        fontWeight: p === current ? 700 : 400,
+                    }}
+                >
+                    {p}
+                </button>
+            ))}
+            <button
+                type="button"
+                onClick={() => onPage(current + 1)}
+                disabled={current === last}
+                style={{
+                    ...btnBase,
+                    border: `1px solid ${T.border}`,
+                    background: "white",
+                    color: current === last ? "#cbd5e1" : T.text,
+                    cursor: current === last ? "not-allowed" : "pointer",
+                }}
+            >
+                ›
+            </button>
+        </div>
+    );
+}
 
 export default function KegiatanTab(props) {
 
@@ -27,6 +106,10 @@ export default function KegiatanTab(props) {
 
     const [kegiatanPage, setKegiatanPage] = useState(1);
     const [sekolahAktPage, setSekolahAktPage] = useState(1);
+    const [sekolahAktSort, setSekolahAktSort] = useState({
+        key: "kecamatan",
+        dir: "asc",
+    });
     const kegiatanPerPage = 10;
     const sekolahAktPerPage = 10;
     const formatNumber = (num) => new Intl.NumberFormat("id-ID").format(num);
@@ -39,7 +122,48 @@ export default function KegiatanTab(props) {
 
     useEffect(() => {
         setKegiatanPage(1);
+        setSekolahAktPage(1);
     }, [kegiatanAktivitasFilter]);
+
+    useEffect(() => {
+        setSekolahAktPage(1);
+    }, [sekolahAktSort]);
+
+    const toggleSekolahAktSort = (key) => {
+        setSekolahAktSort((prev) =>
+            prev.key === key
+                ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+                : {
+                      key,
+                      dir:
+                          key === "name" || key === "kecamatan"
+                              ? "asc"
+                              : "desc",
+                  },
+        );
+    };
+
+    const sortMark = (key) => {
+        if (sekolahAktSort.key !== key) return "";
+        return sekolahAktSort.dir === "asc" ? " ↑" : " ↓";
+    };
+
+    const sortableTh = (label, key, align = "right") => (
+        <th
+            onClick={() => toggleSekolahAktSort(key)}
+            title="Klik untuk sortir"
+            style={{
+                ...S.th,
+                textAlign: align,
+                cursor: "pointer",
+                userSelect: "none",
+                color: sekolahAktSort.key === key ? T.blue : T.slate,
+            }}
+        >
+            {label}
+            {sortMark(key)}
+        </th>
+    );
 
     const parseKegiatanDate = (raw) => {
         if (!raw) return 0;
@@ -139,18 +263,83 @@ export default function KegiatanTab(props) {
                         .map((a) => `${a.label}: ${a.count}`)
                         .join(", "),
                 };
-            })
-            .sort((a, b) => {
-                if (b.total_akt !== a.total_akt) return b.total_akt - a.total_akt;
-                return String(a.name).localeCompare(String(b.name), "id", {
-                    sensitivity: "base",
-                });
             });
     }, [kegiatanSales, listSekolah]);
 
+    const filteredSekolahAktivitasRows = useMemo(() => {
+        const filterAkt = String(kegiatanAktivitasFilter || "")
+            .trim()
+            .toLowerCase();
+        let rows = sekolahAktivitasRows;
+        if (filterAkt) {
+            rows = rows.filter((row) =>
+                (row.activityList || []).some(
+                    (a) =>
+                        String(a.label || "")
+                            .trim()
+                            .toLowerCase() === filterAkt,
+                ),
+            );
+        }
+
+        const dir = sekolahAktSort.dir === "asc" ? 1 : -1;
+        const key = sekolahAktSort.key;
+        const sorted = [...rows].sort((a, b) => {
+            if (key === "name") {
+                return (
+                    String(a.name || "").localeCompare(
+                        String(b.name || ""),
+                        "id",
+                        { sensitivity: "base" },
+                    ) * dir
+                );
+            }
+            if (key === "kecamatan") {
+                const kecA = String(a.kecamatan || "")
+                    .split(",")[0]
+                    .trim()
+                    .toUpperCase();
+                const kecB = String(b.kecamatan || "")
+                    .split(",")[0]
+                    .trim()
+                    .toUpperCase();
+                if (kecA !== kecB) {
+                    return kecA.localeCompare(kecB, "id") * dir;
+                }
+                return String(a.name || "").localeCompare(
+                    String(b.name || ""),
+                    "id",
+                );
+            }
+            if (key === "aktivitas") {
+                const av = Number(a.total_akt) || 0;
+                const bv = Number(b.total_akt) || 0;
+                if (av !== bv) return (av - bv) * dir;
+                return String(a.activity_summary || "").localeCompare(
+                    String(b.activity_summary || ""),
+                    "id",
+                );
+            }
+            const av = Number(a[key]) || 0;
+            const bv = Number(b[key]) || 0;
+            if (av === bv) {
+                return String(a.name || "").localeCompare(
+                    String(b.name || ""),
+                    "id",
+                );
+            }
+            return (av - bv) * dir;
+        });
+        return sorted;
+    }, [sekolahAktivitasRows, kegiatanAktivitasFilter, sekolahAktSort]);
+
     const sekolahAktTotalPages = Math.max(
         1,
-        Math.ceil(sekolahAktivitasRows.length / sekolahAktPerPage),
+        Math.ceil(filteredSekolahAktivitasRows.length / sekolahAktPerPage),
+    );
+    const kegiatanTotalPages = Math.max(
+        1,
+        Math.ceil(filteredKegiatan.length / kegiatanPerPage),
     );
 
     return (
@@ -168,6 +357,9 @@ export default function KegiatanTab(props) {
                             insights={insights}
                             openKegiatanFromChart={openKegiatanFromChart}
                             resultBreakdown={resultBreakdown}
+                            listSekolah={listSekolah}
+                            kegiatanSales={kegiatanSales}
+                            activeAktivitasFilter={kegiatanAktivitasFilter}
                         />
                         <div
                             style={{
@@ -182,6 +374,7 @@ export default function KegiatanTab(props) {
                                 noPad
                             >
                                 <div
+                                    id="sekolah-aktivitas-table"
                                     style={{
                                         padding: "8px 16px",
                                         borderBottom: `1px solid ${T.border}`,
@@ -194,10 +387,62 @@ export default function KegiatanTab(props) {
                                     realisasi eksemplar 2 tahun ({yearPrev} &{" "}
                                     {yearCurr}). Total:{" "}
                                     <strong style={{ color: T.text }}>
-                                        {sekolahAktivitasRows.length}
-                                    </strong>{" "}
-                                    sekolah Area Cover
+                                        {filteredSekolahAktivitasRows.length}
+                                    </strong>
+                                    {kegiatanAktivitasFilter
+                                        ? ` sekolah dengan aktivitas ${kegiatanAktivitasFilter}`
+                                        : " sekolah Area Cover"}
+                                    {" · "}
+                                    <span style={{ color: "#94a3b8" }}>
+                                        Klik header kolom untuk sortir
+                                    </span>
                                 </div>
+                                {kegiatanAktivitasFilter && (
+                                    <div
+                                                style={{
+                                            padding: "8px 16px",
+                                            borderBottom: `1px solid ${T.border}`,
+                                            background: "#eff6ff",
+                                                    display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            flexWrap: "wrap",
+                                        }}
+                                    >
+                                        <span
+                                                    style={{
+                                                fontSize: 11,
+                                                color: "#1e40af",
+                                                fontWeight: 600,
+                                            }}
+                                        >
+                                            Filter aktivitas:{" "}
+                                            <strong>
+                                                {kegiatanAktivitasFilter}
+                                            </strong>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setKegiatanAktivitasFilter?.(
+                                                    "",
+                                                )
+                                            }
+                                            style={{
+                                                fontSize: 11,
+                                                fontWeight: 700,
+                                                color: "#1d4ed8",
+                                                background: "white",
+                                                border: "1px solid #bfdbfe",
+                                                borderRadius: 6,
+                                                padding: "2px 8px",
+                                                cursor: "pointer",
+                                            }}
+                                        >
+                                            Hapus filter
+                                        </button>
+                                    </div>
+                                )}
                                 <div style={{ overflowX: "auto" }}>
                                     <table
                                         style={{
@@ -216,310 +461,521 @@ export default function KegiatanTab(props) {
                                                 >
                                                     No
                                                 </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "left",
-                                                    }}
-                                                >
-                                                    Nama Sekolah
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "left",
-                                                    }}
-                                                >
-                                                    Kecamatan
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "center",
-                                                    }}
-                                                >
-                                                    Jenjang
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "right",
-                                                    }}
-                                                >
-                                                    Siswa
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "left",
-                                                    }}
-                                                >
-                                                    Aktivitas
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "center",
-                                                    }}
-                                                >
-                                                    Total Akt.
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "right",
-                                                    }}
-                                                >
-                                                    Realisasi {yearPrev}
-                                                </th>
-                                                <th
-                                                    style={{
-                                                        ...S.th,
-                                                        textAlign: "right",
-                                                    }}
-                                                >
-                                                    Realisasi {yearCurr}
-                                                </th>
+                                                {sortableTh(
+                                                    "Nama Sekolah",
+                                                    "name",
+                                                    "left",
+                                                )}
+                                                {sortableTh("Siswa", "total_siswa")}
+                                                {sortableTh(
+                                                    "Aktivitas",
+                                                    "aktivitas",
+                                                    "left",
+                                                )}
+                                                {sortableTh(
+                                                    "Total Akt.",
+                                                    "total_akt",
+                                                    "center",
+                                                )}
+                                                {sortableTh(
+                                                    `Realisasi ${yearPrev}`,
+                                                    "real_prev",
+                                                )}
+                                                {sortableTh(
+                                                    `Realisasi ${yearCurr}`,
+                                                    "real_curr",
+                                                )}
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {sekolahAktivitasRows.length ===
-                                            0 ? (
-                                                <tr>
-                                                    <td
-                                                        colSpan="9"
-                                                        style={{
-                                                            ...S.td,
-                                                            textAlign: "center",
-                                                            color: T.slate,
-                                                            padding: "20px 0",
-                                                        }}
-                                                    >
-                                                        Tidak ada sekolah Area
-                                                        Cover
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                sekolahAktivitasRows
-                                                    .slice(
+                                            {(() => {
+                                                if (
+                                                    filteredSekolahAktivitasRows.length ===
+                                                    0
+                                                ) {
+                                                    return (
+                                                        <tr>
+                                                            <td
+                                                                colSpan="7"
+                                                                style={{
+                                                                    ...S.td,
+                                                                    textAlign:
+                                                                        "center",
+                                                        color: T.slate,
+                                                                    padding:
+                                                                        "20px 0",
+                                                                }}
+                                                            >
+                                                                {kegiatanAktivitasFilter
+                                                                    ? `Tidak ada sekolah Area Cover dengan aktivitas ${kegiatanAktivitasFilter}`
+                                                                    : "Tidak ada sekolah Area Cover"}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                }
+
+                                                const pageItems =
+                                                    filteredSekolahAktivitasRows.slice(
                                                         (sekolahAktPage - 1) *
                                                             sekolahAktPerPage,
                                                         sekolahAktPage *
                                                             sekolahAktPerPage,
-                                                    )
-                                                    .map((row, idx) => (
-                                                        <tr
-                                                            key={
-                                                                row.customer_id ||
-                                                                idx
-                                                            }
-                                                            className="table-row-hover"
-                                                        >
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                    color: T.slate,
-                                                                }}
+                                                    );
+
+                                                const jenjangOrder = {
+                                                    SD: 1,
+                                                    SMP: 2,
+                                                    SMA: 3,
+                                                    SMK: 4,
+                                                    DLL: 5,
+                                                    Lainnya: 6,
+                                                };
+
+                                                const byKecamatan = {};
+                                                pageItems.forEach((row) => {
+                                                    const raw =
+                                                        String(
+                                                            row.kecamatan || "",
+                                                        ).trim() ||
+                                                        "Tanpa Kecamatan";
+                                                    const parts = raw
+                                                        .split(",")
+                                                        .map((p) => p.trim())
+                                                        .filter(Boolean);
+                                                    const kecKey = (
+                                                        parts[0] || raw
+                                                    ).toUpperCase();
+                                                    const kotaKab =
+                                                        parts.length > 1
+                                                            ? parts
+                                                                  .slice(1)
+                                                                  .join(", ")
+                                                                  .toUpperCase()
+                                                            : null;
+                                                    const j =
+                                                        row.jenjang ||
+                                                        "Lainnya";
+
+                                                    if (!byKecamatan[kecKey]) {
+                                                        byKecamatan[kecKey] = {
+                                                            label: kecKey,
+                                                            kotaKab,
+                                                            jenjang: {},
+                                                        };
+                                                    }
+                                                    if (
+                                                        kotaKab &&
+                                                        !byKecamatan[kecKey]
+                                                            .kotaKab
+                                                    ) {
+                                                        byKecamatan[
+                                                            kecKey
+                                                        ].kotaKab = kotaKab;
+                                                    }
+                                                    if (
+                                                        !byKecamatan[kecKey]
+                                                            .jenjang[j]
+                                                    ) {
+                                                        byKecamatan[
+                                                            kecKey
+                                                        ].jenjang[j] = [];
+                                                    }
+                                                    byKecamatan[kecKey].jenjang[
+                                                        j
+                                                    ].push(row);
+                                                });
+
+                                                const sortedKec = Object.keys(
+                                                    byKecamatan,
+                                                ).sort((a, b) =>
+                                                    a.localeCompare(b, "id", {
+                                                        sensitivity: "base",
+                                                    }),
+                                                );
+
+                                                let globalIndex =
+                                                    (sekolahAktPage - 1) *
+                                                    sekolahAktPerPage;
+
+                                                return sortedKec.map(
+                                                    (kecKey) => {
+                                                        const kec =
+                                                            byKecamatan[
+                                                                kecKey
+                                                            ];
+                                                        const jenjangKeys =
+                                                            Object.keys(
+                                                                kec.jenjang,
+                                                            ).sort(
+                                                                (a, b) =>
+                                                                    (jenjangOrder[
+                                                                        a
+                                                                    ] || 99) -
+                                                                    (jenjangOrder[
+                                                                        b
+                                                                    ] || 99),
+                                                            );
+                                                        const displayKec =
+                                                            kec.kotaKab
+                                                                ? `${kec.label}, ${kec.kotaKab}`
+                                                                : kec.label;
+                                                        const allKecSchools =
+                                                            jenjangKeys.flatMap(
+                                                                (jk) =>
+                                                                    kec.jenjang[
+                                                                        jk
+                                                                    ],
+                                                            );
+                                                        const kecTotal = {
+                                                            count: allKecSchools.length,
+                                                            siswa: allKecSchools.reduce(
+                                                                (a, r) =>
+                                                                    a +
+                                                                    (Number(
+                                                                        r.total_siswa,
+                                                                    ) || 0),
+                                                                0,
+                                                            ),
+                                                            akt: allKecSchools.reduce(
+                                                                (a, r) =>
+                                                                    a +
+                                                                    (Number(
+                                                                        r.total_akt,
+                                                                    ) || 0),
+                                                                0,
+                                                            ),
+                                                            realPrev:
+                                                                allKecSchools.reduce(
+                                                                    (a, r) =>
+                                                                        a +
+                                                                        (Number(
+                                                                            r.real_prev,
+                                                                        ) || 0),
+                                                                    0,
+                                                                ),
+                                                            realCurr:
+                                                                allKecSchools.reduce(
+                                                                    (a, r) =>
+                                                                        a +
+                                                                        (Number(
+                                                                            r.real_curr,
+                                                                        ) || 0),
+                                                                    0,
+                                                                ),
+                                                        };
+
+                                                        return (
+                                                            <React.Fragment
+                                                                key={kecKey}
                                                             >
-                                                                {(sekolahAktPage -
-                                                                    1) *
-                                                                    sekolahAktPerPage +
-                                                                    idx +
-                                                                    1}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    fontWeight: 700,
-                                                                }}
-                                                            >
-                                                                {row.name}
-                                                                {row.is_active ? (
-                                                                    <span
-                                                                        style={{
-                                                                            marginLeft: 6,
-                                                                            fontSize: 9,
-                                                                            fontWeight: 700,
-                                                                            color: "#059669",
-                                                                            background:
-                                                                                "#ecfdf5",
-                                                                            border: "1px solid #a7f3d0",
-                                                                            borderRadius: 4,
-                                                                            padding:
-                                                                                "1px 5px",
+                                                                <tr>
+                                                                    <td
+                                                                        colSpan="2"
+                                                        style={{
+                                                                            ...S.td,
+                                                                            fontWeight: 800,
+                                                            backgroundColor:
+                                                                                "#dbeafe",
+                                                                            color: "#1e40af",
+                                                                            textAlign:
+                                                                                "left",
                                                                         }}
                                                                     >
-                                                                        AC
-                                                                    </span>
-                                                                ) : null}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    color: T.slate,
-                                                                }}
-                                                            >
-                                                                {row.kecamatan}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                }}
-                                                            >
-                                                                {row.jenjang}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "right",
-                                                                    fontWeight: 600,
-                                                                    color: T.text,
-                                                                }}
-                                                            >
-                                                                {formatNumber(
-                                                                    row.total_siswa ||
-                                                                        0,
-                                                                )}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                }}
-                                                            >
-                                                                <div
-                                                                    style={{
-                                                                        display:
-                                                                            "flex",
-                                                                        flexWrap:
-                                                                            "wrap",
-                                                                        gap: 4,
-                                                                    }}
-                                                                >
-                                                                    {row.activityList
-                                                                        .length ===
-                                                                    0 ? (
+                                                                        Kecamatan:{" "}
+                                                                        {
+                                                                            displayKec
+                                                                        }
                                                                         <span
                                                                             style={{
-                                                                                color: T.slate,
+                                                                                marginLeft: 8,
+                                                                                fontWeight: 600,
                                                                                 fontSize: 11,
+                                                                                color: "#1d4ed8",
                                                                             }}
                                                                         >
-                                                                            —
-                                                                        </span>
-                                                                    ) : (
-                                                                        row.activityList.map(
                                                                             (
-                                                                                a,
-                                                                            ) => (
-                                                                                <span
-                                                                                    key={
-                                                                                        a.label
-                                                                                    }
+                                                                            {
+                                                                                kecTotal.count
+                                                                            }{" "}
+                                                                            sekolah)
+                                                                        </span>
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            backgroundColor:
+                                                                                "#dbeafe",
+                                                                            textAlign:
+                                                                                "right",
+                                                                            fontWeight: 800,
+                                                                            color: "#1e40af",
+                                                                        }}
+                                                                    >
+                                                                        {formatNumber(
+                                                                            kecTotal.siswa,
+                                                                        )}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            backgroundColor:
+                                                                                "#dbeafe",
+                                                                        }}
+                                                                    />
+                                                                    <td
+                                                    style={{
+                                                                            ...S.td,
+                                                                            backgroundColor:
+                                                                                "#dbeafe",
+                                                                            textAlign:
+                                                                                "center",
+                                                                            fontWeight: 800,
+                                                                            color: "#1e40af",
+                                                                        }}
+                                                                    >
+                                                                        {
+                                                                            kecTotal.akt
+                                                                        }
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            backgroundColor:
+                                                                                "#dbeafe",
+                                                                            textAlign:
+                                                                                "right",
+                                                                            fontWeight: 800,
+                                                                            color: "#1e40af",
+                                                                        }}
+                                                                    >
+                                                                        {formatNumber(
+                                                                            kecTotal.realPrev,
+                                                                        )}
+                                                                    </td>
+                                                                    <td
+                                                                        style={{
+                                                                            ...S.td,
+                                                                            backgroundColor:
+                                                                                "#dbeafe",
+                                                                            textAlign:
+                                                                                "right",
+                                                                            fontWeight: 800,
+                                                                            color: "#1e40af",
+                                                                        }}
+                                                                    >
+                                                                        {formatNumber(
+                                                                            kecTotal.realCurr,
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                                {allKecSchools.map(
+                                                                    (row, idx) => {
+                                                                        globalIndex++;
+                                                                        return (
+                                                                            <tr
+                                                                                key={
+                                                                                    row.customer_id ||
+                                                                                    `${kecKey}-${idx}`
+                                                                                }
+                                                                                className="table-row-hover"
+                                                                            >
+                                                                                <td
                                                                                     style={{
-                                                                                        display:
-                                                                                            "inline-flex",
-                                                                                        alignItems:
+                                                                                        ...S.td,
+                                                                                        textAlign:
                                                                                             "center",
-                                                                                        gap: 4,
-                                                                                        fontSize: 10,
-                                                                                        fontWeight: 600,
-                                                                                        color: "#334155",
-                                                                                        background:
-                                                                                            "#f1f5f9",
-                                                                                        border: `1px solid ${T.border}`,
-                                                                                        borderRadius: 99,
-                                                                                        padding:
-                                                                                            "2px 8px",
+                                                                                        color: T.slate,
                                                                                     }}
                                                                                 >
                                                                                     {
-                                                                                        a.label
+                                                                                        globalIndex
                                                                                     }
-                                                                                    <strong
-                                                                                        style={{
-                                                                                            color: T.blue,
+                                                                                </td>
+                                                                                <td
+                                                                                    style={{
+                                                                                        ...S.td,
+                                                        fontWeight: 700,
+                                                                                        paddingLeft: 20,
+                                                                                    }}
+                                                                                >
+                                                                                    {
+                                                                                        row.name
+                                                                                    }
+                                                                                    {row.is_active ? (
+                                                                                        <span
+                                                                                            style={{
+                                                                                                marginLeft: 6,
+                                                                                                fontSize: 9,
+                                                                                                fontWeight: 700,
+                                                                                                color: "#059669",
+                                                                                                background:
+                                                                                                    "#ecfdf5",
+                                                                                                border: "1px solid #a7f3d0",
+                                                                                                borderRadius: 4,
+                                                                                                padding:
+                                                                                                    "1px 5px",
+                                                                                            }}
+                                                                                        >
+                                                                                            AC
+                                                                                        </span>
+                                                                                    ) : null}
+                                                                                </td>
+                                                                                <td
+                                    style={{
+                                                                                        ...S.td,
+                                                                                        textAlign:
+                                                                                            "right",
+                                                                                        fontWeight: 600,
+                                                                                    }}
+                                                                                >
+                                                                                    {formatNumber(
+                                                                                        row.total_siswa ||
+                                                                                            0,
+                                                                                    )}
+                                                                                </td>
+                                                                                <td
+                                                style={{
+                                                                                        ...S.td,
+                                                }}
+                                            >
+                                                <div
+                                                    style={{
+                                                                                            display:
+                                                                                                "flex",
+                                                                                            flexWrap:
+                                                                                                "wrap",
+                                                                                            gap: 4,
                                                                                         }}
                                                                                     >
-                                                                                        {
-                                                                                            a.count
-                                                                                        }
-                                                                                    </strong>
-                                                                                </span>
-                                                                            ),
-                                                                        )
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "center",
-                                                                    fontWeight: 800,
-                                                                }}
-                                                            >
-                                                                {row.total_akt}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "right",
-                                                                    fontWeight: 700,
-                                                                    color:
-                                                                        row.real_prev >
-                                                                        0
-                                                                            ? T.text
-                                                                            : T.slate,
-                                                                }}
-                                                            >
-                                                                {formatNumber(
-                                                                    row.real_prev,
+                                                                                        {row
+                                                                                            .activityList
+                                                                                            .length ===
+                                                                                        0 ? (
+                                                                                            <span
+                                                                                                style={{
+                                                        color: T.slate,
+                                                                                                    fontSize: 11,
+                                                                                                }}
+                                                                                            >
+                                                                                                —
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            row.activityList.map(
+                                                                                                (
+                                                                                                    a,
+                                                                                                ) => (
+                                                                                                    <span
+                                                                                                        key={
+                                                                                                            a.label
+                                                                                                        }
+                                                        style={{
+                                                                                                            display:
+                                                                                                                "inline-flex",
+                                                                                                            alignItems:
+                                                                                                                "center",
+                                                                                                            gap: 4,
+                                                                                                            fontSize: 10,
+                                                                                                            fontWeight: 600,
+                                                                                                            color: "#334155",
+                                                                                                            background:
+                                                                                                                "#f1f5f9",
+                                                                                                            border: `1px solid ${T.border}`,
+                                                                                                            borderRadius: 99,
+                                                                                                            padding:
+                                                                                                                "2px 8px",
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        {
+                                                                                                            a.label
+                                                                                                        }
+                                                                                                        <strong
+                                                    style={{
+                                                                                                                color: T.blue,
+                                                                                                            }}
+                                                                                                        >
+                                                                                                            {
+                                                                                                                a.count
+                                                                                                            }
+                                                                                                        </strong>
+                                                                                                    </span>
+                                                                                                ),
+                                                                                            )
+                                                                                        )}
+                                                </div>
+                                                                                </td>
+                                                                                <td
+                                                                                    style={{
+                                                                                        ...S.td,
+                                                                                        textAlign:
+                                                                                            "center",
+                                                                                        fontWeight: 800,
+                                                                                    }}
+                                                                                >
+                                                                                    {
+                                                                                        row.total_akt
+                                                                                    }
+                                                                                </td>
+                                                                                <td
+                                    style={{
+                                                                                        ...S.td,
+                                                                                        textAlign:
+                                                                                            "right",
+                                                                                        fontWeight: 700,
+                                                                                        color:
+                                                                                            row.real_prev >
+                                                                                            0
+                                                                                                ? T.text
+                                                                                                : T.slate,
+                                                                                    }}
+                                                                                >
+                                                                                    {formatNumber(
+                                                                                        row.real_prev,
+                                                                                    )}
+                                                                                </td>
+                                                                                <td
+                                                style={{
+                                                                                        ...S.td,
+                                                                                        textAlign:
+                                                                                            "right",
+                                                                                        fontWeight: 700,
+                                                                                        color:
+                                                                                            row.real_curr >
+                                                                                            0
+                                                                                                ? "#059669"
+                                                                                                : T.slate,
+                                                                                    }}
+                                                                                >
+                                                                                    {formatNumber(
+                                                                                        row.real_curr,
+                                                                                    )}
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    },
                                                                 )}
-                                                            </td>
-                                                            <td
-                                                                style={{
-                                                                    ...S.td,
-                                                                    textAlign:
-                                                                        "right",
-                                                                    fontWeight: 700,
-                                                                    color:
-                                                                        row.real_curr >
-                                                                        0
-                                                                            ? "#059669"
-                                                                            : T.slate,
-                                                                }}
-                                                            >
-                                                                {formatNumber(
-                                                                    row.real_curr,
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                            )}
+                                                            </React.Fragment>
+                                                        );
+                                                    },
+                                                );
+                                            })()}
                                         </tbody>
                                     </table>
                                 </div>
-                                {sekolahAktivitasRows.length >
+                                {filteredSekolahAktivitasRows.length >
                                     sekolahAktPerPage && (
-                                    <div
-                                        style={{
-                                            display: "flex",
+                                                <div
+                                                    style={{
+                                                        display: "flex",
                                             justifyContent: "space-between",
-                                            alignItems: "center",
+                                                        alignItems: "center",
                                             padding: "10px 16px",
                                             borderTop: `1px solid ${T.border}`,
                                             gap: 10,
                                             flexWrap: "wrap",
-                                        }}
-                                    >
-                                        <div
-                                            style={{
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
                                                 fontSize: 11,
                                                 color: T.slate,
                                             }}
@@ -531,88 +987,33 @@ export default function KegiatanTab(props) {
                                             {Math.min(
                                                 sekolahAktPage *
                                                     sekolahAktPerPage,
-                                                sekolahAktivitasRows.length,
+                                                filteredSekolahAktivitasRows.length,
                                             )}{" "}
-                                            dari {sekolahAktivitasRows.length}
-                                        </div>
-                                        <div
-                                            style={{
+                                            dari {filteredSekolahAktivitasRows.length}
+                                                </div>
+                                                <div
+                                                    style={{
                                                 display: "flex",
                                                 gap: 6,
                                             }}
                                         >
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setSekolahAktPage((p) =>
-                                                        Math.max(1, p - 1),
-                                                    )
-                                                }
-                                                disabled={sekolahAktPage === 1}
-                                                style={{
-                                                    padding: "4px 12px",
-                                                    fontSize: 12,
-                                                    borderRadius: 4,
-                                                    border: `1px solid ${T.border}`,
-                                                    background:
-                                                        sekolahAktPage === 1
-                                                            ? "#f8fafc"
-                                                            : "white",
-                                                    color:
-                                                        sekolahAktPage === 1
-                                                            ? "#cbd5e1"
-                                                            : T.text,
-                                                    cursor:
-                                                        sekolahAktPage === 1
-                                                            ? "not-allowed"
-                                                            : "pointer",
-                                                }}
-                                            >
-                                                Prev
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setSekolahAktPage((p) =>
-                                                        Math.min(
-                                                            sekolahAktTotalPages,
-                                                            p + 1,
-                                                        ),
-                                                    )
-                                                }
-                                                disabled={
-                                                    sekolahAktPage ===
-                                                    sekolahAktTotalPages
-                                                }
-                                                style={{
-                                                    padding: "4px 12px",
-                                                    fontSize: 12,
-                                                    borderRadius: 4,
-                                                    border: `1px solid ${T.border}`,
-                                                    background:
-                                                        sekolahAktPage ===
-                                                        sekolahAktTotalPages
-                                                            ? "#f8fafc"
-                                                            : "white",
-                                                    color:
-                                                        sekolahAktPage ===
-                                                        sekolahAktTotalPages
-                                                            ? "#cbd5e1"
-                                                            : T.text,
-                                                    cursor:
-                                                        sekolahAktPage ===
-                                                        sekolahAktTotalPages
-                                                            ? "not-allowed"
-                                                            : "pointer",
-                                                }}
-                                            >
-                                                Next
-                                            </button>
-                                        </div>
-                                    </div>
+                                            <NumberedPagination
+                                                current={sekolahAktPage}
+                                                last={sekolahAktTotalPages}
+                                                onPage={setSekolahAktPage}
+                                            />
+                                                </div>
+                                            </div>
                                 )}
                             </Card>
                         </div>
+
+                        <PrioritySchoolsCard
+                            schools={kpiData?.prioritySchools || []}
+                            year={kpiData?.year || yearCurr}
+                            showAktivitas
+                            kegiatanSales={kegiatanSales}
+                        />
 
                         <div
                             style={{
@@ -891,88 +1292,11 @@ export default function KegiatanTab(props) {
                                                     gap: 6,
                                                 }}
                                             >
-                                                <button
-                                                    onClick={() =>
-                                                        setKegiatanPage((p) =>
-                                                            Math.max(1, p - 1),
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        kegiatanPage === 1
-                                                    }
-                                                    style={{
-                                                        padding: "4px 12px",
-                                                        fontSize: 12,
-                                                        borderRadius: 4,
-                                                        border: `1px solid ${T.border}`,
-                                                        backgroundColor:
-                                                            kegiatanPage === 1
-                                                                ? "#f8fafc"
-                                                                : "white",
-                                                        color:
-                                                            kegiatanPage === 1
-                                                                ? "#cbd5e1"
-                                                                : T.text,
-                                                        cursor:
-                                                            kegiatanPage === 1
-                                                                ? "not-allowed"
-                                                                : "pointer",
-                                                    }}
-                                                >
-                                                    Sebelumnya
-                                                </button>
-                                                <button
-                                                    onClick={() =>
-                                                        setKegiatanPage((p) =>
-                                                            Math.min(
-                                                                Math.ceil(
-                                                                    filteredKegiatan.length /
-                                                                        kegiatanPerPage,
-                                                                ),
-                                                                p + 1,
-                                                            ),
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        kegiatanPage ===
-                                                        Math.ceil(
-                                                            filteredKegiatan.length /
-                                                                kegiatanPerPage,
-                                                        )
-                                                    }
-                                                    style={{
-                                                        padding: "4px 12px",
-                                                        fontSize: 12,
-                                                        borderRadius: 4,
-                                                        border: `1px solid ${T.border}`,
-                                                        backgroundColor:
-                                                            kegiatanPage ===
-                                                            Math.ceil(
-                                                                filteredKegiatan.length /
-                                                                    kegiatanPerPage,
-                                                            )
-                                                                ? "#f8fafc"
-                                                                : "white",
-                                                        color:
-                                                            kegiatanPage ===
-                                                            Math.ceil(
-                                                                filteredKegiatan.length /
-                                                                    kegiatanPerPage,
-                                                            )
-                                                                ? "#cbd5e1"
-                                                                : T.text,
-                                                        cursor:
-                                                            kegiatanPage ===
-                                                            Math.ceil(
-                                                                filteredKegiatan.length /
-                                                                    kegiatanPerPage,
-                                                            )
-                                                                ? "not-allowed"
-                                                                : "pointer",
-                                                    }}
-                                                >
-                                                    Selanjutnya
-                                                </button>
+                                                <NumberedPagination
+                                                    current={kegiatanPage}
+                                                    last={kegiatanTotalPages}
+                                                    onPage={setKegiatanPage}
+                                                />
                                             </div>
                                         </div>
                                     )}

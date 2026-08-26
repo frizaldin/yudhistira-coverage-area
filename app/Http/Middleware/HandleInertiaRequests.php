@@ -90,8 +90,12 @@ class HandleInertiaRequests extends Middleware
                 'sales_score_weights' => $configuration
                     ? $configuration->resolvedSalesScoreWeights()
                     : \App\Models\Configuration::defaultSalesScoreWeights(),
+                'school_grade_thresholds' => $configuration
+                    ? $configuration->resolvedSchoolGradeThresholds()
+                    : \App\Models\Configuration::defaultSchoolGradeThresholds(),
                 'updated_at' => $configuration->updated_at,
-            ]
+            ],
+            'lastImport' => fn () => \App\Services\ImportHistoryService::latest(),
         ];
     }
 }

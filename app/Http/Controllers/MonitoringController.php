@@ -669,20 +669,56 @@ class MonitoringController extends Controller
             'dana' => $danaData,
             'uncoveredDana' => $uncoveredDanaData,
             'jenjang' => $jenjangData,
-            'trend' => \App\Models\SalesPlan::whereIn('sales_id', $salesIds)
-                ->whereNull('jenjang')
-                ->select('year', \DB::raw('SUM(real_customer) as total_real'), \DB::raw('SUM(target_customer) as total_target'))
-                ->groupBy('year')
-                ->orderBy('year')
-                ->get()
-                ->map(fn($r) => [
-                    'label'  => (string) $r->year,
-                    'target' => (int) $r->total_target,
-                    'real'   => (int) $r->total_real,
-                    'uncov'  => max(0, (int)$r->total_target - (int)$r->total_real),
-                    'v'      => $r->total_target > 0 ? round(($r->total_real / $r->total_target) * 100, 2) : 0,
-                ])
-                ->toArray(),
+            'trend' => (function () use ($customerQuery) {
+                $customerIds = (clone $customerQuery)->select('id');
+                $trendRaw = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                    ->select(
+                        'year',
+                        'sumber_dana',
+                        \DB::raw('SUM(real_exemplar) as total_real'),
+                        \DB::raw('SUM(target_exemplar) as total_target')
+                    )
+                    ->groupBy('year', 'sumber_dana')
+                    ->orderBy('year')
+                    ->get();
+
+                $trendGrouped = [];
+                foreach ($trendRaw as $tr) {
+                    $year = (string) $tr->year;
+                    if (!isset($trendGrouped[$year])) {
+                        $trendGrouped[$year] = [
+                            'label' => $year,
+                            'swa_real' => 0,
+                            'bos_real' => 0,
+                            'swa_target' => 0,
+                            'bos_target' => 0,
+                            'real' => 0,
+                            'target' => 0,
+                        ];
+                    }
+                    $real = (int) $tr->total_real;
+                    $target = (int) $tr->total_target;
+                    $trendGrouped[$year]['real'] += $real;
+                    $trendGrouped[$year]['target'] += $target;
+
+                    $sd = strtoupper((string) ($tr->sumber_dana ?? ''));
+                    if (str_contains($sd, 'SWA')) {
+                        $trendGrouped[$year]['swa_real'] += $real;
+                        $trendGrouped[$year]['swa_target'] += $target;
+                    } elseif (str_contains($sd, 'BOS')) {
+                        $trendGrouped[$year]['bos_real'] += $real;
+                        $trendGrouped[$year]['bos_target'] += $target;
+                    }
+                }
+
+                return array_values(array_map(function ($row) {
+                    $row['uncov'] = max(0, (int) $row['target'] - (int) $row['real']);
+                    $row['v'] = $row['target'] > 0
+                        ? round(($row['real'] / $row['target']) * 100, 2)
+                        : 0;
+                    return $row;
+                }, $trendGrouped));
+            })(),
             'competitors' => $competitors,
             'leaderboard' => $leaderboard,
             'uncovered' => $uncovered,
@@ -1004,6 +1040,1210 @@ class MonitoringController extends Controller
             ],
             'filters' => $request->only(['search', 'area_id', 'cabang_id', 'jenis'])
         ]);
+    }
+
+    /* ══════════════════════════════════════════════════════════
+     *  DANA BOS — Monitoring khusus customer dengan sumber_dana BOS
+     * ══════════════════════════════════════════════════════════ */
+
+    /** Peta label market_shares (long form) → kode jenjang singkat. */
+    private function danaBosJenjangMap(): array
+    {
+        return [
+            '1. SD / MI'   => 'SD',
+            '1. SD / MIS'  => 'SD',
+            '2. SMP / MTS' => 'SMP',
+            '2. SMP / MTs' => 'SMP',
+            '3. SMA / MA'  => 'SMA',
+            '4. SMK'       => 'SMK',
+        ];
+    }
+
+    private function danaBosJenjangColors(): array
+    {
+        return ['SD' => '#1d4ed8', 'SMP' => '#60a5fa', 'SMA' => '#fbbf24', 'SMK' => '#fb923c'];
+    }
+
+    /**
+     * Filter query customers ke sekolah negeri saja (berdasarkan pola nama).
+     * Tidak ada kolom jenis_sekolah di DB; swasta (SDS/SDIT/MIS/dll.) dikeluarkan.
+     */
+    private function applySekolahNegeriFilter($query)
+    {
+        return $query
+            ->where('name', 'not like', '%SWASTA%')
+            ->where(function ($w) {
+                $w->where('name', 'like', '%NEGERI%')
+                    ->orWhere('name', 'like', 'SDN %')
+                    ->orWhere('name', 'like', 'SDN.%')
+                    ->orWhere('name', 'like', 'SMPN %')
+                    ->orWhere('name', 'like', 'SMPN.%')
+                    ->orWhere('name', 'like', 'SMAN %')
+                    ->orWhere('name', 'like', 'SMAN.%')
+                    ->orWhere('name', 'like', 'SMKN %')
+                    ->orWhere('name', 'like', 'SMKN.%')
+                    ->orWhere('name', 'like', 'MIN %')
+                    ->orWhere('name', 'like', 'MIN.%')
+                    ->orWhere('name', 'like', 'MTsN %')
+                    ->orWhere('name', 'like', 'MTSN %')
+                    ->orWhere('name', 'like', 'MAN %')
+                    ->orWhere('name', 'like', 'SD N %')
+                    ->orWhere('name', 'like', 'SMP N %')
+                    ->orWhere('name', 'like', 'SMA N %')
+                    ->orWhere('name', 'like', 'SMK N %');
+            });
+    }
+
+    /**
+     * Sekolah Non Area Cover:
+     * 1) Distinct customer_id dari customer_plans (is_ac=1, tahun target) di scope
+     * 2) Customers di scope yang id-nya TIDAK ada di set tersebut
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\Customer>
+     */
+    private function buildNonAreaCoverCustomers(?int $cabangId, ?int $areaId, int $year)
+    {
+        $scope = \App\Models\Customer::query();
+        if ($cabangId) {
+            $scope->where('cabang_id', $cabangId);
+        } elseif ($areaId) {
+            $scope->where('area_id', $areaId);
+        } else {
+            return collect();
+        }
+
+        $scopeIds = (clone $scope)->pluck('id');
+        if ($scopeIds->isEmpty()) {
+            return collect();
+        }
+
+        $acIds = \App\Models\CustomerPlan::query()
+            ->whereIn('customer_id', $scopeIds)
+            ->where('year', $year)
+            ->where('is_ac', 1)
+            ->distinct()
+            ->pluck('customer_id');
+
+        $rowsQuery = clone $scope;
+        if ($acIds->isNotEmpty()) {
+            $rowsQuery->whereNotIn('id', $acIds);
+        }
+        $rows = $rowsQuery
+            ->orderBy('name')
+            ->get([
+                'id', 'name', 'npsn', 'kecamatan_name', 'jenjang', 'total_student',
+                'is_active', 'penerbit', 'sumber_dana', 'potensi_sekolah',
+                'sales_id', 'cabang_id', 'area_id',
+            ]);
+
+        $salesNameById = [];
+        $salesIds = $rows->pluck('sales_id')->filter()->unique()->values();
+        if ($salesIds->isNotEmpty()) {
+            $salesNameById = \App\Models\Sales::whereIn('id', $salesIds)
+                ->pluck('name', 'id')->all();
+        }
+
+        $cabangNameById = [];
+        $cabangIds = $rows->pluck('cabang_id')->filter()->unique()->values();
+        if ($cabangIds->isNotEmpty()) {
+            $cabangNameById = \App\Models\Cabang::whereIn('id', $cabangIds)
+                ->pluck('nama_cabang', 'id')->all();
+        }
+
+        $gradeThresholds = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+            ?->resolvedSchoolGradeThresholds()
+            ?? \App\Models\Configuration::defaultSchoolGradeThresholds();
+
+        return $rows->map(function ($s) use ($salesNameById, $cabangNameById, $gradeThresholds) {
+            $sid = (int) ($s->sales_id ?? 0);
+            $s->is_active = 0;
+            $s->sales_name = $sid > 0
+                ? (string) ($salesNameById[$sid] ?? 'Tanpa Sales')
+                : 'Tanpa Sales';
+            $s->cabang_name = $cabangNameById[(int) ($s->cabang_id ?? 0)] ?? 'Tanpa Cabang';
+            $s->school_grade = \App\Models\Configuration::schoolGradeFromSiswa(
+                (int) ($s->total_student ?? 0),
+                $gradeThresholds
+            );
+            $s->real_exemplar_current = 0;
+            $s->sp_exemplar_current = 0;
+            $s->real_exemplar_previous = 0;
+            $s->sp_exemplar_previous = 0;
+            $s->real_exemplar_ym3 = 0;
+            $s->real_exemplar_ym2 = 0;
+            $s->potential_exemplar_current = 0;
+            $s->potensi_swa = 0;
+            $s->potensi_bos = 0;
+
+            return $s;
+        })->values();
+    }
+
+    /** Cari cabang_id untuk user level sales (dari user langsung atau relasi sales->cabang). */
+    private function danaBosResolveCabangIdForSales($user): ?int
+    {
+        if (!$user) {
+            return null;
+        }
+        if ($user->cabang_id) {
+            return (int) $user->cabang_id;
+        }
+        if ($user->sales_id) {
+            $sales = Sales::find($user->sales_id);
+            if ($sales && $sales->cabang) {
+                return (int) $sales->cabang->id;
+            }
+        }
+        return null;
+    }
+
+    /** Scope query Customer sesuai level user + filter request (area_id/cabang_id). */
+    private function danaBosApplyCustomerScope($query, $user, \Illuminate\Http\Request $request): void
+    {
+        if ($user) {
+            if ($user->level === 'area') {
+                $query->where('area_id', $user->area_id);
+            } elseif ($user->level === 'cabang') {
+                $query->where('cabang_id', $user->cabang_id);
+            } elseif ($user->level === 'sales') {
+                $query->where('sales_id', $user->sales_id);
+            }
+        }
+
+        if ($request->filled('area_id')) {
+            $query->where('area_id', $request->area_id);
+        }
+        if ($request->filled('cabang_id')) {
+            $query->where('cabang_id', $request->cabang_id);
+        }
+    }
+
+    /** Scope query MarketShare sesuai level user + filter request (area_id/cabang_id). */
+    private function danaBosApplyMarketShareScope($query, $user, \Illuminate\Http\Request $request): void
+    {
+        if ($user) {
+            if ($user->level === 'area') {
+                $query->where('area_id', $user->area_id);
+            } elseif ($user->level === 'cabang') {
+                $query->where('cabang_id', $user->cabang_id);
+            } elseif ($user->level === 'sales') {
+                $cabangId = $this->danaBosResolveCabangIdForSales($user);
+                if ($cabangId) {
+                    $query->where('cabang_id', $cabangId);
+                }
+            }
+        }
+
+        if ($request->filled('area_id')) {
+            $query->where('area_id', $request->area_id);
+        }
+        if ($request->filled('cabang_id')) {
+            $query->where('cabang_id', $request->cabang_id);
+        }
+    }
+
+    /**
+     * Dashboard "Dana BOS" — fokus pada customer dengan sumber_dana BOS:
+     * market share vs dapodik, breakdown jenjang, komposisi, ranking sales,
+     * dan analisa YoY + rekomendasi.
+     */
+    public function danaBos(\Illuminate\Http\Request $request)
+    {
+        $cfg = \App\Models\Configuration::query()->first(['target_year', 'prev_year']);
+        $year = (int) ($request->query('tahun') ?: ($cfg->target_year ?? date('Y')));
+        $prevYear = (int) ($cfg->prev_year ?? ($year - 1));
+
+        $user = auth()->user();
+
+        $jenjangMap = $this->danaBosJenjangMap();
+        $jenjangColors = $this->danaBosJenjangColors();
+        $jenjangOrder = ['SD', 'SMP', 'SMA', 'SMK'];
+
+        /* ── Scope customer BOS negeri saja ── */
+        $customerQuery = Customer::query()->where('sumber_dana', 'like', '%BOS%');
+        $this->applySekolahNegeriFilter($customerQuery);
+        $this->danaBosApplyCustomerScope($customerQuery, $user, $request);
+
+        $customers = (clone $customerQuery)->get([
+            'id', 'name', 'jenjang', 'total_student', 'sales_id', 'area_id', 'cabang_id',
+            'sumber_dana', 'is_active', 'kecamatan_name',
+        ]);
+        $customerIds = $customers->pluck('id');
+
+        // Total customer semua sumber dana (scope sama) untuk komposisi BOS vs Non-BOS
+        $allCustomerQuery = Customer::query();
+        $this->danaBosApplyCustomerScope($allCustomerQuery, $user, $request);
+        $totalCustomerAllDana = (clone $allCustomerQuery)->count();
+
+        /* ── Customer plans tahun berjalan & sebelumnya (prefer sumber_dana BOS) ── */
+        $plansByCustomer = $customerIds->isEmpty()
+            ? collect()
+            : \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                ->whereIn('year', [$year, $prevYear])
+                ->where('sumber_dana', 'like', '%BOS%')
+                ->select('customer_id', 'year', 'is_ac', 'real_exemplar')
+                ->get()
+                ->groupBy('customer_id');
+
+        $getPlanRow = function ($customerId, $yr) use ($plansByCustomer) {
+            $rows = $plansByCustomer->get($customerId);
+            return $rows ? $rows->firstWhere('year', $yr) : null;
+        };
+
+        $emptyJenjangMetric = static function () {
+            return [
+                'sekolah' => 0, 'siswa' => 0, 'potensi' => 0,
+                'ac_curr' => 0, 'real_customer' => 0, 'real_eksemplar' => 0,
+            ];
+        };
+
+        $jenjangAgg = [];
+        $salesJenjangAgg = [];
+
+        $totalAcCurr = 0;
+        $totalAcPrev = 0;
+        $totalRealCustCurr = 0;
+        $totalRealCustPrev = 0;
+        $totalRealEksCurr = 0;
+        $totalRealEksPrev = 0;
+        $totalSiswa = 0;
+        $totalPotensi = 0;
+
+        foreach ($customers as $c) {
+            $j = strtoupper(trim((string) ($c->jenjang ?: '')));
+            if (!in_array($j, $jenjangOrder, true)) {
+                $j = 'LAINNYA';
+            }
+
+            $currRow = $getPlanRow($c->id, $year);
+            $prevRow = $getPlanRow($c->id, $prevYear);
+
+            $isActive = (bool) ($c->is_active ?? false);
+            $acCurr = (((int) ($currRow->is_ac ?? 0)) === 1 || $isActive) ? 1 : 0;
+            $acPrev = ((int) ($prevRow->is_ac ?? 0)) === 1 ? 1 : 0;
+            $eksCurr = (int) ($currRow->real_exemplar ?? 0);
+            $eksPrev = (int) ($prevRow->real_exemplar ?? 0);
+            $custCurr = $eksCurr > 0 ? 1 : 0;
+            $custPrev = $eksPrev > 0 ? 1 : 0;
+
+            $siswa = (int) ($c->total_student ?? 0);
+            $potensi = (int) ceil($siswa * 1.5);
+
+            if (!isset($jenjangAgg[$j])) {
+                $jenjangAgg[$j] = $emptyJenjangMetric();
+            }
+            $jenjangAgg[$j]['sekolah']++;
+            $jenjangAgg[$j]['siswa'] += $siswa;
+            $jenjangAgg[$j]['potensi'] += $potensi;
+            $jenjangAgg[$j]['ac_curr'] += $acCurr;
+            $jenjangAgg[$j]['real_customer'] += $custCurr;
+            $jenjangAgg[$j]['real_eksemplar'] += $eksCurr;
+
+            if ($c->sales_id) {
+                $key = $c->sales_id . '|' . $j;
+                if (!isset($salesJenjangAgg[$key])) {
+                    $salesJenjangAgg[$key] = [
+                        'sales_id' => $c->sales_id,
+                        'jenjang' => $j,
+                        'sekolah' => 0, 'siswa' => 0, 'potensi' => 0,
+                        'ac_curr' => 0, 'real_customer' => 0, 'real_eksemplar' => 0,
+                    ];
+                }
+                $salesJenjangAgg[$key]['sekolah']++;
+                $salesJenjangAgg[$key]['siswa'] += $siswa;
+                $salesJenjangAgg[$key]['potensi'] += $potensi;
+                $salesJenjangAgg[$key]['ac_curr'] += $acCurr;
+                $salesJenjangAgg[$key]['real_customer'] += $custCurr;
+                $salesJenjangAgg[$key]['real_eksemplar'] += $eksCurr;
+            }
+
+            $totalAcCurr += $acCurr;
+            $totalAcPrev += $acPrev;
+            $totalRealCustCurr += $custCurr;
+            $totalRealCustPrev += $custPrev;
+            $totalRealEksCurr += $eksCurr;
+            $totalRealEksPrev += $eksPrev;
+            $totalSiswa += $siswa;
+            $totalPotensi += $potensi;
+        }
+
+        $totalSekolahBos = $customers->count();
+
+        $pctChange = static function ($curr, $prev) {
+            if ($prev > 0) {
+                return round((($curr - $prev) / $prev) * 100, 1);
+            }
+            return $curr > 0 ? 100.0 : 0.0;
+        };
+
+        $coveragePct = $totalSekolahBos > 0 ? round(($totalAcCurr / $totalSekolahBos) * 100, 1) : 0.0;
+        $achievementPct = $totalPotensi > 0 ? round(($totalRealEksCurr / $totalPotensi) * 100, 1) : 0.0;
+        $yoyEksPct = $pctChange($totalRealEksCurr, $totalRealEksPrev);
+        $yoyCustPct = $pctChange($totalRealCustCurr, $totalRealCustPrev);
+        $yoyAcPct = $pctChange($totalAcCurr, $totalAcPrev);
+
+        $kpi = [
+            'total_sekolah_bos'  => $totalSekolahBos,
+            'area_cover'         => $totalAcCurr,
+            'realisasi_customer' => $totalRealCustCurr,
+            'realisasi_eksemplar' => $totalRealEksCurr,
+            'potensi_eksemplar'  => $totalPotensi,
+            'total_siswa'        => $totalSiswa,
+            'coverage_pct'       => $coveragePct,
+            'achievement_pct'    => $achievementPct,
+            'yoy_eks_pct'        => $yoyEksPct,
+        ];
+
+        /* ── Market Share per jenjang (numerator BOS, denominator dapodik) ── */
+        $marketShareQuery = MarketShare::whereNull('kecamatan_code')->whereIn('jenjang', array_keys($jenjangMap));
+        $this->danaBosApplyMarketShareScope($marketShareQuery, $user, $request);
+        $rawMs = $marketShareQuery->select('jenjang', DB::raw('SUM(dapodik_customer) as total'))
+            ->groupBy('jenjang')
+            ->get();
+
+        $dapodikByJenjang = [];
+        foreach ($rawMs as $row) {
+            $key = $jenjangMap[$row->jenjang] ?? null;
+            if (!$key) {
+                continue;
+            }
+            $dapodikByJenjang[$key] = ($dapodikByJenjang[$key] ?? 0) + (int) $row->total;
+        }
+
+        $marketShare = [];
+        foreach ($jenjangOrder as $j) {
+            $dapodik = $dapodikByJenjang[$j] ?? 0;
+            $bosSekolah = $jenjangAgg[$j]['sekolah'] ?? 0;
+            $bosAc = $jenjangAgg[$j]['ac_curr'] ?? 0;
+            $penetrasi = $dapodik > 0 ? round(($bosSekolah / $dapodik) * 100, 2) : 0.0;
+            $marketShare[] = [
+                'jenjang'       => $j,
+                'dapodik'       => $dapodik,
+                'bos_sekolah'   => $bosSekolah,
+                'bos_ac'        => $bosAc,
+                'penetrasi_pct' => $penetrasi,
+                'color'         => $jenjangColors[$j],
+            ];
+        }
+
+        /* ── Jenjang breakdown ── */
+        $jenjangData = [];
+        foreach ($jenjangOrder as $j) {
+            $m = $jenjangAgg[$j] ?? $emptyJenjangMetric();
+            $jenjangData[] = [
+                'jenjang'        => $j,
+                'sekolah'        => $m['sekolah'],
+                'siswa'          => $m['siswa'],
+                'potensi'        => $m['potensi'],
+                'real_customer'  => $m['real_customer'],
+                'real_eksemplar' => $m['real_eksemplar'],
+                'color'          => $jenjangColors[$j],
+            ];
+        }
+
+        /* ── Komposisi ── */
+        $byJenjangKomposisi = [];
+        foreach ($jenjangOrder as $j) {
+            $count = $jenjangAgg[$j]['sekolah'] ?? 0;
+            if ($count <= 0) {
+                continue;
+            }
+            $byJenjangKomposisi[] = ['label' => $j, 'value' => $count, 'color' => $jenjangColors[$j]];
+        }
+        $nonBos = max(0, $totalCustomerAllDana - $totalSekolahBos);
+        $komposisi = [
+            'byJenjang' => $byJenjangKomposisi,
+            'bosVsLain' => [
+                ['label' => 'BOS', 'value' => $totalSekolahBos, 'color' => '#1d4ed8'],
+                ['label' => 'Non-BOS', 'value' => $nonBos, 'color' => '#cbd5e1'],
+            ],
+        ];
+
+        /* ── Ranking sales per segmen (jenjang) ── */
+        $rankingSalesIds = collect($salesJenjangAgg)->pluck('sales_id')->unique()->values();
+        $salesNamesMap = $rankingSalesIds->isEmpty()
+            ? collect()
+            : Sales::whereIn('id', $rankingSalesIds)->pluck('name', 'id');
+
+        $rankingSalesSegmen = collect($salesJenjangAgg)
+            ->map(function ($row) use ($salesNamesMap) {
+                return [
+                    'sales_id'        => $row['sales_id'],
+                    'sales_name'      => $salesNamesMap[$row['sales_id']] ?? ('Sales #' . $row['sales_id']),
+                    'jenjang'         => $row['jenjang'],
+                    'sekolah'         => $row['sekolah'],
+                    'real_customer'   => $row['real_customer'],
+                    'real_eksemplar'  => $row['real_eksemplar'],
+                    'potensi'         => $row['potensi'],
+                    'achievement_pct' => $row['potensi'] > 0
+                        ? round(($row['real_eksemplar'] / $row['potensi']) * 100, 1)
+                        : 0.0,
+                ];
+            })
+            ->sortByDesc('real_eksemplar')
+            ->take(30)
+            ->values()
+            ->toArray();
+
+        /* ── Analisa YoY + rekomendasi ── */
+        $rekomendasi = [];
+
+        if ($yoyEksPct < 0) {
+            $rekomendasi[] = 'Realisasi eksemplar BOS turun ' . number_format(abs($yoyEksPct), 1, ',', '.') . '% dibanding ' . $prevYear . ', perlu evaluasi strategi penjualan segera.';
+        } else {
+            $rekomendasi[] = 'Realisasi eksemplar BOS tumbuh ' . number_format($yoyEksPct, 1, ',', '.') . '% dibanding ' . $prevYear . ', pertahankan momentum ini di tahun ' . $year . '.';
+        }
+
+        $lowestPenetrasi = collect($marketShare)->filter(fn ($r) => $r['dapodik'] > 0)->sortBy('penetrasi_pct')->first();
+        if ($lowestPenetrasi) {
+            $rekomendasi[] = 'Penetrasi BOS di jenjang ' . $lowestPenetrasi['jenjang'] . ' masih rendah (' . number_format($lowestPenetrasi['penetrasi_pct'], 1, ',', '.') . '% dari ' . number_format($lowestPenetrasi['dapodik'], 0, ',', '.') . ' sekolah dapodik), jadikan prioritas ekspansi tahun depan.';
+        }
+
+        $biggestGap = collect($jenjangData)
+            ->map(function ($r) {
+                $r['gap'] = $r['potensi'] - $r['real_eksemplar'];
+                return $r;
+            })
+            ->sortByDesc('gap')
+            ->first();
+        if ($biggestGap && $biggestGap['gap'] > 0) {
+            $rekomendasi[] = 'Jenjang ' . $biggestGap['jenjang'] . ' memiliki gap potensi terbesar: ' . number_format($biggestGap['gap'], 0, ',', '.') . ' eksemplar belum tergarap dari total potensi ' . number_format($biggestGap['potensi'], 0, ',', '.') . '.';
+        }
+
+        $salesNoRealisasi = collect($rankingSalesSegmen)
+            ->filter(fn ($r) => $r['sekolah'] > 0 && $r['real_eksemplar'] <= 0)
+            ->take(3);
+        foreach ($salesNoRealisasi as $r) {
+            $rekomendasi[] = 'Sales ' . $r['sales_name'] . ' memegang ' . $r['sekolah'] . ' sekolah BOS jenjang ' . $r['jenjang'] . ' namun belum ada realisasi eksemplar tahun ' . $year . ', perlu follow-up.';
+        }
+
+        if ($achievementPct < 50) {
+            $rekomendasi[] = 'Achievement realisasi terhadap potensi BOS baru ' . number_format($achievementPct, 1, ',', '.') . '%, masih banyak peluang siswa BOS yang belum tergarap maksimal.';
+        }
+
+        if ($coveragePct < 50) {
+            $rekomendasi[] = 'Coverage area (AC) sekolah BOS baru ' . number_format($coveragePct, 1, ',', '.') . '%, dorong onboarding sekolah BOS baru menjadi customer aktif tahun ' . $year . '.';
+        }
+
+        if (count($rekomendasi) < 4) {
+            $rekomendasi[] = 'Terus pantau performa realisasi BOS tiap jenjang secara berkala untuk menjaga pertumbuhan tahun ' . $year . '.';
+        }
+
+        $rekomendasi = array_slice($rekomendasi, 0, 8);
+
+        $analisa = [
+            'prev' => ['year' => $prevYear, 'real_eksemplar' => $totalRealEksPrev, 'real_customer' => $totalRealCustPrev, 'ac' => $totalAcPrev],
+            'curr' => ['year' => $year, 'real_eksemplar' => $totalRealEksCurr, 'real_customer' => $totalRealCustCurr, 'ac' => $totalAcCurr],
+            'yoy_eks_pct'  => $yoyEksPct,
+            'yoy_cust_pct' => $yoyCustPct,
+            'yoy_ac_pct'   => $yoyAcPct,
+            'rekomendasi'  => $rekomendasi,
+        ];
+
+        $tabelSegmen = $this->buildDanaBosTabelSegmen(
+            $customers,
+            $getPlanRow,
+            $year,
+            $prevYear,
+            $jenjangOrder,
+            $jenjangColors
+        );
+
+        /* ── Filter options (area/cabang) sesuai level user ── */
+        $filterOptions = ['areas' => [], 'cabangs' => []];
+        if (!$user || $user->level === 'nasional') {
+            $filterOptions['areas'] = Area::orderBy('name')->get(['id', 'name']);
+            $cabangQuery = \App\Models\Cabang::orderBy('nama_cabang');
+            if ($request->filled('area_id')) {
+                $cabangQuery->where('area_id', $request->area_id);
+            }
+            $filterOptions['cabangs'] = $cabangQuery->get(['id', 'nama_cabang', 'area_id']);
+        } elseif ($user->level === 'area') {
+            $filterOptions['areas'] = Area::where('id', $user->area_id)->get(['id', 'name']);
+            $filterOptions['cabangs'] = \App\Models\Cabang::where('area_id', $user->area_id)
+                ->orderBy('nama_cabang')
+                ->get(['id', 'nama_cabang', 'area_id']);
+        }
+
+        // Dashboard overview ala Area (scoped BOS)
+        $scopeAreaId = $request->filled('area_id')
+            ? (int) $request->area_id
+            : (($user && $user->level === 'area') ? (int) $user->area_id : null);
+        $scopeCabangId = $request->filled('cabang_id')
+            ? (int) $request->cabang_id
+            : (($user && $user->level === 'cabang') ? (int) $user->cabang_id : null);
+        $scopeSalesId = ($user && $user->level === 'sales') ? (int) $user->sales_id : null;
+
+        $detailBundle = $this->buildSalesStyleDashboardBundle(
+            $scopeSalesId,
+            $scopeCabangId,
+            $year,
+            'Dana BOS',
+            $scopeAreaId,
+            'BOS',
+            true
+        );
+
+        // Tabel Segmen: initial load hanya ringkasan per Area (lazy-load anak saat expand)
+        $listSegmenArea = $this->buildDanaBosSegmenAreaSummaries(
+            $detailBundle['listSekolah'] ?? collect(),
+            $scopeAreaId,
+            $scopeCabangId
+        );
+
+        return Inertia::render('Monitoring/DanaBos', [
+            'activeNav' => 'dana-bos',
+            'tahun'     => $year,
+            'prevYear'  => $prevYear,
+            'filters'   => [
+                'area_id'   => $request->query('area_id'),
+                'cabang_id' => $request->query('cabang_id'),
+                'tahun'     => $year,
+            ],
+            'filterOptions'       => $filterOptions,
+            'kpi'                 => $kpi,
+            'marketShare'         => $marketShare,
+            'jenjang'             => $jenjangData,
+            'komposisi'           => $komposisi,
+            'rankingSalesSegmen'  => $rankingSalesSegmen,
+            'analisa'             => $analisa,
+            'tabelSegmen'         => $tabelSegmen,
+            'useSalesStyleDashboard' => true,
+            'kpiData' => $detailBundle['kpiData'],
+            'insights' => $detailBundle['insights'],
+            'listSekolah' => $detailBundle['listSekolah'],
+            'listSegmenArea' => $listSegmenArea,
+            'listKecamatanSegmen' => [],
+            'jenjangBreakdown' => $detailBundle['jenjangBreakdown'],
+            'sumberDanaBreakdown' => $detailBundle['sumberDanaBreakdown'],
+            'gradeRealisasiBreakdown' => $detailBundle['gradeRealisasiBreakdown'] ?? [],
+            'kegiatanSales' => $detailBundle['kegiatanSales'],
+            'activityBreakdown' => $detailBundle['activityBreakdown'],
+            'resultBreakdown' => $detailBundle['resultBreakdown'],
+            'salesProfile' => [
+                'name' => 'Dana BOS',
+                'code' => 'BOS',
+                'cabang' => [
+                    'nama_cabang' => 'Nasional',
+                    'area' => ['name' => 'Dana BOS'],
+                ],
+            ],
+            'configuration' => [
+                'target_year' => $year,
+                'prev_year' => $prevYear,
+            ],
+        ]);
+    }
+
+    /**
+     * Lazy-load anak Tabel Segmen Dana BOS untuk satu Area.
+     */
+    public function danaBosSegmenChildren(\Illuminate\Http\Request $request)
+    {
+        $cfg = \App\Models\Configuration::query()->first(['target_year', 'prev_year']);
+        $year = (int) ($request->query('tahun') ?: ($cfg->target_year ?? date('Y')));
+        $user = auth()->user();
+
+        $areaName = trim((string) $request->query('area_name', ''));
+        $areaIdParam = $request->query('area_id');
+        $cabangId = $request->filled('cabang_id') ? (int) $request->cabang_id : null;
+        if ($user && $user->level === 'cabang' && !$cabangId) {
+            $cabangId = (int) $user->cabang_id;
+        }
+
+        $isUnassigned = $areaName === 'Belum Ter-assign'
+            || $areaIdParam === '0'
+            || $areaIdParam === 0;
+
+        if ($isUnassigned) {
+            $detailBundle = $this->buildSalesStyleDashboardBundle(
+                ($user && $user->level === 'sales') ? (int) $user->sales_id : null,
+                $cabangId,
+                $year,
+                'Dana BOS',
+                null,
+                'BOS',
+                true
+            );
+            $rows = $this->buildDanaBosKecamatanSegmenList(
+                $detailBundle['listSekolah'] ?? collect(),
+                null,
+                $cabangId
+            );
+            $rows = array_values(array_filter(
+                $rows,
+                static fn ($r) => ($r['area_name'] ?? '') === 'Belum Ter-assign'
+            ));
+        } else {
+            $areaId = $request->filled('area_id')
+                ? (int) $request->area_id
+                : (($user && $user->level === 'area') ? (int) $user->area_id : null);
+
+            if (!$areaId && $areaName !== '') {
+                $areaId = (int) (\App\Models\Area::where('name', $areaName)->value('id') ?? 0);
+                $areaId = $areaId > 0 ? $areaId : null;
+            }
+
+            $detailBundle = $this->buildSalesStyleDashboardBundle(
+                ($user && $user->level === 'sales') ? (int) $user->sales_id : null,
+                $cabangId,
+                $year,
+                'Dana BOS',
+                $areaId,
+                'BOS',
+                true
+            );
+            $rows = $this->buildDanaBosKecamatanSegmenList(
+                $detailBundle['listSekolah'] ?? collect(),
+                $areaId,
+                $cabangId
+            );
+            if ($areaName !== '') {
+                $rows = array_values(array_filter(
+                    $rows,
+                    static fn ($r) => ($r['area_name'] ?? '') === $areaName
+                ));
+            }
+        }
+
+        return response()->json([
+            'rows' => $rows,
+        ]);
+    }
+
+    /**
+     * Ringkasan per Area untuk initial load Tabel Segmen (tanpa leaf kecamatan).
+     */
+    private function buildDanaBosSegmenAreaSummaries($listSekolah, ?int $areaId = null, ?int $cabangId = null): array
+    {
+        $cabangQuery = \App\Models\Cabang::query()->with('area');
+        if ($cabangId) {
+            $cabangQuery->where('id', $cabangId);
+        } elseif ($areaId) {
+            $cabangQuery->where('area_id', $areaId);
+        }
+        $cabangs = $cabangQuery->get();
+
+        $kecCountByCabang = $cabangs->isEmpty()
+            ? collect()
+            : \App\Models\Kecamatan::query()
+                ->whereIn('cabang_id', $cabangs->pluck('id'))
+                ->selectRaw('cabang_id, COUNT(*) as cnt')
+                ->groupBy('cabang_id')
+                ->pluck('cnt', 'cabang_id');
+
+        $empty = static function (string $name, int $id): array {
+            return [
+                'key' => $name,
+                'display' => $name,
+                'area_id' => $id,
+                'area_name' => $name,
+                'count' => 0,
+                'total_student' => 0,
+                'real_exemplar_ym3' => 0,
+                'real_exemplar_ym2' => 0,
+                'sp_exemplar_previous' => 0,
+                'real_exemplar_previous' => 0,
+                'sp_exemplar_current' => 0,
+                'real_exemplar_current' => 0,
+                'ac_prev' => 0,
+                'ac_curr' => 0,
+                'cust_real' => 0,
+                'total_cust' => 0,
+                'marketshare_pct' => 0,
+                'jumlah_salesman' => 0,
+                'salesman_ids' => [],
+                'salesman_names' => [],
+                '_salesmen' => [],
+            ];
+        };
+
+        $byArea = [];
+        foreach ($cabangs as $cab) {
+            $name = $cab->area->name ?? 'Tanpa Area';
+            $aid = (int) ($cab->area_id ?? 0);
+            if (!isset($byArea[$name])) {
+                $byArea[$name] = $empty($name, $aid);
+            }
+            $byArea[$name]['count'] += (int) ($kecCountByCabang[$cab->id] ?? 0);
+        }
+
+        // Area tanpa cabang di scope tetap tidak muncul; pastikan semua area ada bila tanpa filter
+        if (!$areaId && !$cabangId) {
+            foreach (\App\Models\Area::orderBy('name')->get(['id', 'name']) as $area) {
+                $name = $area->name;
+                if (!isset($byArea[$name])) {
+                    $byArea[$name] = $empty($name, (int) $area->id);
+                }
+            }
+            $orphanCount = (int) \App\Models\Kecamatan::query()
+                ->where(function ($q) {
+                    $q->whereNull('cabang_id')->orWhere('cabang_id', 0);
+                })
+                ->count();
+            if ($orphanCount > 0) {
+                $byArea['Belum Ter-assign'] = $empty('Belum Ter-assign', 0);
+                $byArea['Belum Ter-assign']['count'] = $orphanCount;
+            }
+        }
+
+        foreach ($listSekolah as $s) {
+            $acCurr = (int) ($s->is_active ?? 0) === 1 ? 1 : 0;
+            $acPrev = (int) ($s->is_ac_previous ?? 0) === 1 ? 1 : 0;
+            $name = $s->area_name ?? 'Tanpa Area';
+            if (!isset($byArea[$name])) {
+                $byArea[$name] = $empty($name, (int) ($s->area_id ?? 0));
+            }
+            $byArea[$name]['ac_prev'] += $acPrev;
+            $byArea[$name]['ac_curr'] += $acCurr;
+            $byArea[$name]['total_cust']++;
+            if ((float) ($s->real_exemplar_current ?? 0) > 0) {
+                $byArea[$name]['cust_real']++;
+            }
+            $sid = (int) ($s->sales_id ?? 0);
+            if ($sid > 0) {
+                $sname = trim((string) ($s->sales_name ?? ''));
+                $byArea[$name]['_salesmen'][$sid] = $sname !== '' && $sname !== 'Tanpa Sales'
+                    ? $sname
+                    : ('Sales #' . $sid);
+            }
+            if ($acCurr === 1) {
+                $byArea[$name]['total_student'] += (int) ($s->total_student ?? 0);
+                $byArea[$name]['real_exemplar_ym3'] += (int) ($s->real_exemplar_ym3 ?? 0);
+                $byArea[$name]['real_exemplar_ym2'] += (int) ($s->real_exemplar_ym2 ?? 0);
+                $byArea[$name]['sp_exemplar_previous'] += (int) ($s->sp_exemplar_previous ?? 0);
+                $byArea[$name]['real_exemplar_previous'] += (int) ($s->real_exemplar_previous ?? 0);
+                $byArea[$name]['sp_exemplar_current'] += (int) ($s->sp_exemplar_current ?? 0);
+                $byArea[$name]['real_exemplar_current'] += (int) ($s->real_exemplar_current ?? 0);
+            }
+        }
+
+        foreach ($byArea as &$areaRow) {
+            $totalCust = (int) ($areaRow['total_cust'] ?? 0);
+            $custReal = (int) ($areaRow['cust_real'] ?? 0);
+            $areaRow['marketshare_pct'] = $totalCust > 0
+                ? round(($custReal / $totalCust) * 100, 1)
+                : 0.0;
+            $salesmen = $areaRow['_salesmen'] ?? [];
+            ksort($salesmen);
+            $areaRow['salesman_ids'] = array_map('intval', array_keys($salesmen));
+            $areaRow['salesman_names'] = array_values($salesmen);
+            $areaRow['jumlah_salesman'] = count($salesmen);
+            unset($areaRow['_salesmen']);
+        }
+        unset($areaRow);
+
+        $out = array_values($byArea);
+        usort($out, static fn ($a, $b) => strcmp($a['display'], $b['display']));
+
+        return $out;
+    }
+
+    /**
+     * Agregat sekolah BOS → baris kecamatan untuk tab Tabel Segmen (AnalisisTab).
+     * Hierarki FE: Area → Cabang → Kota/Kab → Kecamatan (leaf).
+     * Seed seluruh kecamatan master + pastikan semua Area/Cabang di scope tampil
+     * (kecamatan tanpa cabang_id masuk "Belum Ter-assign", atau diwariskan via city_code bila unik).
+     */
+    private function buildDanaBosKecamatanSegmenList($listSekolah, ?int $areaId = null, ?int $cabangId = null): array
+    {
+        $pct = static function (float $curr, float $prev): float {
+            if ($prev > 0) {
+                return round((($curr - $prev) / $prev) * 100, 1);
+            }
+
+            return $curr > 0 ? 100.0 : 0.0;
+        };
+
+        $normalizeKec = static function (string $name): string {
+            $n = mb_strtoupper(trim($name));
+            $n = preg_replace('/^(KEC\.?\s*|KECAMATAN\s+)/u', '', $n) ?? $n;
+
+            return trim(preg_replace('/\s+/u', ' ', $n) ?? $n);
+        };
+
+        $makeRow = static function (
+            string $kec,
+            string $kota,
+            string $areaName,
+            string $cabangName,
+            int $areaIdVal,
+            int $cabangIdVal
+        ): array {
+            $key = $areaName . '|' . $cabangName . '|' . $kota . '|' . $kec;
+
+            return [
+                'id' => $key,
+                'name' => $kec === 'TANPA KECAMATAN' ? 'Tanpa Kecamatan' : $kec,
+                'kecamatan_name' => $kota === 'TANPA KOTA/KAB' ? $kec : ($kec . ', ' . $kota),
+                'jenjang' => 'KEC',
+                'is_active' => 0,
+                'area_id' => $areaIdVal,
+                'cabang_id' => $cabangIdVal,
+                'area_name' => $areaName,
+                'cabang_name' => $cabangName,
+                'total_student' => 0,
+                'real_exemplar_ym3' => 0,
+                'real_exemplar_ym2' => 0,
+                'potential_exemplar_previous' => 0,
+                'sp_exemplar_previous' => 0,
+                'real_exemplar_previous' => 0,
+                'potential_exemplar_current' => 0,
+                'sp_exemplar_current' => 0,
+                'real_exemplar_current' => 0,
+                'ac_prev' => 0,
+                'ac_curr' => 0,
+                'school_count' => 0,
+                'cust_real' => 0,
+                'total_cust' => 0,
+                'marketshare_pct' => 0,
+                'jumlah_salesman' => 0,
+                'salesman_ids' => [],
+                'salesman_names' => [],
+                '_salesmen' => [],
+                'growth_ac_pct' => 0,
+                'growth_real_pct' => 0,
+            ];
+        };
+
+        $cabangQuery = \App\Models\Cabang::query()->with('area');
+        if ($cabangId) {
+            $cabangQuery->where('id', $cabangId);
+        } elseif ($areaId) {
+            $cabangQuery->where('area_id', $areaId);
+        }
+        $cabangs = $cabangQuery->get()->keyBy('id');
+
+        $cityNameByCode = DB::table('cities')->pluck('city_name', 'city_code');
+
+        // Wariskan cabang_id ke kecamatan orphan bila 1 kota hanya punya 1 cabang ter-assign
+        $cityCabangInherit = \App\Models\Kecamatan::query()
+            ->whereNotNull('cabang_id')
+            ->where('cabang_id', '>', 0)
+            ->get(['city_code', 'cabang_id'])
+            ->groupBy('city_code')
+            ->map(function ($g) {
+                $ids = $g->pluck('cabang_id')->unique()->values();
+
+                return $ids->count() === 1 ? (int) $ids->first() : null;
+            })
+            ->filter();
+
+        $map = [];
+        $ensure = function (
+            string $kec,
+            string $kota,
+            string $areaName,
+            string $cabangName,
+            int $areaIdVal,
+            int $cabangIdVal
+        ) use (&$map, $makeRow): void {
+            $key = $areaName . '|' . $cabangName . '|' . $kota . '|' . $kec;
+            if (!isset($map[$key])) {
+                $map[$key] = $makeRow($kec, $kota, $areaName, $cabangName, $areaIdVal, $cabangIdVal);
+            }
+        };
+
+        // 1) Semua kecamatan master
+        $masterKec = \App\Models\Kecamatan::query()
+            ->get(['camat_name', 'city_code', 'cabang_id']);
+
+        foreach ($masterKec as $mk) {
+            $kec = $normalizeKec((string) ($mk->camat_name ?? ''));
+            if ($kec === '') {
+                continue;
+            }
+            $kotaRaw = trim((string) ($cityNameByCode[$mk->city_code] ?? ''));
+            $kota = $kotaRaw !== '' ? mb_strtoupper($kotaRaw) : 'TANPA KOTA/KAB';
+
+            $resolvedCabangId = (int) ($mk->cabang_id ?? 0);
+            if ($resolvedCabangId <= 0) {
+                $resolvedCabangId = (int) ($cityCabangInherit[$mk->city_code] ?? 0);
+            }
+
+            if ($resolvedCabangId > 0 && isset($cabangs[$resolvedCabangId])) {
+                $cab = $cabangs[$resolvedCabangId];
+                $ensure(
+                    $kec,
+                    $kota,
+                    $cab->area->name ?? 'Tanpa Area',
+                    $cab->nama_cabang ?? 'Tanpa Cabang',
+                    (int) ($cab->area_id ?? 0),
+                    (int) $cab->id
+                );
+                continue;
+            }
+
+            // Di luar scope cabang ter-assign: hanya tampilkan orphan bila tanpa filter area/cabang
+            if ($cabangId || $areaId) {
+                continue;
+            }
+            if ($resolvedCabangId > 0) {
+                // cabang ada di DB tapi tidak masuk query scope (harusnya jarang)
+                continue;
+            }
+
+            $ensure(
+                $kec,
+                $kota,
+                'Belum Ter-assign',
+                'Tanpa Cabang',
+                0,
+                0
+            );
+        }
+
+        // 2) Pastikan setiap Area/Cabang di scope punya minimal 1 leaf (agar 9 area tampil)
+        foreach ($cabangs as $cab) {
+            $areaName = $cab->area->name ?? 'Tanpa Area';
+            $cabangName = $cab->nama_cabang ?? 'Tanpa Cabang';
+            $prefix = $areaName . '|' . $cabangName . '|';
+            $hasLeaf = false;
+            foreach ($map as $key => $_) {
+                if (str_starts_with($key, $prefix)) {
+                    $hasLeaf = true;
+                    break;
+                }
+            }
+            if (!$hasLeaf) {
+                $ensure(
+                    '— Belum ada kecamatan —',
+                    'TANPA KOTA/KAB',
+                    $areaName,
+                    $cabangName,
+                    (int) ($cab->area_id ?? 0),
+                    (int) $cab->id
+                );
+            }
+        }
+
+        // 3) Gabungkan metrik dari sekolah BOS
+        foreach ($listSekolah as $s) {
+            $acCurr = (int) ($s->is_active ?? 0) === 1 ? 1 : 0;
+            $acPrev = (int) ($s->is_ac_previous ?? 0) === 1 ? 1 : 0;
+
+            $raw = trim((string) ($s->kecamatan_name ?? ''));
+            $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+            $kec = $normalizeKec($parts[0] ?? ($raw !== '' ? $raw : 'TANPA KECAMATAN'));
+            if ($kec === '') {
+                $kec = 'TANPA KECAMATAN';
+            }
+            $kota = strtoupper(count($parts) > 1 ? implode(', ', array_slice($parts, 1)) : 'TANPA KOTA/KAB');
+            $areaName = $s->area_name ?? 'Tanpa Area';
+            $cabangName = $s->cabang_name ?? 'Tanpa Cabang';
+            $key = $areaName . '|' . $cabangName . '|' . $kota . '|' . $kec;
+
+            if (!isset($map[$key])) {
+                $map[$key] = $makeRow(
+                    $kec,
+                    $kota,
+                    $areaName,
+                    $cabangName,
+                    (int) ($s->area_id ?? 0),
+                    (int) ($s->cabang_id ?? 0)
+                );
+            }
+
+            $map[$key]['ac_prev'] += $acPrev;
+            $map[$key]['ac_curr'] += $acCurr;
+
+            // Market share: cust real vs total cust (semua sekolah BOS di kecamatan)
+            $map[$key]['total_cust']++;
+            $realCurrEks = (float) ($s->real_exemplar_current ?? 0);
+            if ($realCurrEks > 0) {
+                $map[$key]['cust_real']++;
+            }
+
+            $sid = (int) ($s->sales_id ?? 0);
+            if ($sid > 0) {
+                $sname = trim((string) ($s->sales_name ?? ''));
+                $map[$key]['_salesmen'][$sid] = $sname !== '' && $sname !== 'Tanpa Sales'
+                    ? $sname
+                    : ('Sales #' . $sid);
+            }
+
+            if ($acCurr === 1) {
+                $map[$key]['total_student'] += (int) ($s->total_student ?? 0);
+                $map[$key]['real_exemplar_ym3'] += (int) ($s->real_exemplar_ym3 ?? 0);
+                $map[$key]['real_exemplar_ym2'] += (int) ($s->real_exemplar_ym2 ?? 0);
+                $map[$key]['potential_exemplar_previous'] += (int) ($s->potential_exemplar_previous ?? 0);
+                $map[$key]['sp_exemplar_previous'] += (int) ($s->sp_exemplar_previous ?? 0);
+                $map[$key]['real_exemplar_previous'] += (int) ($s->real_exemplar_previous ?? 0);
+                $map[$key]['potential_exemplar_current'] += (int) ($s->potential_exemplar_current ?? 0);
+                $map[$key]['sp_exemplar_current'] += (int) ($s->sp_exemplar_current ?? 0);
+                $map[$key]['real_exemplar_current'] += (int) ($s->real_exemplar_current ?? 0);
+                $map[$key]['school_count']++;
+            }
+        }
+
+        foreach ($map as &$row) {
+            $row['is_active'] = ((int) $row['ac_curr']) > 0 ? 1 : 0;
+            $totalCust = (int) ($row['total_cust'] ?? 0);
+            $custReal = (int) ($row['cust_real'] ?? 0);
+            $row['marketshare_pct'] = $totalCust > 0
+                ? round(($custReal / $totalCust) * 100, 1)
+                : 0.0;
+            $salesmen = $row['_salesmen'] ?? [];
+            ksort($salesmen);
+            $row['salesman_ids'] = array_map('intval', array_keys($salesmen));
+            $row['salesman_names'] = array_values($salesmen);
+            $row['jumlah_salesman'] = count($salesmen);
+            unset($row['_salesmen']);
+            $row['growth_ac_pct'] = $pct((float) $row['ac_curr'], (float) $row['ac_prev']);
+            $row['growth_real_pct'] = $pct(
+                (float) $row['real_exemplar_current'],
+                (float) $row['real_exemplar_previous']
+            );
+        }
+        unset($row);
+
+        return array_values($map);
+    }
+
+    /**
+     * Halaman panduan / daftar isi sistem Yudhistira Monitoring.
+     */
+    public function daftarIsi()
+    {
+        return Inertia::render('Monitoring/DaftarIsi', [
+            'activeNav' => 'daftar-isi',
+        ]);
+    }
+
+    /**
+     * Tabel Segmen Dana BOS: hierarki Jenjang → Kota/Kab → Kecamatan
+     * dengan realisasi YoY (eksemplar + customer) dan growth AC / realisasi.
+     */
+    private function buildDanaBosTabelSegmen($customers, callable $getPlanRow, int $year, int $prevYear, array $jenjangOrder, array $jenjangColors): array
+    {
+        $empty = static function () {
+            return [
+                'sekolah' => 0,
+                'ac_prev' => 0,
+                'ac_curr' => 0,
+                'real_eks_prev' => 0,
+                'real_eks_curr' => 0,
+                'real_cust_prev' => 0,
+                'real_cust_curr' => 0,
+            ];
+        };
+
+        $pct = static function ($curr, $prev) {
+            if ($prev > 0) {
+                return round((($curr - $prev) / $prev) * 100, 1);
+            }
+            return $curr > 0 ? 100.0 : 0.0;
+        };
+
+        $withGrowth = static function (array $m) use ($pct) {
+            return array_merge($m, [
+                'growth_ac_pct' => $pct($m['ac_curr'], $m['ac_prev']),
+                'growth_eks_pct' => $pct($m['real_eks_curr'], $m['real_eks_prev']),
+                'growth_cust_pct' => $pct($m['real_cust_curr'], $m['real_cust_prev']),
+            ]);
+        };
+
+        // tree[jenjang][kota][kecamatan] = metrics
+        $tree = [];
+
+        foreach ($customers as $c) {
+            $j = strtoupper(trim((string) ($c->jenjang ?: '')));
+            if (!in_array($j, $jenjangOrder, true)) {
+                $j = 'LAINNYA';
+            }
+
+            $raw = trim((string) ($c->kecamatan_name ?? ''));
+            $parts = array_values(array_filter(array_map('trim', explode(',', $raw)), static fn ($p) => $p !== ''));
+            $kecamatan = $raw !== '' ? $raw : 'Tidak Diketahui';
+            $kota = count($parts) > 1 ? $parts[count($parts) - 1] : ($raw !== '' ? $raw : 'Tanpa Kota/Kab');
+
+            $currRow = $getPlanRow($c->id, $year);
+            $prevRow = $getPlanRow($c->id, $prevYear);
+
+            $isActive = (bool) ($c->is_active ?? false);
+            $acCurr = (((int) ($currRow->is_ac ?? 0)) === 1 || $isActive) ? 1 : 0;
+            $acPrev = ((int) ($prevRow->is_ac ?? 0)) === 1 ? 1 : 0;
+            $eksCurr = (int) ($currRow->real_exemplar ?? 0);
+            $eksPrev = (int) ($prevRow->real_exemplar ?? 0);
+            $custCurr = $eksCurr > 0 ? 1 : 0;
+            $custPrev = $eksPrev > 0 ? 1 : 0;
+
+            if (!isset($tree[$j][$kota][$kecamatan])) {
+                $tree[$j][$kota][$kecamatan] = $empty();
+            }
+            $tree[$j][$kota][$kecamatan]['sekolah']++;
+            $tree[$j][$kota][$kecamatan]['ac_prev'] += $acPrev;
+            $tree[$j][$kota][$kecamatan]['ac_curr'] += $acCurr;
+            $tree[$j][$kota][$kecamatan]['real_eks_prev'] += $eksPrev;
+            $tree[$j][$kota][$kecamatan]['real_eks_curr'] += $eksCurr;
+            $tree[$j][$kota][$kecamatan]['real_cust_prev'] += $custPrev;
+            $tree[$j][$kota][$kecamatan]['real_cust_curr'] += $custCurr;
+        }
+
+        $rows = [];
+        $order = array_values(array_unique(array_merge($jenjangOrder, ['LAINNYA'])));
+
+        foreach ($order as $j) {
+            if (!isset($tree[$j])) {
+                continue;
+            }
+
+            $jenjangTot = $empty();
+            $kotaChildren = [];
+
+            foreach ($tree[$j] as $kota => $kecMap) {
+                $kotaTot = $empty();
+                $kecChildren = [];
+
+                foreach ($kecMap as $kec => $m) {
+                    foreach ($m as $k => $v) {
+                        $kotaTot[$k] += $v;
+                    }
+                    $kecChildren[] = [
+                        'level' => 'kecamatan',
+                        'key' => $j . '|' . $kota . '|' . $kec,
+                        'label' => $kec,
+                        'metrics' => $withGrowth($m),
+                        'children' => [],
+                    ];
+                }
+
+                usort($kecChildren, static function ($a, $b) {
+                    return $b['metrics']['real_eks_curr'] <=> $a['metrics']['real_eks_curr'];
+                });
+
+                foreach ($kotaTot as $k => $v) {
+                    $jenjangTot[$k] += $v;
+                }
+
+                $kotaChildren[] = [
+                    'level' => 'kota',
+                    'key' => $j . '|' . $kota,
+                    'label' => $kota,
+                    'metrics' => $withGrowth($kotaTot),
+                    'children' => $kecChildren,
+                ];
+            }
+
+            usort($kotaChildren, static function ($a, $b) {
+                return $b['metrics']['real_eks_curr'] <=> $a['metrics']['real_eks_curr'];
+            });
+
+            $rows[] = [
+                'level' => 'jenjang',
+                'key' => $j,
+                'label' => $j,
+                'color' => $jenjangColors[$j] ?? '#64748b',
+                'metrics' => $withGrowth($jenjangTot),
+                'children' => $kotaChildren,
+            ];
+        }
+
+        return [
+            'year' => $year,
+            'prev_year' => $prevYear,
+            'rows' => $rows,
+        ];
     }
 
     /**
@@ -1541,6 +2781,356 @@ class MonitoringController extends Controller
             if ($cabangObj) {
                 $data = $this->buildUniversalDashboardData('CABANG', $cabangObj->id);
                 $isSalesUser = $user && $user->level === 'sales';
+
+                $cfg = \App\Models\Configuration::query()->first(['target_year', 'prev_year']);
+                $targetYear = (int) ($request->query('tahun') ?: ($cfg->target_year ?? date('Y')));
+                $prevYear = (int) ($cfg->prev_year ?? ($targetYear - 1));
+
+                $customerIds = \App\Models\Customer::where('cabang_id', $cabangObj->id)->pluck('id');
+                $cn = strtolower(trim((string) $cabangObj->nama_cabang));
+
+                $areaCoverCabang = (int) ($data['realStats']['customer_aktif'] ?? 0);
+                $totalSekolahCabang = (int) ($data['realStats']['total_sekolah'] ?? 0);
+                $potensiEksCabang = (int) ($data['realStats']['potensi_eksemplar'] ?? 0);
+                $realCurrCabang = (int) ($data['realStats']['real_eksemplar'] ?? 0);
+                $targetEksCabang = (int) ($data['realStats']['target_eksemplar'] ?? 0);
+
+                $realPrevCabang = $customerIds->isEmpty()
+                    ? 0
+                    : (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                        ->where('year', $prevYear)
+                        ->sum('real_exemplar');
+
+                $customerWithRealisasiCabang = $customerIds->isEmpty()
+                    ? 0
+                    : (int) \App\Models\Customer::where('cabang_id', $cabangObj->id)
+                        ->whereHas('customerPlans', function ($q) use ($targetYear) {
+                            $q->where('year', $targetYear)->where('real_exemplar', '>', 0);
+                        })->count();
+
+                $spCurrCabang = $customerIds->isEmpty()
+                    ? 0
+                    : (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                        ->where('year', $targetYear)
+                        ->sum('sp_exemplar');
+
+                $salesIdsCabang = \App\Models\Customer::where('cabang_id', $cabangObj->id)
+                    ->whereNotNull('sales_id')
+                    ->distinct()
+                    ->pluck('sales_id');
+
+                $cabangInsights = $this->buildScopeKpiInsights([
+                    'totalSekolah' => $totalSekolahCabang,
+                    'areaCover' => $areaCoverCabang,
+                    'potensiEks' => $potensiEksCabang,
+                    'realCurr' => $realCurrCabang,
+                    'realPrev' => $realPrevCabang,
+                    'targetEks' => $targetEksCabang,
+                    'customerWithRealisasi' => $customerWithRealisasiCabang,
+                    'spCurr' => $spCurrCabang,
+                    'salesIdsForScore' => $salesIdsCabang,
+                    'salesPerformanceAll' => $data['timSalesPerformance']['all'] ?? [],
+                    'excludeSalesNames' => [$cn, 'kantor ' . $cn],
+                    'targetYear' => $targetYear,
+                    'prevYear' => $prevYear,
+                ], 'Cabang');
+
+                // Dashboard bundle — rumus & struktur sama seperti Sales Performance Detail
+                $detailBundle = $this->buildSalesStyleDashboardBundle(
+                    null,
+                    (int) $cabangObj->id,
+                    $targetYear,
+                    'CABANG ' . strtoupper((string) $cabangObj->nama_cabang)
+                );
+
+                // Ranking kecamatan by realisasi eksemplar (top 10)
+                $rankingKecamatanRealisasi = [];
+                if ($customerIds->isNotEmpty()) {
+                    $kecRows = \App\Models\Customer::query()
+                        ->where('cabang_id', $cabangObj->id)
+                        ->leftJoin('customer_plans', function ($join) use ($targetYear) {
+                            $join->on('customers.id', '=', 'customer_plans.customer_id')
+                                ->where('customer_plans.year', '=', $targetYear);
+                        })
+                        ->selectRaw("
+                            customers.kecamatan_name as kecamatan_name,
+                            COALESCE(SUM(customer_plans.real_exemplar), 0) as realisasi,
+                            COUNT(DISTINCT customers.id) as total_sekolah,
+                            COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi
+                        ")
+                        ->groupBy('customers.kecamatan_name')
+                        ->get();
+
+                    $merged = [];
+                    foreach ($kecRows as $row) {
+                        $raw = trim((string) ($row->kecamatan_name ?? ''));
+                        if ($raw === '') {
+                            $raw = 'Tanpa Kecamatan';
+                        }
+                        $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+                        $key = strtoupper($parts[0] ?? $raw);
+                        if (!isset($merged[$key])) {
+                            $merged[$key] = [
+                                'name' => $key,
+                                'realisasi' => 0,
+                                'total_sekolah' => 0,
+                                'sekolah_realisasi' => 0,
+                            ];
+                        }
+                        $merged[$key]['realisasi'] += (int) $row->realisasi;
+                        $merged[$key]['total_sekolah'] += (int) $row->total_sekolah;
+                        $merged[$key]['sekolah_realisasi'] += (int) $row->sekolah_realisasi;
+                    }
+
+                    $rankingKecamatanRealisasi = collect($merged)
+                        ->sortByDesc('realisasi')
+                        ->take(10)
+                        ->values()
+                        ->map(function ($r, $idx) {
+                            return [
+                                'no' => $idx + 1,
+                                'name' => $r['name'],
+                                'realisasi' => (int) $r['realisasi'],
+                                'total_sekolah' => (int) $r['total_sekolah'],
+                                'sekolah_realisasi' => (int) $r['sekolah_realisasi'],
+                            ];
+                        })
+                        ->toArray();
+                }
+
+                // List seluruh sales cabang, urut realisasi eksemplar terbanyak
+                $listSalesCabang = \App\Models\Customer::query()
+                    ->where('customers.cabang_id', $cabangObj->id)
+                    ->whereNotNull('customers.sales_id')
+                    ->join('sales', 'sales.id', '=', 'customers.sales_id')
+                    ->leftJoin('customer_plans', function ($join) use ($targetYear) {
+                        $join->on('customer_plans.customer_id', '=', 'customers.id')
+                            ->where('customer_plans.year', '=', $targetYear);
+                    })
+                    ->groupBy('sales.id', 'sales.name')
+                    ->selectRaw("
+                        sales.id as id,
+                        sales.name as name,
+                        COUNT(DISTINCT customers.id) as total_sekolah,
+                        COUNT(DISTINCT CASE WHEN customer_plans.is_ac = 1 THEN customers.id END) as area_cover,
+                        COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as customer_realisasi,
+                        COALESCE(SUM(customer_plans.real_exemplar), 0) as realisasi,
+                        COALESCE(SUM(customer_plans.target_exemplar), 0) as target,
+                        COALESCE(SUM(customer_plans.sp_exemplar), 0) as sp,
+                        COALESCE(SUM(customer_plans.potential_exemplar), 0) as potensi
+                    ")
+                    ->orderByDesc('realisasi')
+                    ->orderBy('sales.name')
+                    ->get()
+                    ->filter(function ($row) use ($cn) {
+                        $name = strtolower(trim((string) ($row->name ?? '')));
+                        return $name !== $cn && $name !== ('kantor ' . $cn);
+                    })
+                    ->values()
+                    ->map(function ($row, $idx) {
+                        $realisasi = (int) round((float) $row->realisasi);
+                        $target = (int) round((float) $row->target);
+                        $areaCover = (int) $row->area_cover;
+                        $customerRealisasi = (int) $row->customer_realisasi;
+                        return [
+                            'no' => $idx + 1,
+                            'id' => (int) $row->id,
+                            'name' => $row->name,
+                            'total_sekolah' => (int) $row->total_sekolah,
+                            'area_cover' => $areaCover,
+                            'customer_realisasi' => $customerRealisasi,
+                            'realisasi' => $realisasi,
+                            'target' => $target,
+                            'sp' => (int) round((float) $row->sp),
+                            'potensi' => (int) round((float) $row->potensi),
+                            'achievement_pct' => $target > 0
+                                ? round(($realisasi / $target) * 100, 1)
+                                : ($realisasi > 0 ? 100.0 : 0.0),
+                            'cover_pct' => $areaCover > 0
+                                ? round(($customerRealisasi / $areaCover) * 100, 1)
+                                : 0.0,
+                        ];
+                    })
+                    ->values()
+                    ->toArray();
+
+                // List seluruh kecamatan cabang + metrik tahun target
+                $listKecamatanCabang = \App\Models\Customer::query()
+                    ->where('customers.cabang_id', $cabangObj->id)
+                    ->leftJoin('customer_plans', function ($join) use ($targetYear) {
+                        $join->on('customer_plans.customer_id', '=', 'customers.id')
+                            ->where('customer_plans.year', '=', $targetYear);
+                    })
+                    ->groupBy('customers.kecamatan_name')
+                    ->selectRaw("
+                        customers.kecamatan_name as kecamatan_name,
+                        COUNT(DISTINCT customers.id) as total_sekolah,
+                        COUNT(DISTINCT CASE WHEN customer_plans.is_ac = 1 THEN customers.id END) as sekolah_aktif,
+                        COALESCE(SUM(customer_plans.sp_exemplar), 0) as sp_exemplar,
+                        COALESCE(SUM(customer_plans.real_exemplar), 0) as real_exemplar,
+                        COALESCE(SUM(customer_plans.potential_exemplar), 0) as potensi,
+                        COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi,
+                        COUNT(DISTINCT CASE WHEN customer_plans.sp_exemplar > 0 THEN customers.id END) as sp_customer,
+                        COUNT(DISTINCT CASE WHEN customers.sales_id IS NOT NULL AND customers.sales_id > 0 THEN customers.sales_id END) as jumlah_salesman
+                    ")
+                    ->orderByDesc('real_exemplar')
+                    ->orderBy('customers.kecamatan_name')
+                    ->get();
+
+                $kecSiswaCabang = \Illuminate\Support\Facades\DB::table('customers')
+                    ->where('customers.cabang_id', $cabangObj->id)
+                    ->groupBy('customers.kecamatan_name')
+                    ->select(
+                        'customers.kecamatan_name',
+                        \Illuminate\Support\Facades\DB::raw('SUM(COALESCE(customers.total_student, 0)) as jumlah_siswa')
+                    )
+                    ->get()
+                    ->keyBy('kecamatan_name');
+
+                $listKecamatanCabang->each(function ($k) use ($kecSiswaCabang, $cabangObj) {
+                    $siswa = $kecSiswaCabang->get($k->kecamatan_name);
+                    $k->jumlah_siswa = (int) ($siswa->jumlah_siswa ?? 0);
+                    $k->potensi_siswa = $k->jumlah_siswa;
+                    $k->jumlah_salesman = (int) ($k->jumlah_salesman ?? 0);
+                    $k->sp_exemplar = (int) round((float) ($k->sp_exemplar ?? 0));
+                    $k->real_exemplar = (int) round((float) ($k->real_exemplar ?? 0));
+                    $k->potensi = (int) round((float) ($k->potensi ?? 0));
+                    $k->sekolah_realisasi = (int) ($k->sekolah_realisasi ?? 0);
+                    $k->sp_customer = (int) ($k->sp_customer ?? 0);
+                    $k->cabang_name = $cabangObj->nama_cabang ?? '';
+                });
+
+                $salesByKecMs = \Illuminate\Support\Facades\DB::table('customers')
+                    ->where('cabang_id', $cabangObj->id)
+                    ->whereNotNull('sales_id')
+                    ->where('sales_id', '>', 0)
+                    ->select('kecamatan_name', 'sales_id')
+                    ->distinct()
+                    ->get();
+                $salesmanIdsByKecMs = [];
+                foreach ($salesByKecMs as $sr) {
+                    $full = trim((string) ($sr->kecamatan_name ?? ''));
+                    if ($full === '') {
+                        continue;
+                    }
+                    $salesmanIdsByKecMs[$full][(int) $sr->sales_id] = true;
+                }
+
+                // Base data sales = Area Cover: hilangkan kecamatan tanpa AC
+                $listKecamatanCabang = $listKecamatanCabang
+                    ->filter(fn ($k) => (int) ($k->sekolah_aktif ?? 0) > 0)
+                    ->values();
+
+                // Grade sekolah yang dapat realisasi per kecamatan
+                $gradeThresholdsMs = \App\Models\Configuration::query()->first()?->resolvedSchoolGradeThresholds()
+                    ?? \App\Models\Configuration::defaultSchoolGradeThresholds();
+                $realisasiSchoolsMs = \App\Models\Customer::query()
+                    ->where('customers.cabang_id', $cabangObj->id)
+                    ->join('customer_plans', function ($join) use ($targetYear) {
+                        $join->on('customer_plans.customer_id', '=', 'customers.id')
+                            ->where('customer_plans.year', '=', $targetYear)
+                            ->where('customer_plans.real_exemplar', '>', 0);
+                    })
+                    ->select('customers.id', 'customers.kecamatan_name', 'customers.total_student')
+                    ->distinct()
+                    ->get();
+                $gradesByKecamatanMs = $this->collectGradesRealisasiByKey(
+                    $realisasiSchoolsMs,
+                    static fn ($s) => trim((string) ($s->kecamatan_name ?? '')),
+                    $gradeThresholdsMs
+                );
+
+                // Market share per kecamatan (grup kota/kab): total dapodik, AC, real, SP
+                $normalizeCamat = static function ($name) {
+                    $n = mb_strtolower(trim((string) $name));
+                    $n = preg_replace('/^(kec\.?\s*|kecamatan\s+)/u', '', $n);
+                    return trim(preg_replace('/\s+/u', ' ', $n));
+                };
+                $cityNameByCode = \DB::table('cities')->pluck('city_name', 'city_code');
+                $masterKecCabang = \App\Models\Kecamatan::where('cabang_id', $cabangObj->id)
+                    ->get(['camat_name', 'city_code', 'dapodik_customer']);
+                $dapodikLookup = [];
+                foreach ($masterKecCabang as $mk) {
+                    $base = $normalizeCamat($mk->camat_name);
+                    $kota = mb_strtoupper(trim((string) ($cityNameByCode[$mk->city_code] ?? '')));
+                    $dapodik = (int) ($mk->dapodik_customer ?? 0);
+                    if ($base === '') {
+                        continue;
+                    }
+                    $dapodikLookup[$base . '|' . $kota] = ($dapodikLookup[$base . '|' . $kota] ?? 0) + $dapodik;
+                    $dapodikLookup[$base] = ($dapodikLookup[$base] ?? 0) + $dapodik;
+                }
+
+                $marketShareKecamatan = $listKecamatanCabang->map(function ($k) use ($normalizeCamat, $dapodikLookup, $gradesByKecamatanMs, $salesmanIdsByKecMs) {
+                    $full = trim((string) ($k->kecamatan_name ?? ''));
+                    $parts = array_values(array_filter(array_map('trim', explode(',', $full))));
+                    $baseRaw = $parts[0] ?? $full;
+                    $kotaKab = count($parts) > 1
+                        ? mb_strtoupper(implode(', ', array_slice($parts, 1)))
+                        : 'Tanpa Kota/Kab';
+                    $base = $normalizeCamat($baseRaw);
+                    $dapodik = (int) ($dapodikLookup[$base . '|' . $kotaKab]
+                        ?? $dapodikLookup[$base]
+                        ?? 0);
+                    $areaCover = (int) ($k->sekolah_aktif ?? 0);
+                    // Fallback: jika master dapodik kosong, pakai total customer di kecamatan
+                    $totalSekolah = $dapodik > 0 ? $dapodik : (int) ($k->total_sekolah ?? 0);
+                    $marketsharePct = $totalSekolah > 0
+                        ? round(($areaCover / $totalSekolah) * 100, 1)
+                        : 0.0;
+                    $salesmanIds = array_map('intval', array_keys($salesmanIdsByKecMs[$full] ?? []));
+                    sort($salesmanIds);
+
+                    return [
+                        'kecamatan_name' => $full !== '' ? $full : ($baseRaw ?: 'Tidak Diketahui'),
+                        'kecamatan' => mb_strtoupper($baseRaw ?: 'Tidak Diketahui'),
+                        'kota_kab' => $kotaKab,
+                        'total_sekolah' => $totalSekolah,
+                        'jumlah_siswa' => (int) ($k->jumlah_siswa ?? 0),
+                        'jumlah_salesman' => count($salesmanIds),
+                        'salesman_ids' => $salesmanIds,
+                        'area_cover' => $areaCover,
+                        'potensi' => (int) ($k->potensi ?? 0),
+                        'sekolah_realisasi' => (int) ($k->sekolah_realisasi ?? 0),
+                        'sp_customer' => (int) ($k->sp_customer ?? 0),
+                        'real_exemplar' => (int) ($k->real_exemplar ?? 0),
+                        'sp_exemplar' => (int) ($k->sp_exemplar ?? 0),
+                        'grades_realisasi' => $gradesByKecamatanMs[$full] ?? [],
+                        'marketshare_pct' => $marketsharePct,
+                    ];
+                })
+                    ->sortByDesc('marketshare_pct')
+                    ->values()
+                    ->all();
+
+                // Total sekolah = count customers cabang; Area Cover = customer_plans is_ac tahun berjalan
+                $detailBundle['kpiData']['totalSekolahCabang'] = (int) \App\Models\Customer::where('cabang_id', $cabangObj->id)->count();
+                $detailBundle['kpiData']['totalKecamatanCabang'] = (int) \App\Models\Customer::where('cabang_id', $cabangObj->id)
+                    ->whereNotNull('kecamatan_name')
+                    ->where('kecamatan_name', '!=', '')
+                    ->selectRaw('COUNT(DISTINCT kecamatan_name) as cnt')
+                    ->value('cnt');
+
+                $areaCoverFromPlans = $customerIds->isEmpty()
+                    ? 0
+                    : (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                        ->where('year', $targetYear)
+                        ->where('is_ac', 1)
+                        ->distinct()
+                        ->count('customer_id');
+
+                $detailBundle['kpiData']['areaCover'] = $areaCoverFromPlans;
+                if (!isset($detailBundle['insights']) || !is_array($detailBundle['insights'])) {
+                    $detailBundle['insights'] = [];
+                }
+                $detailBundle['insights']['totalAreaCover'] = $areaCoverFromPlans;
+
+                $listNonAreaCover = $this->buildNonAreaCoverCustomers(
+                    (int) $cabangObj->id,
+                    null,
+                    $targetYear
+                );
+
                 return Inertia::render('Monitoring/Cabang', array_merge($data, [
                     'activeNav'    => $isSalesUser ? 'sales' : 'cabang',
                     'pageTitle'    => $isSalesUser ? 'Dashboard Sales' : 'Dashboard Cabang',
@@ -1552,6 +3142,33 @@ class MonitoringController extends Controller
                     'areas'        => \App\Models\Area::orderBy('name')->get(),
                     'cabangs'      => $cabangs,
                     'filters'      => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
+                    'cabangInsights' => $cabangInsights,
+                    'rankingKecamatanRealisasi' => $rankingKecamatanRealisasi,
+                    'listSalesCabang' => $listSalesCabang,
+                    'listKecamatan' => $listKecamatanCabang,
+                    'marketShareKecamatan' => $marketShareKecamatan,
+                    // Samakan dashboard utama dengan Sales Performance Detail
+                    'kpiData' => $detailBundle['kpiData'],
+                    'insights' => $detailBundle['insights'],
+                    'listSekolah' => $detailBundle['listSekolah'],
+                    'listNonAreaCover' => $listNonAreaCover,
+                    'jenjangBreakdown' => $detailBundle['jenjangBreakdown'],
+                    'sumberDanaBreakdown' => $detailBundle['sumberDanaBreakdown'],
+                    'gradeRealisasiBreakdown' => $detailBundle['gradeRealisasiBreakdown'] ?? [],
+                    'kegiatanSales' => $detailBundle['kegiatanSales'],
+                    'activityBreakdown' => $detailBundle['activityBreakdown'],
+                    'resultBreakdown' => $detailBundle['resultBreakdown'],
+                    'useSalesStyleDashboard' => true,
+                    'salesProfile' => [
+                        'name' => 'CABANG ' . strtoupper((string) $cabangObj->nama_cabang),
+                        'code' => (string) $cabangObj->id,
+                        'profile_type' => 'cabang',
+                        'total_sales' => count($listSalesCabang),
+                        'cabang' => [
+                            'nama_cabang' => $cabangObj->nama_cabang,
+                            'area' => ['name' => $area->name],
+                        ],
+                    ],
                 ]));
             }
         }
@@ -1620,66 +3237,11 @@ class MonitoringController extends Controller
         }
         unset($v);
 
-        /* ── Area Governance (dari ranking kecamatan) ── */
-        $govCounts = ['covered' => 0, 'low' => 0, 'opp' => 0, 'high_opp' => 0];
-        $tKec = 0;
-        foreach ($data['rankingKecamatan'] ?? [] as $kec) {
-            $dCust = $kec['total'] ?? 0;
-            if ($dCust == 0) {
-                continue;
-            }
-            $tKec++;
-            $p = $kec['pct'] ?? 0;
-            if ($p >= 70) {
-                $govCounts['covered']++;
-            } elseif ($p >= 30) {
-                $govCounts['low']++;
-            } elseif ($p >= 10) {
-                $govCounts['opp']++;
-            } else {
-                $govCounts['high_opp']++;
-            }
-        }
-        $gov = [
-            [
-                'label' => 'Covered',
-                'sub' => 'Kecamatan dengan coverage ≥ 70%',
-                'pct' => $tKec > 0 ? round(($govCounts['covered'] / $tKec) * 100) . '%' : '0%',
-                'count' => $govCounts['covered'],
-                'color' => '#34d399',
-                'icon' => 'bi-shield-fill-check',
-            ],
-            [
-                'label' => 'Low Coverage',
-                'sub' => 'Kecamatan dengan coverage 30–70%',
-                'pct' => $tKec > 0 ? round(($govCounts['low'] / $tKec) * 100) . '%' : '0%',
-                'count' => $govCounts['low'],
-                'color' => '#60a5fa',
-                'icon' => 'bi-exclamation-triangle-fill',
-            ],
-            [
-                'label' => 'Opportunity',
-                'sub' => 'Kecamatan dengan coverage 10–30%',
-                'pct' => $tKec > 0 ? round(($govCounts['opp'] / $tKec) * 100) . '%' : '0%',
-                'count' => $govCounts['opp'],
-                'color' => '#fbbf24',
-                'icon' => 'bi-lightbulb-fill',
-            ],
-            [
-                'label' => 'High Opportunity',
-                'sub' => 'Kecamatan dengan coverage < 10%',
-                'pct' => $tKec > 0 ? round(($govCounts['high_opp'] / $tKec) * 100) . '%' : '0%',
-                'count' => $govCounts['high_opp'],
-                'color' => '#fb923c',
-                'icon' => 'bi-fire',
-            ],
-        ];
-
-        /* ── KPI strip agregat area (tanpa skor pribadi) ── */
+        /* ── KPI strip agregat area (dasar untuk Area Score) ── */
         $configYear = optional(\App\Models\Configuration::first())->target_year;
         $targetYear = (int) ($request->query('tahun') ?: ($configYear ?: date('Y')));
         $prevY = $targetYear - 1;
-        
+
         $customerAreaQuery = Customer::where('area_id', $area->id);
         if ($sumberDana = $request->query('sumber_dana')) {
             if ($sumberDana === 'BOS') {
@@ -1689,10 +3251,11 @@ class MonitoringController extends Controller
             }
         }
         $customerIds = (clone $customerAreaQuery)->pluck('id');
+        $totalSekolahArea = (int) $customerIds->count();
 
         $planAgg = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
             ->whereIn('year', [$targetYear, $prevY])
-            ->selectRaw('year, SUM(real_exemplar) as real_sum, SUM(target_exemplar) as target_sum')
+            ->selectRaw('year, SUM(real_exemplar) as real_sum, SUM(target_exemplar) as target_sum, SUM(sp_exemplar) as sp_sum')
             ->groupBy('year')
             ->get()
             ->keyBy('year');
@@ -1700,108 +3263,411 @@ class MonitoringController extends Controller
         $totalRealisasiTargetYear = (int) ($planAgg[$targetYear]->real_sum ?? 0);
         $totalRealisasiLaluTargetYear = (int) ($planAgg[$prevY]->real_sum ?? 0);
         $totalRencanaJualTargetYear = (int) ($planAgg[$targetYear]->target_sum ?? 0);
+        $totalSpTargetYear = (int) ($planAgg[$targetYear]->sp_sum ?? 0);
 
-        $totalAreaCover = (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+        // Area Cover = plans is_ac tahun berjalan → customer yang area_id = area ini
+        $acPlanCustomerIds = \App\Models\CustomerPlan::query()
             ->where('year', $targetYear)
             ->where('is_ac', 1)
-            ->distinct('customer_id')
-            ->count('customer_id');
+            ->distinct()
+            ->pluck('customer_id');
+        $totalAreaCover = $acPlanCustomerIds->isEmpty()
+            ? 0
+            : (int) (clone $customerAreaQuery)
+                ->whereIn('id', $acPlanCustomerIds)
+                ->count();
 
         $customerWithRealisasi = (int) \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
             ->where('year', $targetYear)
             ->where('real_exemplar', '>', 0)
-            ->distinct('customer_id')
+            ->distinct()
             ->count('customer_id');
 
         $salesIdsInArea = (clone $customerAreaQuery)
             ->whereNotNull('sales_id')
             ->distinct()
             ->pluck('sales_id');
-        $activityCount = (int) \App\Models\SalesActivity::whereIn('sales_id', $salesIdsInArea)->count();
 
-        /* ── Komposisi pasar area (fase 3) ── */
-        $segmenBreakdown = [
-            [
-                'label' => 'Negeri (BOS)',
-                'value' => (int) (clone $customerAreaQuery)->where('sumber_dana', 'like', '%BOS%')->count(),
-                'color' => '#1d4ed8',
-            ],
-            [
-                'label' => 'Swasta',
-                'value' => (int) (clone $customerAreaQuery)->where('sumber_dana', 'like', '%SWA%')->count(),
-                'color' => '#f59e0b',
-            ],
-        ];
+        /* ── Area Score (AI) — rumus sama dengan Cabang Score, diskop ke Area ── */
+        $areaNameLower = strtolower(trim((string) $area->name));
+        $cabangInsights = $this->buildScopeKpiInsights([
+            'totalSekolah' => $totalSekolahArea,
+            'areaCover' => $totalAreaCover,
+            'potensiEks' => (int) ($data['realStats']['potensi_eksemplar'] ?? 0),
+            'realCurr' => $totalRealisasiTargetYear,
+            'realPrev' => $totalRealisasiLaluTargetYear,
+            'targetEks' => (int) ($data['realStats']['target_eksemplar'] ?? 0),
+            'customerWithRealisasi' => $customerWithRealisasi,
+            'spCurr' => $totalSpTargetYear,
+            'salesIdsForScore' => $salesIdsInArea,
+            'salesPerformanceAll' => $data['timSalesPerformance']['all'] ?? [],
+            'excludeSalesNames' => [$areaNameLower, 'kantor ' . $areaNameLower],
+            'targetYear' => $targetYear,
+            'prevYear' => $prevY,
+        ], 'Area');
 
-        $prevRealIds = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
-            ->where('year', $prevY)
-            ->where('real_exemplar', '>', 0)
-            ->pluck('customer_id')
-            ->unique();
-        $currRealIds = \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
-            ->where('year', $targetYear)
-            ->where('real_exemplar', '>', 0)
-            ->pluck('customer_id')
-            ->unique();
+        /* ── Ranking Cabang · Realisasi eksemplar (top 10, unik level Area) ── */
+        $rankingCabangRealisasi = [];
+        if ($cabangs->isNotEmpty()) {
+            $cabangRealRows = Customer::query()
+                ->where('area_id', $area->id)
+                ->leftJoin('customer_plans', function ($join) use ($targetYear) {
+                    $join->on('customers.id', '=', 'customer_plans.customer_id')
+                        ->where('customer_plans.year', '=', $targetYear);
+                })
+                ->selectRaw("
+                    customers.cabang_id as cabang_id,
+                    COALESCE(SUM(customer_plans.real_exemplar), 0) as realisasi,
+                    COUNT(DISTINCT customers.id) as total_sekolah,
+                    COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi
+                ")
+                ->groupBy('customers.cabang_id')
+                ->get()
+                ->keyBy('cabang_id');
 
-        $customerStatusBreakdown = [
-            [
-                'label' => 'Baru',
-                'value' => $currRealIds->diff($prevRealIds)->count(),
-                'color' => '#10b981',
-            ],
-            [
-                'label' => 'Retain',
-                'value' => $prevRealIds->intersect($currRealIds)->count(),
-                'color' => '#3b82f6',
-            ],
-            [
-                'label' => 'Loss',
-                'value' => $prevRealIds->diff($currRealIds)->count(),
-                'color' => '#ef4444',
-            ],
-        ];
-
-        $salesScoreRanking = $this->buildReportRows(
-            new \Illuminate\Http\Request([
-                'area_id' => $area->id,
-                'sort' => 'total_score',
-                'dir' => 'desc',
-            ]),
-            $targetYear
-        )->take(10)->values()->all();
+            $rankingCabangRealisasi = $cabangs
+                ->map(function ($cab) use ($cabangRealRows) {
+                    $row = $cabangRealRows->get($cab->id);
+                    return [
+                        'id' => $cab->id,
+                        'name' => $cab->nama_cabang,
+                        'realisasi' => (int) ($row->realisasi ?? 0),
+                        'total_sekolah' => (int) ($row->total_sekolah ?? 0),
+                        'sekolah_realisasi' => (int) ($row->sekolah_realisasi ?? 0),
+                    ];
+                })
+                ->sortByDesc('realisasi')
+                ->take(10)
+                ->values()
+                ->map(function ($r, $idx) {
+                    $r['no'] = $idx + 1;
+                    return $r;
+                })
+                ->toArray();
+        }
 
         $pageTitle = 'Dashboard Area';
         $displayName = strtoupper($area->name);
+        $areaLabel = preg_match('/^AREA\b/i', $displayName)
+            ? $displayName
+            : ('AREA ' . $displayName);
         $description = 'Ringkasan performa area dan perbandingan antar cabang dalam ' . ucwords(strtolower($area->name)) . '.';
 
-        return Inertia::render('Monitoring/Area', array_merge($data, [
+        // Dashboard bundle ala Sales/Cabang untuk Area
+        $detailBundle = $this->buildSalesStyleDashboardBundle(
+            null,
+            null,
+            $targetYear,
+            $areaLabel,
+            (int) $area->id
+        );
+
+        $dapodikPerCabang = \App\Models\Kecamatan::query()
+            ->whereIn('cabang_id', $cabangs->pluck('id'))
+            ->selectRaw('cabang_id, SUM(COALESCE(dapodik_customer, 0)) as total')
+            ->groupBy('cabang_id')
+            ->pluck('total', 'cabang_id');
+
+        $cabangMetricRows = Customer::query()
+            ->where('customers.area_id', $area->id)
+            ->leftJoin('customer_plans', function ($join) use ($targetYear, $prevY) {
+                $join->on('customer_plans.customer_id', '=', 'customers.id')
+                    ->whereIn('customer_plans.year', [$targetYear, $prevY]);
+            })
+            ->groupBy('customers.cabang_id')
+            ->selectRaw("
+                customers.cabang_id as cabang_id,
+                COUNT(DISTINCT CASE WHEN customer_plans.year = {$targetYear} AND customer_plans.is_ac = 1 THEN customers.id END) as area_cover,
+                COALESCE(SUM(CASE WHEN customer_plans.year = {$prevY} THEN customer_plans.potential_exemplar ELSE 0 END), 0) as potensi_prev,
+                COALESCE(SUM(CASE WHEN customer_plans.year = {$prevY} THEN customer_plans.sp_exemplar ELSE 0 END), 0) as sp_prev,
+                COALESCE(SUM(CASE WHEN customer_plans.year = {$prevY} THEN customer_plans.real_exemplar ELSE 0 END), 0) as real_prev,
+                COALESCE(SUM(CASE WHEN customer_plans.year = {$targetYear} THEN customer_plans.potential_exemplar ELSE 0 END), 0) as potensi_curr,
+                COALESCE(SUM(CASE WHEN customer_plans.year = {$targetYear} THEN customer_plans.sp_exemplar ELSE 0 END), 0) as sp_curr,
+                COALESCE(SUM(CASE WHEN customer_plans.year = {$targetYear} THEN customer_plans.real_exemplar ELSE 0 END), 0) as real_curr
+            ")
+            ->get()
+            ->keyBy('cabang_id');
+
+        $listCabangArea = $cabangs->map(function ($cab, $idx) use ($dapodikPerCabang, $cabangMetricRows, $prevY, $targetYear) {
+            $m = $cabangMetricRows->get($cab->id);
+            $realPrev = (int) round((float) ($m->real_prev ?? 0));
+            $realCurr = (int) round((float) ($m->real_curr ?? 0));
+            $growth = $realPrev > 0
+                ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
+                : ($realCurr > 0 ? 100.0 : 0.0);
+
+            return [
+                'no' => $idx + 1,
+                'id' => (int) $cab->id,
+                'name' => $cab->nama_cabang,
+                'total_sekolah' => (int) ($dapodikPerCabang[$cab->id] ?? 0),
+                'area_cover' => (int) ($m->area_cover ?? 0),
+                'potensi_prev' => (int) round((float) ($m->potensi_prev ?? 0)),
+                'sp_prev' => (int) round((float) ($m->sp_prev ?? 0)),
+                'real_prev' => $realPrev,
+                'potensi_curr' => (int) round((float) ($m->potensi_curr ?? 0)),
+                'sp_curr' => (int) round((float) ($m->sp_curr ?? 0)),
+                'real_curr' => $realCurr,
+                'growth_real_pct' => $growth,
+                'year_prev' => $prevY,
+                'year_curr' => $targetYear,
+            ];
+        })->sortByDesc('real_curr')->values()->map(function ($r, $i) {
+            $r['no'] = $i + 1;
+            return $r;
+        })->all();
+
+        // Market share area: kota/kab per cabang
+        $cityNameByCode = \DB::table('cities')->pluck('city_name', 'city_code');
+        $normalizeCamat = static function ($name) {
+            $n = mb_strtolower(trim((string) $name));
+            $n = preg_replace('/^(kec\.?\s*|kecamatan\s+)/u', '', $n);
+            return trim(preg_replace('/\s+/u', ' ', $n));
+        };
+        $dapodikByCabangKota = [];
+        $masters = \App\Models\Kecamatan::whereIn('cabang_id', $cabangs->pluck('id'))
+            ->get(['cabang_id', 'camat_name', 'city_code', 'dapodik_customer']);
+        foreach ($masters as $mk) {
+            $kota = mb_strtoupper(trim((string) ($cityNameByCode[$mk->city_code] ?? 'Tanpa Kota/Kab')));
+            if ($kota === '') {
+                $kota = 'TANPA KOTA/KAB';
+            }
+            $key = (int) $mk->cabang_id . '|' . $kota;
+            $dapodikByCabangKota[$key] = ($dapodikByCabangKota[$key] ?? 0) + (int) ($mk->dapodik_customer ?? 0);
+        }
+
+        $custAggKota = Customer::query()
+            ->where('customers.area_id', $area->id)
+            ->leftJoin('customer_plans', function ($join) use ($targetYear) {
+                $join->on('customer_plans.customer_id', '=', 'customers.id')
+                    ->where('customer_plans.year', '=', $targetYear);
+            })
+            ->groupBy('customers.cabang_id', 'customers.kecamatan_name')
+            ->selectRaw("
+                customers.cabang_id as cabang_id,
+                customers.kecamatan_name as kecamatan_name,
+                COUNT(DISTINCT CASE WHEN customer_plans.is_ac = 1 THEN customers.id END) as area_cover,
+                COALESCE(SUM(customer_plans.potential_exemplar), 0) as potensi,
+                COALESCE(SUM(customer_plans.real_exemplar), 0) as real_exemplar,
+                COALESCE(SUM(customer_plans.sp_exemplar), 0) as sp_exemplar,
+                COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as sekolah_realisasi,
+                COUNT(DISTINCT CASE WHEN customer_plans.sp_exemplar > 0 THEN customers.id END) as sp_customer,
+                COUNT(DISTINCT CASE WHEN customers.sales_id IS NOT NULL AND customers.sales_id > 0 THEN customers.sales_id END) as jumlah_salesman
+            ")
+            ->get();
+
+        $siswaByKecArea = \Illuminate\Support\Facades\DB::table('customers')
+            ->where('customers.area_id', $area->id)
+            ->groupBy('customers.cabang_id', 'customers.kecamatan_name')
+            ->select(
+                'customers.cabang_id',
+                'customers.kecamatan_name',
+                \Illuminate\Support\Facades\DB::raw('SUM(COALESCE(customers.total_student, 0)) as jumlah_siswa')
+            )
+            ->get();
+        $siswaLookupArea = [];
+        foreach ($siswaByKecArea as $sr) {
+            $siswaLookupArea[(int) $sr->cabang_id . '|' . trim((string) $sr->kecamatan_name)] = (int) ($sr->jumlah_siswa ?? 0);
+        }
+
+        $kotaAgg = [];
+        foreach ($custAggKota as $row) {
+            $full = trim((string) ($row->kecamatan_name ?? ''));
+            $parts = array_values(array_filter(array_map('trim', explode(',', $full))));
+            $kota = count($parts) > 1
+                ? mb_strtoupper(implode(', ', array_slice($parts, 1)))
+                : 'TANPA KOTA/KAB';
+            $cid = (int) $row->cabang_id;
+            $key = $cid . '|' . $kota;
+            if (!isset($kotaAgg[$key])) {
+                $kotaAgg[$key] = [
+                    'cabang_id' => $cid,
+                    'cabang_name' => $cabangs->firstWhere('id', $cid)?->nama_cabang ?? 'Tanpa Cabang',
+                    'kota_kab' => $kota === 'TANPA KOTA/KAB' ? 'Tanpa Kota/Kab' : $kota,
+                    'area_cover' => 0,
+                    'potensi' => 0,
+                    'real_exemplar' => 0,
+                    'sp_exemplar' => 0,
+                    'sekolah_realisasi' => 0,
+                    'sp_customer' => 0,
+                    'jumlah_siswa' => 0,
+                    'grades_set' => [],
+                    'sales_ids' => [],
+                ];
+            }
+            $kotaAgg[$key]['area_cover'] += (int) $row->area_cover;
+            $kotaAgg[$key]['potensi'] += (int) round((float) ($row->potensi ?? 0));
+            $kotaAgg[$key]['real_exemplar'] += (int) round((float) $row->real_exemplar);
+            $kotaAgg[$key]['sp_exemplar'] += (int) round((float) $row->sp_exemplar);
+            $kotaAgg[$key]['sekolah_realisasi'] += (int) ($row->sekolah_realisasi ?? 0);
+            $kotaAgg[$key]['sp_customer'] += (int) ($row->sp_customer ?? 0);
+            $kotaAgg[$key]['jumlah_siswa'] += (int) ($siswaLookupArea[$cid . '|' . $full] ?? 0);
+        }
+
+        $salesRowsArea = \Illuminate\Support\Facades\DB::table('customers')
+            ->where('area_id', $area->id)
+            ->whereNotNull('sales_id')
+            ->where('sales_id', '>', 0)
+            ->select('cabang_id', 'kecamatan_name', 'sales_id')
+            ->distinct()
+            ->get();
+        foreach ($salesRowsArea as $sr) {
+            $full = trim((string) ($sr->kecamatan_name ?? ''));
+            $parts = array_values(array_filter(array_map('trim', explode(',', $full))));
+            $kota = count($parts) > 1
+                ? mb_strtoupper(implode(', ', array_slice($parts, 1)))
+                : 'TANPA KOTA/KAB';
+            $key = (int) $sr->cabang_id . '|' . $kota;
+            if (!isset($kotaAgg[$key])) {
+                continue;
+            }
+            $kotaAgg[$key]['sales_ids'][(int) $sr->sales_id] = true;
+        }
+
+        $gradeThresholdsAreaMs = \App\Models\Configuration::query()->first()?->resolvedSchoolGradeThresholds()
+            ?? \App\Models\Configuration::defaultSchoolGradeThresholds();
+        $realisasiSchoolsAreaMs = Customer::query()
+            ->where('customers.area_id', $area->id)
+            ->join('customer_plans', function ($join) use ($targetYear) {
+                $join->on('customer_plans.customer_id', '=', 'customers.id')
+                    ->where('customer_plans.year', '=', $targetYear)
+                    ->where('customer_plans.real_exemplar', '>', 0);
+            })
+            ->select(
+                'customers.id',
+                'customers.cabang_id',
+                'customers.kecamatan_name',
+                'customers.total_student'
+            )
+            ->distinct()
+            ->get();
+        $gradesByKotaAreaMs = $this->collectGradesRealisasiByKey(
+            $realisasiSchoolsAreaMs,
+            static function ($s) {
+                $full = trim((string) ($s->kecamatan_name ?? ''));
+                $parts = array_values(array_filter(array_map('trim', explode(',', $full))));
+                $kota = count($parts) > 1
+                    ? mb_strtoupper(implode(', ', array_slice($parts, 1)))
+                    : 'TANPA KOTA/KAB';
+                return (int) ($s->cabang_id ?? 0) . '|' . $kota;
+            },
+            $gradeThresholdsAreaMs
+        );
+        foreach ($gradesByKotaAreaMs as $gKey => $grades) {
+            if (!isset($kotaAgg[$gKey])) {
+                continue;
+            }
+            foreach ($grades as $g) {
+                $kotaAgg[$gKey]['grades_set'][$g] = true;
+            }
+        }
+
+        $gradeOrderMs = \App\Models\Configuration::schoolGradeOrder();
+        $marketShareKecamatan = collect($kotaAgg)->map(function ($r) use ($dapodikByCabangKota, $gradeOrderMs) {
+            $lookupKey = $r['cabang_id'] . '|' . mb_strtoupper($r['kota_kab'] === 'Tanpa Kota/Kab' ? 'TANPA KOTA/KAB' : $r['kota_kab']);
+            $total = (int) ($dapodikByCabangKota[$lookupKey] ?? 0);
+            if ($total <= 0) {
+                $total = max((int) $r['area_cover'], 1);
+            }
+            $ac = (int) $r['area_cover'];
+            $grades = array_keys($r['grades_set'] ?? []);
+            usort($grades, static function ($a, $b) use ($gradeOrderMs) {
+                $ia = array_search($a, $gradeOrderMs, true);
+                $ib = array_search($b, $gradeOrderMs, true);
+                $oa = $ia === false ? 99 : $ia;
+                $ob = $ib === false ? 99 : $ib;
+                if ($oa !== $ob) {
+                    return $oa <=> $ob;
+                }
+
+                return strcmp((string) $a, (string) $b);
+            });
+
+            return [
+                'kecamatan_name' => $r['kota_kab'],
+                'kecamatan' => $r['kota_kab'],
+                'kota_kab' => $r['cabang_name'], // group header = cabang
+                'cabang_id' => $r['cabang_id'],
+                'cabang_name' => $r['cabang_name'],
+                'total_sekolah' => $total,
+                'jumlah_siswa' => (int) ($r['jumlah_siswa'] ?? 0),
+                'jumlah_salesman' => count($r['sales_ids'] ?? []),
+                'salesman_ids' => array_map('intval', array_keys($r['sales_ids'] ?? [])),
+                'area_cover' => $ac,
+                'potensi' => (int) $r['potensi'],
+                'sekolah_realisasi' => (int) $r['sekolah_realisasi'],
+                'sp_customer' => (int) $r['sp_customer'],
+                'real_exemplar' => (int) $r['real_exemplar'],
+                'sp_exemplar' => (int) $r['sp_exemplar'],
+                'grades_realisasi' => $grades,
+                'marketshare_pct' => $total > 0 ? round(($ac / $total) * 100, 1) : 0.0,
+            ];
+        })->sortByDesc('marketshare_pct')->values()->all();
+
+        $detailBundle['kpiData']['totalSekolahCabang'] = $totalSekolahArea;
+        $detailBundle['kpiData']['totalKecamatanCabang'] = (int) (clone $customerAreaQuery)
+            ->whereNotNull('kecamatan_name')
+            ->where('kecamatan_name', '!=', '')
+            ->selectRaw('COUNT(DISTINCT kecamatan_name) as cnt')
+            ->value('cnt');
+        $detailBundle['kpiData']['areaCover'] = $totalAreaCover;
+        if (!isset($detailBundle['insights']) || !is_array($detailBundle['insights'])) {
+            $detailBundle['insights'] = [];
+        }
+        $detailBundle['insights']['totalAreaCover'] = $totalAreaCover;
+
+        $listNonAreaCover = $this->buildNonAreaCoverCustomers(
+            null,
+            (int) $area->id,
+            $targetYear
+        );
+
+        return Inertia::render('Monitoring/Cabang', array_merge($data, [
+            'isAreaDashboard' => true,
             'activeNav' => 'area',
             'pageTitle' => $pageTitle,
             'cabangName' => $displayName,
             'areaName' => $displayName,
             'description' => $description,
             'provinceCode' => $area->id,
-            'cities' => collect([]),
-            'cabangs' => $cabangs,
+            'cabangCode' => null,
             'selectedCabang' => $selectedCabang,
+            'areas' => \App\Models\Area::orderBy('name')->get(),
+            'cabangs' => $cabangs,
             'ranking' => $ranking,
             'uncovered' => $uncovered,
-            'gov' => $gov,
-            'segmenBreakdown' => $segmenBreakdown,
-            'customerStatusBreakdown' => $customerStatusBreakdown,
-            'salesScoreRanking' => $salesScoreRanking,
-            'insights' => [
-                'totalAreaCover' => $totalAreaCover,
-                'totalRealisasiTargetYear' => $totalRealisasiTargetYear,
-                'totalRealisasiLaluTargetYear' => $totalRealisasiLaluTargetYear,
-                'totalRencanaJualTargetYear' => $totalRencanaJualTargetYear,
-                'customerWithRealisasi' => $customerWithRealisasi,
-                'targetYear' => $targetYear,
-                'activityCount' => $activityCount,
-                'totalSekolah' => $data['realStats']['total_sekolah'] ?? 0,
-            ],
+            'rankingCabangRealisasi' => $rankingCabangRealisasi,
+            'cabangInsights' => $cabangInsights,
             'filters' => $request->only(['kecamatan', 'tahun', 'sumber_dana']),
+            'listCabangArea' => $listCabangArea,
+            'marketShareKecamatan' => $marketShareKecamatan,
+            'kpiData' => $detailBundle['kpiData'],
+            'insights' => $detailBundle['insights'],
+            'listSekolah' => $detailBundle['listSekolah'],
+            'listNonAreaCover' => $listNonAreaCover,
+            'jenjangBreakdown' => $detailBundle['jenjangBreakdown'],
+            'sumberDanaBreakdown' => $detailBundle['sumberDanaBreakdown'],
+            'gradeRealisasiBreakdown' => $detailBundle['gradeRealisasiBreakdown'] ?? [],
+            'kegiatanSales' => $detailBundle['kegiatanSales'],
+            'activityBreakdown' => $detailBundle['activityBreakdown'],
+            'resultBreakdown' => $detailBundle['resultBreakdown'],
+            'useSalesStyleDashboard' => true,
+            'salesProfile' => [
+                'name' => $areaLabel,
+                'code' => (string) $area->id,
+                'profile_type' => 'area',
+                'total_sales' => (int) Customer::query()
+                    ->where('area_id', $area->id)
+                    ->whereNotNull('sales_id')
+                    ->where('sales_id', '>', 0)
+                    ->selectRaw('COUNT(DISTINCT sales_id) as cnt')
+                    ->value('cnt'),
+                'total_cabang' => (int) $cabangs->count(),
+                'cabang' => [
+                    'nama_cabang' => $area->name,
+                    'area' => ['name' => $area->name],
+                ],
+            ],
         ]));
     }
 
@@ -1886,6 +3752,9 @@ class MonitoringController extends Controller
         $weights = $config
             ? $config->resolvedSalesScoreWeights()
             : \App\Models\Configuration::defaultSalesScoreWeights();
+        $schoolGradeThresholds = $config
+            ? $config->resolvedSchoolGradeThresholds()
+            : \App\Models\Configuration::defaultSchoolGradeThresholds();
 
         return Inertia::render('Monitoring/Pengaturan', [
             'activeNav' => 'setting',
@@ -1893,6 +3762,8 @@ class MonitoringController extends Controller
             'salesScoreWeights' => $weights,
             'salesScoreWeightLabels' => \App\Models\Configuration::salesScoreWeightLabels(),
             'canEditSalesScoreWeights' => auth()->user()?->level === 'nasional',
+            'schoolGradeThresholds' => $schoolGradeThresholds,
+            'canEditSchoolGradeThresholds' => auth()->user()?->level === 'nasional',
         ]);
     }
 
@@ -1938,6 +3809,859 @@ class MonitoringController extends Controller
         return back()->with('status', 'sales-score-weights-updated');
     }
 
+    /** PUT /monitoring/pengaturan/school-grade-thresholds */
+    public function updateSchoolGradeThresholds(\Illuminate\Http\Request $request)
+    {
+        if (auth()->user()?->level !== 'nasional') {
+            abort(403, 'Hanya level nasional yang dapat mengubah ketentuan grade sekolah.');
+        }
+
+        $grades = ['D', 'C', 'B', 'A'];
+        $rules = [];
+        foreach ($grades as $grade) {
+            $rules["thresholds.{$grade}.min"] = 'required|integer|min:0';
+            $rules["thresholds.{$grade}.max"] = 'required|integer|min:0';
+        }
+        $validated = $request->validate($rules);
+
+        $thresholds = [];
+        foreach ($grades as $grade) {
+            $thresholds[$grade] = [
+                'min' => (int) $validated['thresholds'][$grade]['min'],
+                'max' => (int) $validated['thresholds'][$grade]['max'],
+            ];
+        }
+
+        $error = \App\Models\Configuration::validateSchoolGradeThresholds($thresholds);
+        if ($error) {
+            return back()->withErrors(['thresholds' => $error])->withInput();
+        }
+
+        $config = \App\Models\Configuration::orderBy('id', 'desc')->first();
+        if (!$config) {
+            return back()->withErrors(['thresholds' => 'Konfigurasi belum tersedia.']);
+        }
+
+        $config->school_grade_thresholds = $thresholds;
+        $config->save();
+
+        return back()->with('status', 'school-grade-thresholds-updated');
+    }
+
+    /**
+     * Build dashboard bundle (kpiData + insights + listSekolah) dengan rumus
+     * yang sama seperti Sales Performance Detail, untuk scope sales / cabang / area.
+     *
+     * @return array{kpiData: array, insights: array, listSekolah: \Illuminate\Support\Collection, jenjangBreakdown: array, sumberDanaBreakdown: array}
+     */
+    private function buildSalesStyleDashboardBundle(?int $salesId, ?int $cabangId, int $year, string $displayName = 'Dashboard', ?int $areaId = null, ?string $sumberDana = null, bool $onlyNegeri = false): array
+    {
+        $prevYear = $year - 1;
+
+        $q = \App\Models\Customer::query()
+            ->with(['customerPlans' => function ($q) use ($sumberDana) {
+                $q->select('customer_id', 'year', 'sumber_dana', 'real_exemplar', 'target_exemplar', 'sp_exemplar', 'potential_exemplar', 'is_ac');
+                if ($sumberDana) {
+                    $q->where('sumber_dana', 'like', '%' . $sumberDana . '%');
+                }
+            }])
+            ->select('id', 'name', 'kecamatan_name', 'jenjang', 'is_active', 'total_student', 'penerbit', 'sumber_dana', 'potensi_sekolah', 'sales_id', 'cabang_id', 'area_id');
+
+        if ($salesId) {
+            $q->where('sales_id', $salesId);
+        }
+        if ($cabangId) {
+            $q->where('cabang_id', $cabangId);
+        }
+        if ($areaId) {
+            $q->where('area_id', $areaId);
+        }
+        if ($sumberDana) {
+            $q->where('sumber_dana', 'like', '%' . $sumberDana . '%');
+        }
+        if ($onlyNegeri) {
+            $this->applySekolahNegeriFilter($q);
+        }
+
+        $listSekolah = $q->orderBy('name')->get();
+
+        $cabangNameById = [];
+        $areaNameById = [];
+        $salesNameById = [];
+        if ($areaId || $sumberDana || $listSekolah->isNotEmpty()) {
+            $cabangIds = $listSekolah->pluck('cabang_id')->filter()->unique()->values();
+            $cabangNameById = \App\Models\Cabang::whereIn('id', $cabangIds)
+                ->pluck('nama_cabang', 'id')->all();
+            $areaIds = $listSekolah->pluck('area_id')->filter()->unique()->values();
+            $areaNameById = \App\Models\Area::whereIn('id', $areaIds)
+                ->pluck('name', 'id')->all();
+            $salesIds = $listSekolah->pluck('sales_id')->filter()->unique()->values();
+            if ($salesIds->isNotEmpty()) {
+                $salesNameById = \App\Models\Sales::whereIn('id', $salesIds)
+                    ->pluck('name', 'id')->all();
+            }
+        }
+
+        $totalRealisasiTargetYear = 0;
+        $totalRealisasiLaluTargetYear = 0;
+        $totalRencanaJualTargetYear = 0;
+        $customerWithRealisasi = 0;
+        $acCurrCount = 0;
+
+        $gradeThresholds = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+            ?->resolvedSchoolGradeThresholds()
+            ?? \App\Models\Configuration::defaultSchoolGradeThresholds();
+
+        $listSekolah->transform(function ($school) use (
+            $year,
+            $prevYear,
+            &$totalRealisasiTargetYear,
+            &$totalRealisasiLaluTargetYear,
+            &$totalRencanaJualTargetYear,
+            &$customerWithRealisasi,
+            &$acCurrCount,
+            $cabangNameById,
+            $areaNameById,
+            $salesNameById,
+            $gradeThresholds
+        ) {
+            $plans = $school->customerPlans->groupBy('year')->map(function ($group) {
+                return (object) [
+                    'real_exemplar' => $group->sum('real_exemplar'),
+                    'target_exemplar' => $group->sum('target_exemplar'),
+                    'sp_exemplar' => $group->sum('sp_exemplar'),
+                    'potential_exemplar' => $group->sum('potential_exemplar'),
+                    'is_ac' => $group->max('is_ac'),
+                ];
+            });
+
+            $realisasiTarget = $plans[$year]->real_exemplar ?? 0;
+            $realisasiLaluTarget = $plans[$prevYear]->real_exemplar ?? 0;
+            $totalRealisasiTargetYear += $realisasiTarget;
+            $totalRealisasiLaluTargetYear += $realisasiLaluTarget;
+            $totalRencanaJualTargetYear += $plans[$year]->target_exemplar ?? 0;
+
+            if ($realisasiTarget > 0) {
+                $customerWithRealisasi++;
+            }
+
+            if (isset($plans[$year]) && (int) ($plans[$year]->is_ac ?? 0) === 1) {
+                $acCurrCount++;
+                $school->is_active = 1;
+            } else {
+                $school->is_active = 0;
+            }
+            $school->is_ac_previous = (isset($plans[$prevYear]) && (int) ($plans[$prevYear]->is_ac ?? 0) === 1) ? 1 : 0;
+
+            $school->target_exemplar_current = $plans[$year]->target_exemplar ?? 0;
+            $school->real_exemplar_current = $plans[$year]->real_exemplar ?? 0;
+            $school->sp_exemplar_current = $plans[$year]->sp_exemplar ?? 0;
+            $school->potential_exemplar_current = (int) round((float) ($plans[$year]->potential_exemplar ?? 0));
+            $school->real_exemplar_previous = $plans[$prevYear]->real_exemplar ?? 0;
+            $school->target_exemplar_previous = $plans[$prevYear]->target_exemplar ?? 0;
+            $school->potential_exemplar_previous = (int) round((float) ($plans[$prevYear]->potential_exemplar ?? 0));
+            $school->sp_exemplar_previous = $plans[$prevYear]->sp_exemplar ?? 0;
+            $school->real_exemplar_ym3 = (int) round((float) ($plans[$year - 3]->real_exemplar ?? 0));
+            $school->real_exemplar_ym2 = (int) round((float) ($plans[$year - 2]->real_exemplar ?? 0));
+            $school->prev_realisasi = ((float) ($plans[$prevYear]->real_exemplar ?? 0)) > 0;
+            $school->cabang_name = $cabangNameById[(int) ($school->cabang_id ?? 0)] ?? 'Tanpa Cabang';
+            $school->area_name = $areaNameById[(int) ($school->area_id ?? 0)] ?? 'Tanpa Area';
+            $sid = (int) ($school->sales_id ?? 0);
+            $school->sales_name = $sid > 0
+                ? (string) ($salesNameById[$sid] ?? 'Tanpa Sales')
+                : 'Tanpa Sales';
+            $school->school_grade = \App\Models\Configuration::schoolGradeFromSiswa(
+                (int) ($school->total_student ?? 0),
+                $gradeThresholds
+            );
+
+            $yearPlanRows = $school->customerPlans->where('year', $year);
+            $school->potensi_swa = (int) round((float) $yearPlanRows
+                ->filter(fn ($p) => str_starts_with(strtoupper(trim((string) ($p->sumber_dana ?? ''))), 'SWA'))
+                ->sum('potential_exemplar'));
+            $school->potensi_bos = (int) round((float) $yearPlanRows
+                ->filter(fn ($p) => str_contains(strtoupper(trim((string) ($p->sumber_dana ?? ''))), 'BOS'))
+                ->sum('potential_exemplar'));
+
+            unset($school->customerPlans);
+            return $school;
+        });
+
+        $areaCoverSekolah = $listSekolah->where('is_active', 1)->values();
+
+        $countDistinctSales = static function ($group): int {
+            return $group->pluck('sales_id')
+                ->filter(fn ($id) => $id !== null && $id !== '' && (int) $id > 0)
+                ->unique()
+                ->count();
+        };
+        $countDistinctKecamatan = static function ($group): int {
+            return $group->map(function ($s) {
+                $raw = trim((string) ($s->kecamatan_name ?? ''));
+                if ($raw === '') {
+                    return '';
+                }
+                $parts = array_map('trim', explode(',', $raw));
+
+                return strtoupper($parts[0] ?? $raw);
+            })->filter()->unique()->count();
+        };
+
+        // Seluruh metrik realisasi / target KPI berbasis Area Cover saja
+        $totalRealisasiTargetYear = (int) round((float) $areaCoverSekolah->sum(
+            fn ($s) => (float) ($s->real_exemplar_current ?? 0)
+        ));
+        $totalRealisasiLaluTargetYear = (int) round((float) $areaCoverSekolah->sum(
+            fn ($s) => (float) ($s->real_exemplar_previous ?? 0)
+        ));
+        $totalRencanaJualTargetYear = (int) round((float) $areaCoverSekolah->sum(
+            fn ($s) => (float) ($s->target_exemplar_current ?? 0)
+        ));
+        $totalPotensiEksemplar = (int) round((float) $areaCoverSekolah->sum(
+            fn ($s) => (float) ($s->potential_exemplar_current ?? 0)
+        ));
+        $customerWithRealisasi = $areaCoverSekolah
+            ->filter(fn ($s) => ((float) ($s->real_exemplar_current ?? 0)) > 0)
+            ->count();
+
+        $jenjangColorMap = [
+            'SD' => '#1d4ed8',
+            'SMP' => '#8b5cf6',
+            'SMA' => '#eab308',
+            'SMK' => '#f97316',
+            'DLL' => '#10b981',
+        ];
+
+        $jenjangBreakdown = $areaCoverSekolah->groupBy(fn ($s) => strtoupper(trim($s->jenjang ?: 'Lainnya')))
+            ->map(function ($g, $k) use ($jenjangColorMap, $countDistinctSales, $countDistinctKecamatan) {
+                return [
+                    'label' => $k,
+                    'value' => $g->count(),
+                    'sales_count' => $countDistinctSales($g),
+                    'kecamatan_count' => $countDistinctKecamatan($g),
+                    'realisasi' => (int) round((float) $g->sum(fn ($s) => (float) ($s->real_exemplar_current ?? 0))),
+                    'sp' => (int) round((float) $g->sum(fn ($s) => (float) ($s->sp_exemplar_current ?? 0))),
+                    'sekolah_realisasi' => $g->filter(fn ($s) => ((float) ($s->real_exemplar_current ?? 0)) > 0)->count(),
+                    'potensi_siswa' => (int) $g->sum(fn ($s) => (int) ($s->total_student ?? 0)),
+                    'color' => $jenjangColorMap[$k] ?? '#64748b',
+                ];
+            })
+            ->values()
+            ->sortBy(fn ($item) => ['SD' => 1, 'SMP' => 2, 'SMA' => 3, 'SMK' => 4][$item['label']] ?? 99)
+            ->values()
+            ->toArray();
+
+        $sdColors = ['#059669', '#2563eb', '#d97706', '#9333ea', '#e11d48', '#0891b2'];
+        $sumberDanaBreakdown = $areaCoverSekolah->groupBy(function ($s) {
+            $sd = strtoupper(trim((string) ($s->sumber_dana ?? '')));
+            return $sd === '' ? 'LAINNYA/KOSONG' : $sd;
+        })->map(function ($g, $k) use ($countDistinctSales, $countDistinctKecamatan) {
+            return [
+                'label' => $k,
+                'value' => $g->count(),
+                'sales_count' => $countDistinctSales($g),
+                'kecamatan_count' => $countDistinctKecamatan($g),
+                'realisasi' => (int) round((float) $g->sum(fn ($s) => (float) ($s->real_exemplar_current ?? 0))),
+                'sp' => (int) round((float) $g->sum(fn ($s) => (float) ($s->sp_exemplar_current ?? 0))),
+                'sekolah_realisasi' => $g->filter(fn ($s) => ((float) ($s->real_exemplar_current ?? 0)) > 0)->count(),
+                'potensi_siswa' => (int) $g->sum(fn ($s) => (int) ($s->total_student ?? 0)),
+            ];
+        })->values()->sortByDesc('value')->values()->toArray();
+        foreach ($sumberDanaBreakdown as $i => &$item) {
+            $item['color'] = $sdColors[$i % count($sdColors)];
+        }
+        unset($item);
+
+        // Realisasi vs Area Cover & vs Total Sekolah per grade
+        $gradeColors = \App\Models\Configuration::schoolGradeColors();
+        $gradeRealisasiBreakdown = [];
+        foreach (\App\Models\Configuration::schoolGradeOrder() as $grade) {
+            $acGroup = $areaCoverSekolah->filter(
+                fn ($s) => ($s->school_grade ?? '') === $grade
+            );
+            $acCount = $acGroup->count();
+            if ($acCount <= 0) {
+                continue;
+            }
+            $allGroup = $listSekolah->filter(
+                fn ($s) => ($s->school_grade ?? '') === $grade
+            );
+            $totalSekolah = $allGroup->count();
+            $realCount = $acGroup->filter(
+                fn ($s) => ((float) ($s->real_exemplar_current ?? 0)) > 0
+            )->count();
+            $gradeRealisasiBreakdown[] = [
+                'label' => $grade,
+                'value' => $realCount,
+                'area_cover' => $acCount,
+                'total_sekolah' => $totalSekolah,
+                'sales_count' => $countDistinctSales($acGroup),
+                'kecamatan_count' => $countDistinctKecamatan($acGroup),
+                'pct' => round(($realCount / max(1, $acCount)) * 100, 1),
+                'pct_total' => round(($realCount / max(1, $totalSekolah)) * 100, 1),
+                'sp' => (int) round((float) $acGroup->sum(fn ($s) => (float) ($s->sp_exemplar_current ?? 0))),
+                'realisasi' => (int) round((float) $acGroup->sum(fn ($s) => (float) ($s->real_exemplar_current ?? 0))),
+                'range' => \App\Models\Configuration::schoolGradeRangeLabel($grade, $gradeThresholds),
+                'color' => $gradeColors[$grade] ?? '#64748b',
+            ];
+        }
+
+        $acCurr = max(0, (int) $acCurrCount);
+        $areaCoverForScore = max(1, $acCurr);
+        $realCurr = (float) $totalRealisasiTargetYear;
+        $realPrev = (float) $totalRealisasiLaluTargetYear;
+        $yoy = $this->scoreRealisasiYoY($realCurr, $realPrev);
+
+        $customerRealisasiCount = (int) $customerWithRealisasi;
+        $spVsAcPct = round(($customerRealisasiCount / $areaCoverForScore) * 100, 1);
+        $spVsAcScore = min(100, $spVsAcPct);
+
+        $targetTotal = (float) $totalRencanaJualTargetYear;
+        $achievementPct = $targetTotal > 0
+            ? round(($realCurr / $targetTotal) * 100, 1)
+            : ($realCurr > 0 ? 100 : 0);
+        $achievementScore = min(100, max(0, $achievementPct));
+
+        $tahanCount = 0;
+        $rebutCount = 0;
+        $lepasCount = 0;
+        $trlgPerJenjang = [];
+        foreach ($areaCoverSekolah as $s) {
+            $jenjang = strtoupper(trim((string) ($s->jenjang ?: 'Lainnya')));
+            if (!isset($trlgPerJenjang[$jenjang])) {
+                $trlgPerJenjang[$jenjang] = [
+                    'tahan' => 0,
+                    'rebut' => 0,
+                    'lepas' => 0,
+                    'gagal' => 0,
+                    'ac' => 0,
+                    'sales_count' => 0,
+                    'kecamatan_count' => 0,
+                    'sekolah_realisasi' => 0,
+                    'sp' => 0,
+                    'realisasi' => 0,
+                ];
+            }
+            $trlgPerJenjang[$jenjang]['ac']++;
+            $prevReal = (bool) ($s->prev_realisasi ?? false);
+            $currReal = ((float) ($s->real_exemplar_current ?? 0)) > 0;
+            if ($prevReal && $currReal) {
+                $tahanCount++;
+                $trlgPerJenjang[$jenjang]['tahan']++;
+            } elseif (!$prevReal && $currReal) {
+                $rebutCount++;
+                $trlgPerJenjang[$jenjang]['rebut']++;
+            } else {
+                $lepasCount++;
+                $trlgPerJenjang[$jenjang]['lepas']++;
+                if (!$prevReal && !$currReal) {
+                    $trlgPerJenjang[$jenjang]['gagal']++;
+                }
+            }
+            if ($currReal) {
+                $trlgPerJenjang[$jenjang]['sekolah_realisasi']++;
+            }
+            $trlgPerJenjang[$jenjang]['sp'] += (int) round((float) ($s->sp_exemplar_current ?? 0));
+            $trlgPerJenjang[$jenjang]['realisasi'] += (int) round((float) ($s->real_exemplar_current ?? 0));
+        }
+        foreach ($trlgPerJenjang as $j => &$trlgRow) {
+            $g = $areaCoverSekolah->filter(
+                fn ($s) => strtoupper(trim((string) ($s->jenjang ?: 'Lainnya'))) === $j
+            );
+            $trlgRow['sales_count'] = $countDistinctSales($g);
+            $trlgRow['kecamatan_count'] = $countDistinctKecamatan($g);
+        }
+        unset($trlgRow);
+
+        $tahanVsAcPct = round(($tahanCount / $areaCoverForScore) * 100, 1);
+        $rebutVsAcPct = round(($rebutCount / $areaCoverForScore) * 100, 1);
+        $lepasVsAcPct = round(($lepasCount / $areaCoverForScore) * 100, 1);
+
+        $scoreWeights = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+            ?->resolvedSalesScoreWeights()
+            ?? \App\Models\Configuration::defaultSalesScoreWeights();
+
+        $scoreMap = [
+            'realisasi_yoy' => $yoy['score'],
+            'sp_vs_ac' => $spVsAcScore,
+            'achievement' => $achievementScore,
+            'tahan_vs_ac' => min(100, $tahanVsAcPct),
+            'rebut_vs_ac' => min(100, $rebutVsAcPct),
+            'lepas_vs_ac' => min(100, $lepasVsAcPct),
+        ];
+        $totalKpiScore = \App\Models\Configuration::computeWeightedSalesScore($scoreMap, $scoreWeights);
+
+        $kpiData = [
+            'salesName' => $displayName,
+            'totalScore' => $totalKpiScore,
+            'grade' => \App\Models\Configuration::salesScoreGrade($totalKpiScore),
+            'weights' => $scoreWeights,
+            'components' => [
+                [
+                    'key' => 'realisasi_yoy',
+                    'label' => 'Realisasi YoY',
+                    'score' => $yoy['score'],
+                    'weight' => $scoreWeights['realisasi_yoy'] ?? 0,
+                    'detail' => "Realisasi {$prevYear}: " . number_format($realPrev, 0, ',', '.') . " → {$year}: " . number_format($realCurr, 0, ',', '.') . " (" . ($yoy['growth_pct'] >= 0 ? '+' : '') . "{$yoy['growth_pct']}%)",
+                    'icon' => 'bi-arrow-left-right',
+                    'color' => '#3b82f6',
+                    'is_penalty' => false,
+                ],
+                [
+                    'key' => 'sp_vs_ac',
+                    'label' => 'Customer Realisasi vs Area Cover',
+                    'score' => $spVsAcScore,
+                    'weight' => $scoreWeights['sp_vs_ac'] ?? 0,
+                    'detail' => "Customer Realisasi {$customerRealisasiCount} vs Area Cover {$acCurr} ({$spVsAcPct}%)",
+                    'icon' => 'bi-people-fill',
+                    'color' => '#f59e0b',
+                    'is_penalty' => false,
+                ],
+                [
+                    'key' => 'achievement',
+                    'label' => 'Achievement Target',
+                    'score' => $achievementScore,
+                    'weight' => $scoreWeights['achievement'] ?? 0,
+                    'detail' => "Realisasi " . number_format($realCurr, 0, ',', '.') . " / Target " . number_format($targetTotal, 0, ',', '.') . " ({$achievementPct}%)",
+                    'icon' => 'bi-trophy-fill',
+                    'color' => '#10b981',
+                    'is_penalty' => false,
+                ],
+                [
+                    'key' => 'tahan_vs_ac',
+                    'label' => 'Tahan vs Area Cover',
+                    'score' => min(100, $tahanVsAcPct),
+                    'weight' => $scoreWeights['tahan_vs_ac'] ?? 0,
+                    'detail' => "Tahan {$tahanCount} vs Area Cover {$acCurr} ({$tahanVsAcPct}%)",
+                    'icon' => 'bi-shield-check',
+                    'color' => '#059669',
+                    'is_penalty' => false,
+                ],
+                [
+                    'key' => 'rebut_vs_ac',
+                    'label' => 'Rebut vs Area Cover',
+                    'score' => min(100, $rebutVsAcPct),
+                    'weight' => $scoreWeights['rebut_vs_ac'] ?? 0,
+                    'detail' => "Rebut {$rebutCount} vs Area Cover {$acCurr} ({$rebutVsAcPct}%)",
+                    'icon' => 'bi-arrow-repeat',
+                    'color' => '#2563eb',
+                    'is_penalty' => false,
+                ],
+                [
+                    'key' => 'lepas_vs_ac',
+                    'label' => 'Lepas vs Area Cover',
+                    'score' => min(100, $lepasVsAcPct),
+                    'weight' => $scoreWeights['lepas_vs_ac'] ?? 0,
+                    'detail' => "Lepas {$lepasCount} vs Area Cover {$acCurr} ({$lepasVsAcPct}%) — mengurangi skor",
+                    'icon' => 'bi-box-arrow-right',
+                    'color' => '#ef4444',
+                    'is_penalty' => true,
+                ],
+            ],
+            'year' => $year,
+            'identifikasiJenjang' => $jenjangBreakdown,
+            'segmenSekolah' => $jenjangBreakdown,
+            'sumberDana' => $sumberDanaBreakdown,
+            'extraIndicators' => [],
+            'areaCover' => $acCurr,
+        ];
+
+        if ($sumberDana) {
+            $totalSiswaBos = (int) $listSekolah->sum(fn ($s) => (int) ($s->total_student ?? 0));
+            $totalSiswaAc = (int) $areaCoverSekolah->sum(fn ($s) => (int) ($s->total_student ?? 0));
+            $kpiData['totalSekolahBos'] = $listSekolah->count();
+            $kpiData['totalSiswaBos'] = $totalSiswaBos;
+            // Rumus Dana BOS saja: potensi = total siswa × 1.5
+            $kpiData['potensiBos'] = (int) round($totalSiswaBos * 1.5);
+            $kpiData['totalSiswaAcBos'] = $totalSiswaAc;
+            $kpiData['potensiAcBos'] = (int) round($totalSiswaAc * 1.5);
+
+            $sumberDanaSet = [];
+            $jenjangSet = [];
+            $kecamatanSet = [];
+            $salesmanSet = [];
+            foreach ($listSekolah as $s) {
+                $sd = strtoupper(trim((string) ($s->sumber_dana ?? '')));
+                if ($sd !== '') {
+                    $sumberDanaSet[$sd] = true;
+                }
+                $j = strtoupper(trim((string) ($s->jenjang ?? '')));
+                if ($j !== '') {
+                    $jenjangSet[$j] = true;
+                }
+                $raw = trim((string) ($s->kecamatan_name ?? ''));
+                $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+                $kec = strtoupper($parts[0] ?? ($raw !== '' ? $raw : 'TANPA KECAMATAN'));
+                $kecamatanSet[$kec] = true;
+                $sid = (int) ($s->sales_id ?? 0);
+                if ($sid > 0) {
+                    $salesmanSet[$sid] = true;
+                }
+            }
+            $kpiData['bosRingkasan'] = [
+                'sumber_dana' => count($sumberDanaSet),
+                'sumber_dana_labels' => array_values(array_keys($sumberDanaSet)),
+                'salesman' => count($salesmanSet),
+                'jenjang' => count($jenjangSet),
+                'kecamatan' => count($kecamatanSet),
+                'jumlah_sekolah' => (int) $listSekolah->count(),
+            ];
+        }
+
+        // Dana BOS: Top Cabang; Cabang/Area: Top Kecamatan; Sales: Top Priority School
+        if ($sumberDana && !$salesId) {
+            $kpiData['priorityMode'] = 'cabang';
+            $kpiData['prioritySchools'] = $areaCoverSekolah
+                ->groupBy(function ($s) {
+                    return $s->cabang_name ?: 'Tanpa Cabang';
+                })
+                ->map(function ($g, $nama) {
+                    return [
+                        'name' => $nama,
+                        'siswa' => (int) $g->sum(fn ($s) => (int) ($s->total_student ?? 0)),
+                        'potensi' => (int) round((float) $g->sum(fn ($s) => (float) ($s->potential_exemplar_current ?? 0))),
+                        'sp' => (int) round((float) $g->sum(fn ($s) => (float) ($s->sp_exemplar_current ?? 0))),
+                        'realisasi' => (int) round((float) $g->sum(fn ($s) => (float) ($s->real_exemplar_current ?? 0))),
+                    ];
+                })
+                ->sortByDesc('siswa')
+                ->take(10)
+                ->values()
+                ->toArray();
+        } elseif (($cabangId || $areaId) && !$salesId) {
+            $kpiData['priorityMode'] = 'kecamatan';
+            $kecamatanKey = static function ($s): string {
+                $raw = trim((string) ($s->kecamatan_name ?? ''));
+                if ($raw === '') {
+                    return 'TANPA KECAMATAN';
+                }
+                $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+
+                return strtoupper($parts[0] ?? $raw);
+            };
+
+            $allByKecamatan = $listSekolah->groupBy($kecamatanKey);
+            $kpiData['prioritySchools'] = $areaCoverSekolah
+                ->groupBy($kecamatanKey)
+                ->map(function ($g, $nama) use ($allByKecamatan) {
+                    $all = $allByKecamatan->get($nama, collect());
+
+                    return [
+                        'name' => $nama,
+                        'total_sekolah' => $all->count(),
+                        'total_siswa' => (int) $all->sum(fn ($s) => (int) ($s->total_student ?? 0)),
+                        'area_cover' => $g->count(),
+                        'siswa' => (int) $g->sum(fn ($s) => (int) ($s->total_student ?? 0)),
+                        'potensi' => (int) round((float) $g->sum(fn ($s) => (float) ($s->potential_exemplar_current ?? 0))),
+                        'kegiatan_count' => 0,
+                        'sp' => (int) round((float) $g->sum(fn ($s) => (float) ($s->sp_exemplar_current ?? 0))),
+                        'realisasi' => (int) round((float) $g->sum(fn ($s) => (float) ($s->real_exemplar_current ?? 0))),
+                    ];
+                })
+                ->sortByDesc('siswa')
+                ->values()
+                ->toArray();
+        } else {
+            $kpiData['priorityMode'] = 'school';
+            $kpiData['prioritySchools'] = $areaCoverSekolah->sortByDesc('total_student')->take(10)->map(function ($s) {
+                $prevReal = (bool) ($s->prev_realisasi ?? false);
+                $currReal = ((float) ($s->real_exemplar_current ?? 0)) > 0;
+                if ($prevReal && $currReal) {
+                    $status = 'Tahan';
+                } elseif (!$prevReal && $currReal) {
+                    $status = 'Rebut';
+                } else {
+                    $status = 'Belum Terealisasi';
+                }
+                return [
+                    'id' => (int) ($s->id ?? 0),
+                    'name' => $s->name,
+                    'jenjang' => $s->jenjang,
+                    'siswa' => (int) ($s->total_student ?? 0),
+                    'potensi_swa' => (int) ($s->potensi_swa ?? 0),
+                    'potensi_bos' => (int) ($s->potensi_bos ?? 0),
+                    'status' => $status,
+                    'sp' => (int) ($s->sp_exemplar_current ?? 0),
+                    'realisasi' => (int) ($s->real_exemplar_current ?? 0),
+                ];
+            })->values()->toArray();
+        }
+
+        // Potensi siswa buckets
+        $potensiSiswaDistribution = [
+            ['label' => '< 100', 'value' => $areaCoverSekolah->filter(fn ($s) => (int) ($s->total_student ?? 0) < 100)->count()],
+            ['label' => '100-300', 'value' => $areaCoverSekolah->filter(fn ($s) => ($n = (int) ($s->total_student ?? 0)) >= 100 && $n <= 300)->count()],
+            ['label' => '301-500', 'value' => $areaCoverSekolah->filter(fn ($s) => ($n = (int) ($s->total_student ?? 0)) > 300 && $n <= 500)->count()],
+            ['label' => '> 500', 'value' => $areaCoverSekolah->filter(fn ($s) => (int) ($s->total_student ?? 0) > 500)->count()],
+        ];
+        $siswaColors = ['#f43f5e', '#a855f7', '#3b82f6', '#10b981'];
+        foreach ($potensiSiswaDistribution as $i => &$item) {
+            $item['color'] = $siswaColors[$i % count($siswaColors)];
+        }
+        unset($item);
+        $kpiData['potensiSiswa'] = array_values(array_filter($potensiSiswaDistribution, fn ($item) => $item['value'] > 0));
+
+        // Kompetitor (penerbit)
+        $competitorMapDistribution = $areaCoverSekolah->groupBy(fn ($s) => $s->penerbit ?: 'Tidak Diketahui')
+            ->map(fn ($g, $k) => ['label' => $k, 'value' => $g->count()])
+            ->values()->sortByDesc('value')->values()->toArray();
+        $compColors = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+        foreach ($competitorMapDistribution as $i => &$item) {
+            $item['color'] = $compColors[$i % count($compColors)];
+        }
+        unset($item);
+        $kpiData['competitorMap'] = array_values(array_filter($competitorMapDistribution, fn ($item) => $item['value'] > 0));
+
+        $kpiData['customerStatus'] = [
+            ['label' => 'Baru', 'value' => $rebutCount, 'color' => '#10b981'],
+            ['label' => 'Retain', 'value' => $tahanCount, 'color' => '#3b82f6'],
+            ['label' => 'Loss', 'value' => $lepasCount, 'color' => '#ef4444'],
+        ];
+
+        // Aktivitas sales (scope cabang / sales / area)
+        $kegiatanQuery = \App\Models\SalesActivity::query()->orderBy('id', 'desc');
+        if ($salesId) {
+            $kegiatanQuery->where('sales_id', $salesId);
+        } elseif ($cabangId) {
+            $salesIdsInCabang = \App\Models\Customer::where('cabang_id', $cabangId)
+                ->whereNotNull('sales_id')
+                ->distinct()
+                ->pluck('sales_id');
+            if ($salesIdsInCabang->isEmpty()) {
+                $kegiatanQuery->whereRaw('1 = 0');
+            } else {
+                $kegiatanQuery->whereIn('sales_id', $salesIdsInCabang);
+            }
+        } elseif ($areaId) {
+            $salesIdsInArea = \App\Models\Customer::where('area_id', $areaId)
+                ->whereNotNull('sales_id')
+                ->distinct()
+                ->pluck('sales_id');
+            if ($salesIdsInArea->isEmpty()) {
+                $kegiatanQuery->whereRaw('1 = 0');
+            } else {
+                $kegiatanQuery->whereIn('sales_id', $salesIdsInArea);
+            }
+        } elseif ($sumberDana) {
+            $salesIdsFromSchools = $listSekolah->pluck('sales_id')->filter()->unique()->values();
+            if ($salesIdsFromSchools->isEmpty()) {
+                $kegiatanQuery->whereRaw('1 = 0');
+            } else {
+                $kegiatanQuery->whereIn('sales_id', $salesIdsFromSchools);
+            }
+        } else {
+            $kegiatanQuery->whereRaw('1 = 0');
+        }
+        $kegiatanSales = $kegiatanQuery->get();
+        $kpiData['activityDistribution'] = $this->buildFixedSalesActivityBreakdown($kegiatanSales, null, true);
+
+        // Lengkapi jumlah kegiatan per kecamatan untuk Top 10 Kecamatan:
+        // sales di kecamatan → total seluruh aktivitas sales tersebut
+        if (($kpiData['priorityMode'] ?? '') === 'kecamatan' && !empty($kpiData['prioritySchools'])) {
+            $kecamatanKey = static function ($s): string {
+                $raw = trim((string) ($s->kecamatan_name ?? ''));
+                if ($raw === '') {
+                    return 'TANPA KECAMATAN';
+                }
+                $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+
+                return strtoupper($parts[0] ?? $raw);
+            };
+
+            $salesIdsByKecamatan = [];
+            foreach ($listSekolah as $s) {
+                $sid = (int) ($s->sales_id ?? 0);
+                if ($sid <= 0) {
+                    continue;
+                }
+                $kec = $kecamatanKey($s);
+                $salesIdsByKecamatan[$kec][$sid] = true;
+            }
+
+            $kegiatanCountBySales = [];
+            foreach ($kegiatanSales as $akt) {
+                $sid = (int) ($akt->sales_id ?? 0);
+                if ($sid <= 0) {
+                    continue;
+                }
+                $kegiatanCountBySales[$sid] = ($kegiatanCountBySales[$sid] ?? 0) + 1;
+            }
+
+            $kpiData['prioritySchools'] = collect($kpiData['prioritySchools'])
+                ->map(function ($row) use ($salesIdsByKecamatan, $kegiatanCountBySales) {
+                    $name = (string) ($row['name'] ?? '');
+                    $salesIds = array_keys($salesIdsByKecamatan[$name] ?? []);
+                    $total = 0;
+                    foreach ($salesIds as $sid) {
+                        $total += (int) ($kegiatanCountBySales[$sid] ?? 0);
+                    }
+                    $row['kegiatan_count'] = $total;
+
+                    return $row;
+                })
+                ->values()
+                ->toArray();
+        }
+
+        $activitiesByMonth = $kegiatanSales->groupBy(function ($item) {
+            $date = $item->tanggal;
+            if (!$date) {
+                return 'unknown';
+            }
+            try {
+                if (str_contains((string) $date, '-')) {
+                    $d = \Carbon\Carbon::parse($date);
+                } else {
+                    try {
+                        $d = \Carbon\Carbon::createFromFormat('m/d/Y', $date);
+                    } catch (\Exception $e) {
+                        try {
+                            $d = \Carbon\Carbon::createFromFormat('d/m/Y', $date);
+                        } catch (\Exception $e2) {
+                            $d = \Carbon\Carbon::parse($date);
+                        }
+                    }
+                }
+                return $d->format('Y-m');
+            } catch (\Exception $e) {
+                return 'unknown';
+            }
+        })->forget('unknown');
+
+        $monthlyActivities = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $key = sprintf('%04d-%02d', $year, $m);
+            $monthItems = $activitiesByMonth->get($key, collect());
+            $monthlyActivities[] = [
+                'month' => $m,
+                'label' => \Carbon\Carbon::create($year, $m, 1)->translatedFormat('M'),
+                'total' => $monthItems instanceof \Illuminate\Support\Collection
+                    ? $monthItems->count()
+                    : count($monthItems),
+            ];
+        }
+        $kpiData['monthlyActivities'] = $monthlyActivities;
+
+        $totalTrlg = $tahanCount + $rebutCount + $lepasCount;
+        $pctTrlg = fn (int $count): float => $totalTrlg > 0 ? round(($count / $totalTrlg) * 100, 2) : 0;
+        $kpiData['trlg'] = [
+            'tahan' => ['count' => $tahanCount, 'pct' => $pctTrlg($tahanCount)],
+            'rebut' => ['count' => $rebutCount, 'pct' => $pctTrlg($rebutCount)],
+            'lepas' => ['count' => $lepasCount, 'pct' => $pctTrlg($lepasCount)],
+            'total' => $totalTrlg,
+        ];
+
+        $trlgTable = [];
+        foreach (['SD', 'SMP', 'SMA', 'SMK'] as $j) {
+            if (isset($trlgPerJenjang[$j])) {
+                $trlgTable[] = array_merge(['jenjang' => $j], $trlgPerJenjang[$j]);
+                unset($trlgPerJenjang[$j]);
+            }
+        }
+        foreach ($trlgPerJenjang as $j => $counts) {
+            if (($counts['tahan'] ?? 0) > 0 || ($counts['rebut'] ?? 0) > 0 || ($counts['lepas'] ?? 0) > 0) {
+                $trlgTable[] = array_merge(['jenjang' => $j], $counts);
+            }
+        }
+        $kpiData['trlgPerJenjang'] = $trlgTable;
+        $kpiData['gradeRealisasi'] = $gradeRealisasiBreakdown;
+
+        return [
+            'kpiData' => $kpiData,
+            'insights' => [
+                'totalAreaCover' => $acCurr,
+                'totalRealisasiTargetYear' => $totalRealisasiTargetYear,
+                'totalRealisasiLaluTargetYear' => $totalRealisasiLaluTargetYear,
+                'totalRencanaJualTargetYear' => $totalRencanaJualTargetYear,
+                'totalPotensiEksemplar' => $totalPotensiEksemplar,
+                'customerWithRealisasi' => $customerWithRealisasi,
+                'targetYear' => $year,
+            ],
+            'listSekolah' => $listSekolah,
+            'jenjangBreakdown' => $jenjangBreakdown,
+            'sumberDanaBreakdown' => $sumberDanaBreakdown,
+            'gradeRealisasiBreakdown' => $gradeRealisasiBreakdown,
+            'kegiatanSales' => $kegiatanSales,
+            'activityBreakdown' => $kpiData['activityDistribution'],
+            'resultBreakdown' => $kpiData['activityDistribution'],
+        ];
+    }
+
+    /**
+     * Breakdown aktivitas sales: urutan tetap Pendekatan → Promosi → SP → Faktur → Penagihan → Gagal.
+     * Kategori tanpa data tetap muncul dengan value 0.
+     *
+     * @param  \Illuminate\Support\Collection|iterable  $kegiatanSales
+     * @param  int|null  $spOverride  Jika diisi, value SP diganti (mis. Customer Realisasi)
+     */
+    private function buildFixedSalesActivityBreakdown($kegiatanSales, ?int $spOverride = null, bool $distinctBySchool = false): array
+    {
+        $order = ['Pendekatan', 'Promosi', 'SP', 'Faktur', 'Penagihan', 'Gagal'];
+        $colors = [
+            'Pendekatan' => '#64748b',
+            'Promosi' => '#0d9488',
+            'SP' => '#1d4ed8',
+            'Faktur' => '#16a34a',
+            'Penagihan' => '#f59e0b',
+            'Gagal' => '#dc2626',
+        ];
+
+        $normalizeSchoolName = static function ($name): string {
+            $n = strtoupper(trim((string) $name));
+            $n = preg_replace('/\s+/u', ' ', $n) ?: '';
+
+            return trim($n);
+        };
+
+        $counts = [];
+        $seenSchools = [];
+        foreach ($order as $label) {
+            $counts[strtoupper($label)] = 0;
+            $seenSchools[strtoupper($label)] = [];
+        }
+
+        foreach ($kegiatanSales as $item) {
+            $key = strtoupper(trim((string) ($item->aktivitas ?? '')));
+            if ($key === '' || !array_key_exists($key, $counts)) {
+                continue;
+            }
+
+            if ($distinctBySchool) {
+                $customerId = $item->customer_id ?? null;
+                $schoolName = $normalizeSchoolName($item->customer_name ?? '');
+                if ($customerId !== null && $customerId !== '') {
+                    $schoolKey = 'id:' . (string) $customerId;
+                } elseif ($schoolName !== '') {
+                    // Banyak aktivitas tanpa customer_id — distinct by nama sekolah
+                    $schoolKey = 'name:' . $schoolName;
+                } else {
+                    $schoolKey = 'row:' . (string) ($item->id ?? spl_object_id($item));
+                }
+                if (isset($seenSchools[$key][$schoolKey])) {
+                    continue;
+                }
+                $seenSchools[$key][$schoolKey] = true;
+            }
+
+            $counts[$key]++;
+        }
+
+        if ($spOverride !== null) {
+            $counts['SP'] = max(0, $spOverride);
+        }
+
+        $out = [];
+        foreach ($order as $label) {
+            $out[] = [
+                'label' => $label,
+                'value' => (int) ($counts[strtoupper($label)] ?? 0),
+                'color' => $colors[$label],
+            ];
+        }
+
+        return $out;
+    }
+
     /**
      * Realisasi YoY score:
      * - Tahun ini >= tahun lalu → 100
@@ -1961,6 +4685,227 @@ class MonitoringController extends Controller
         return [
             'score' => $score,
             'growth_pct' => $realGrowthPct,
+        ];
+    }
+
+    /**
+     * Build the "Cabang/Area Score (AI)" KPI insights block: achievement, YoY,
+     * sales-need-review, decision notes, and the weighted score (same formula
+     * as Sales Score). Shared by the Cabang dashboard (cabang scope) and the
+     * Area dashboard (area scope, no cabang selected).
+     *
+     * @param  array $agg  Pre-computed aggregates for the scope:
+     *      totalSekolah, areaCover, potensiEks, realCurr, realPrev, targetEks,
+     *      customerWithRealisasi, spCurr (ints),
+     *      salesIdsForScore (\Illuminate\Support\Collection of sales ids for TRL score),
+     *      salesPerformanceAll (array, e.g. $data['timSalesPerformance']['all']),
+     *      excludeSalesNames (array of names to exclude from "tim sales", e.g. the
+     *      cabang/area's own "kantor" entry), targetYear, prevYear (ints).
+     */
+    private function buildScopeKpiInsights(array $agg, string $scopeLabel = 'Cabang'): array
+    {
+        $scopeLower = strtolower($scopeLabel);
+        $targetYear = (int) $agg['targetYear'];
+        $prevYear = (int) $agg['prevYear'];
+        $excludeSalesNames = array_map(
+            fn($n) => strtolower(trim((string) $n)),
+            $agg['excludeSalesNames'] ?? []
+        );
+
+        $areaCover = (int) ($agg['areaCover'] ?? 0);
+        $totalSekolah = (int) ($agg['totalSekolah'] ?? 0);
+        $potensiEks = (int) ($agg['potensiEks'] ?? 0);
+        $realCurr = (int) ($agg['realCurr'] ?? 0);
+        $targetEks = (int) ($agg['targetEks'] ?? 0);
+        $realPrev = (int) ($agg['realPrev'] ?? 0);
+        $customerWithRealisasi = (int) ($agg['customerWithRealisasi'] ?? 0);
+        $spCurr = (int) ($agg['spCurr'] ?? 0);
+        $salesIdsForScore = $agg['salesIdsForScore'] ?? collect();
+
+        $achEksPct = $targetEks > 0
+            ? round(($realCurr / $targetEks) * 100, 1)
+            : ($potensiEks > 0 ? round(($realCurr / $potensiEks) * 100, 1) : 0);
+        $achAcPct = $areaCover > 0
+            ? round(($customerWithRealisasi / $areaCover) * 100, 1)
+            : 0;
+        $yoyPct = $realPrev > 0
+            ? round((($realCurr - $realPrev) / $realPrev) * 100, 1)
+            : ($realCurr > 0 ? 100.0 : 0.0);
+
+        $salesAll = collect($agg['salesPerformanceAll'] ?? [])
+            ->filter(function ($s) use ($excludeSalesNames) {
+                $sn = strtolower(trim((string) ($s['name'] ?? '')));
+                return !in_array($sn, $excludeSalesNames, true) && !empty($s['id']);
+            })
+            ->values();
+
+        $salesNeedReview = $salesAll->filter(function ($s) {
+            $realPct = (float) ($s['realisasi_pct'] ?? 0);
+            $cov = (float) ($s['coverage'] ?? 0);
+            return $realPct < 40 || $cov < 40;
+        })->values();
+
+        $topSales = $salesAll->sortByDesc('realisasi_pct')->first();
+        $bottomSales = $salesAll->sortBy('realisasi_pct')->first();
+
+        $decisionNotes = [];
+        if ($salesNeedReview->count() > 0) {
+            $names = $salesNeedReview->take(3)->pluck('name')->implode(', ');
+            $decisionNotes[] = $salesNeedReview->count() . " sales perlu ditinjau (realisasi AC &lt;40% atau coverage &lt;40%): <strong>{$names}</strong>.";
+        }
+        if ($achAcPct < 40 && $areaCover > 0) {
+            $decisionNotes[] = "Achievement Area Cover {$scopeLower} masih <strong>{$achAcPct}%</strong> ({$customerWithRealisasi}/{$areaCover}). Dorong closing di sekolah AC yang belum terealisasi.";
+        }
+        if ($yoyPct < 0) {
+            $decisionNotes[] = "Realisasi eksemplar turun <strong>{$yoyPct}%</strong> vs {$prevYear}. Evaluasi pipeline SP &amp; aktivitas kunjungan.";
+        } elseif ($yoyPct >= 20) {
+            $decisionNotes[] = "Realisasi eksemplar tumbuh <strong>+{$yoyPct}%</strong> vs {$prevYear}. Pertahankan pola sales yang berkinerja baik.";
+        }
+        if ($topSales && $bottomSales && ($topSales['id'] ?? null) !== ($bottomSales['id'] ?? null)) {
+            $decisionNotes[] = "Benchmark: <strong>{$topSales['name']}</strong> (realisasi AC {$topSales['realisasi_pct']}%) vs <strong>{$bottomSales['name']}</strong> ({$bottomSales['realisasi_pct']}%).";
+        }
+        if (empty($decisionNotes)) {
+            $decisionNotes[] = "Performa {$scopeLower} relatif stabil. Pantau ranking sales &amp; opportunity untuk ekspansi.";
+        }
+
+        // ── KPI Score (rumus sama dengan Sales Score) ──
+        $tahanCount = (int) \App\Models\SalesPlan::whereIn('sales_id', $salesIdsForScore)
+            ->whereNull('jenjang')->sum('tahan_customer');
+        $rebutCount = (int) \App\Models\SalesPlan::whereIn('sales_id', $salesIdsForScore)
+            ->whereNull('jenjang')->sum('rebut_customer');
+        $lepasCount = (int) \App\Models\SalesPlan::whereIn('sales_id', $salesIdsForScore)
+            ->whereNull('jenjang')->sum('lepas_customer');
+
+        $yoy = $this->scoreRealisasiYoY((float) $realCurr, (float) $realPrev);
+        $realisasiYoyScore = $yoy['score'];
+        $realGrowthPct = $yoy['growth_pct'];
+
+        $areaCoverForScore = max(1, $areaCover);
+        $spVsAcPct = round(($customerWithRealisasi / $areaCoverForScore) * 100, 1);
+        $spVsAcScore = min(100, $spVsAcPct);
+
+        $achievementBase = $targetEks > 0 ? $targetEks : $potensiEks;
+        $achievementPct = $achievementBase > 0
+            ? round(($realCurr / $achievementBase) * 100, 1)
+            : ($realCurr > 0 ? 100.0 : 0.0);
+        $achievementScore = min(100, max(0, $achievementPct));
+
+        $tahanVsAcPct = round(($tahanCount / $areaCoverForScore) * 100, 1);
+        $tahanVsAcScore = min(100, $tahanVsAcPct);
+        $rebutVsAcPct = round(($rebutCount / $areaCoverForScore) * 100, 1);
+        $rebutVsAcScore = min(100, $rebutVsAcPct);
+        $lepasVsAcPct = round(($lepasCount / $areaCoverForScore) * 100, 1);
+        $lepasVsAcScore = min(100, $lepasVsAcPct);
+
+        $scoreWeights = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+            ?->resolvedSalesScoreWeights()
+            ?? \App\Models\Configuration::defaultSalesScoreWeights();
+
+        $scoreMap = [
+            'realisasi_yoy' => $realisasiYoyScore,
+            'sp_vs_ac' => $spVsAcScore,
+            'achievement' => $achievementScore,
+            'tahan_vs_ac' => $tahanVsAcScore,
+            'rebut_vs_ac' => $rebutVsAcScore,
+            'lepas_vs_ac' => $lepasVsAcScore,
+        ];
+        $totalKpiScore = \App\Models\Configuration::computeWeightedSalesScore($scoreMap, $scoreWeights);
+        $kpiGrade = \App\Models\Configuration::salesScoreGrade($totalKpiScore);
+
+        $kpiComponents = [
+            [
+                'key' => 'realisasi_yoy',
+                'label' => 'Realisasi YoY',
+                'score' => $realisasiYoyScore,
+                'weight' => $scoreWeights['realisasi_yoy'] ?? 0,
+                'detail' => "Realisasi {$prevYear}: " . number_format($realPrev, 0, ',', '.') . " → {$targetYear}: " . number_format($realCurr, 0, ',', '.') . " (" . ($realGrowthPct >= 0 ? '+' : '') . "{$realGrowthPct}%)",
+                'icon' => 'bi-arrow-left-right',
+                'color' => '#3b82f6',
+                'is_penalty' => false,
+            ],
+            [
+                'key' => 'sp_vs_ac',
+                'label' => 'Customer Realisasi vs Area Cover',
+                'score' => $spVsAcScore,
+                'weight' => $scoreWeights['sp_vs_ac'] ?? 0,
+                'detail' => "Customer Realisasi {$customerWithRealisasi} vs Area Cover {$areaCover} ({$spVsAcPct}%)",
+                'icon' => 'bi-people-fill',
+                'color' => '#f59e0b',
+                'is_penalty' => false,
+            ],
+            [
+                'key' => 'achievement',
+                'label' => 'Achievement Target',
+                'score' => $achievementScore,
+                'weight' => $scoreWeights['achievement'] ?? 0,
+                'detail' => "Realisasi " . number_format($realCurr, 0, ',', '.') . " / Target " . number_format($achievementBase, 0, ',', '.') . " ({$achievementPct}%)",
+                'icon' => 'bi-trophy-fill',
+                'color' => '#10b981',
+                'is_penalty' => false,
+            ],
+            [
+                'key' => 'tahan_vs_ac',
+                'label' => 'Tahan vs Area Cover',
+                'score' => $tahanVsAcScore,
+                'weight' => $scoreWeights['tahan_vs_ac'] ?? 0,
+                'detail' => "Tahan {$tahanCount} vs Area Cover {$areaCover} ({$tahanVsAcPct}%)",
+                'icon' => 'bi-shield-check',
+                'color' => '#059669',
+                'is_penalty' => false,
+            ],
+            [
+                'key' => 'rebut_vs_ac',
+                'label' => 'Rebut vs Area Cover',
+                'score' => $rebutVsAcScore,
+                'weight' => $scoreWeights['rebut_vs_ac'] ?? 0,
+                'detail' => "Rebut {$rebutCount} vs Area Cover {$areaCover} ({$rebutVsAcPct}%)",
+                'icon' => 'bi-arrow-repeat',
+                'color' => '#2563eb',
+                'is_penalty' => false,
+            ],
+            [
+                'key' => 'lepas_vs_ac',
+                'label' => 'Lepas vs Area Cover',
+                'score' => $lepasVsAcScore,
+                'weight' => $scoreWeights['lepas_vs_ac'] ?? 0,
+                'detail' => "Lepas {$lepasCount} vs Area Cover {$areaCover} ({$lepasVsAcPct}%) — mengurangi skor",
+                'icon' => 'bi-box-arrow-right',
+                'color' => '#ef4444',
+                'is_penalty' => true,
+            ],
+        ];
+
+        return [
+            'targetYear' => $targetYear,
+            'prevYear' => $prevYear,
+            'totalSekolah' => $totalSekolah,
+            'totalAreaCover' => $areaCover,
+            'customerWithRealisasi' => $customerWithRealisasi,
+            'totalRealisasiTargetYear' => $realCurr,
+            'totalRealisasiLaluTargetYear' => $realPrev,
+            'totalRencanaJualTargetYear' => $potensiEks,
+            'totalSpTargetYear' => $spCurr,
+            'targetEksemplar' => $targetEks,
+            'achievementEksPct' => $achEksPct,
+            'achievementAcPct' => $achAcPct,
+            'yoyPct' => $yoyPct,
+            'salesCount' => $salesAll->count(),
+            'salesNeedReview' => $salesNeedReview->count(),
+            'topSales' => $topSales ? [
+                'id' => $topSales['id'] ?? null,
+                'name' => $topSales['name'] ?? '',
+                'realisasi_pct' => $topSales['realisasi_pct'] ?? 0,
+            ] : null,
+            'bottomSales' => $bottomSales ? [
+                'id' => $bottomSales['id'] ?? null,
+                'name' => $bottomSales['name'] ?? '',
+                'realisasi_pct' => $bottomSales['realisasi_pct'] ?? 0,
+            ] : null,
+            'decisionNotes' => $decisionNotes,
+            'totalScore' => $totalKpiScore,
+            'grade' => $kpiGrade,
+            'weights' => $scoreWeights,
+            'components' => $kpiComponents,
         ];
     }
 
@@ -2963,6 +5908,10 @@ class MonitoringController extends Controller
             $k->cabang_name = $sales->cabang->nama_cabang ?? 'Tanpa Cabang';
             return $k;
         });
+        // Base data sales = Area Cover: hilangkan kecamatan tanpa AC
+        $listKecamatan = $listKecamatan
+            ->filter(fn ($k) => (int) ($k->sekolah_aktif ?? 0) > 0)
+            ->values();
         $listSekolah = $listSekolahQuery->orderBy('name')->get();
 
         $kegiatanSales = \App\Models\SalesActivity::where('sales_id', $id)->orderBy('id', 'desc')->get();
@@ -2976,35 +5925,8 @@ class MonitoringController extends Controller
             ['label' => 'Belum', 'value' => max(0, $totalCustomers - $visitedCount), 'color' => '#e2e8f0'],
         ];
 
-        $activityBreakdown = $kegiatanSales->groupBy('aktivitas')->map(function ($group, $key) {
-            $key = empty($key) ? 'Tidak Diketahui' : $key;
-            return [
-                'label' => $key,
-                'value' => $group->count()
-            ];
-        })->values()->sortByDesc('value')->take(5)->values()->toArray();
-
-        // Define colors for activity breakdown dynamically
-        $colors = ['#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
-        foreach ($activityBreakdown as $index => &$item) {
-            $item['color'] = $colors[$index % count($colors)];
-        }
-
-        $resultBreakdown = $kegiatanSales->groupBy(function ($item) {
-            $aktivitas = empty($item->aktivitas) ? 'Tidak Diketahui' : $item->aktivitas;
-            $hasil = empty($item->hasil) ? 'Belum Ada Hasil' : $item->hasil;
-            return $aktivitas . ' - ' . $hasil;
-        })->map(function ($group, $key) {
-            return [
-                'label' => $key,
-                'value' => $group->count()
-            ];
-        })->values()->sortByDesc('value')->take(5)->values()->toArray();
-
-        $resultColors = ['#10b981', '#8b5cf6', '#f43f5e', '#6366f1', '#eab308'];
-        foreach ($resultBreakdown as $index => &$item) {
-            $item['color'] = $resultColors[$index % count($resultColors)];
-        }
+        $activityBreakdown = $this->buildFixedSalesActivityBreakdown($kegiatanSales, null, true);
+        $resultBreakdown = $this->buildFixedSalesActivityBreakdown($kegiatanSales);
 
         $filterOptions = [
             'kecamatans' => \App\Models\Customer::where('sales_id', $id)->whereNotNull('kecamatan_name')->distinct()->pluck('kecamatan_name')->sort()->values(),
@@ -3154,7 +6076,7 @@ class MonitoringController extends Controller
             $listSekolahQuery = \App\Models\Customer::where('sales_id', $id)
                 ->where('cabang_id', $activeCabangId)
                 ->with(['customerPlans' => function ($q) {
-                    $q->select('customer_id', 'year', 'real_exemplar', 'target_exemplar', 'is_ac');
+                    $q->select('customer_id', 'year', 'sumber_dana', 'real_exemplar', 'target_exemplar', 'sp_exemplar', 'potential_exemplar', 'is_ac');
                 }])
                 ->select('id', 'name', 'kecamatan_name', 'jenjang', 'is_active', 'total_student', 'penerbit', 'sumber_dana', 'potensi_sekolah');
 
@@ -3174,6 +6096,58 @@ class MonitoringController extends Controller
                 $k->cabang_name = $sales->cabang->nama_cabang ?? 'Tanpa Cabang';
                 return $k;
             });
+
+            // SP, Realisasi, Potensi, Jumlah Siswa — hanya tahun berjalan/filter
+            $kecPlanYear = (int) ($filterTahun ?: $year);
+            $kecPlanStats = \Illuminate\Support\Facades\DB::table('customers')
+                ->join('customer_plans', 'customer_plans.customer_id', '=', 'customers.id')
+                ->where('customers.sales_id', $id)
+                ->where('customers.cabang_id', $activeCabangId)
+                ->where('customer_plans.year', $kecPlanYear)
+                ->when($filterKecamatan, function ($q) use ($filterKecamatan) {
+                    $q->where('customers.kecamatan_name', $filterKecamatan);
+                })
+                ->groupBy('customers.kecamatan_name')
+                ->select(
+                    'customers.kecamatan_name',
+                    \Illuminate\Support\Facades\DB::raw('SUM(customer_plans.sp_exemplar) as sp_exemplar'),
+                    \Illuminate\Support\Facades\DB::raw('SUM(customer_plans.real_exemplar) as real_exemplar'),
+                    \Illuminate\Support\Facades\DB::raw('SUM(customer_plans.potential_exemplar) as potential_exemplar')
+                )
+                ->get()
+                ->keyBy('kecamatan_name');
+
+            // Jumlah siswa hanya dari sekolah yang punya customer_plans di tahun tersebut
+            // (hindari double-count SWA/BOS: agregasi di level customer)
+            $kecSiswaStats = \Illuminate\Support\Facades\DB::table('customers')
+                ->where('customers.sales_id', $id)
+                ->where('customers.cabang_id', $activeCabangId)
+                ->whereExists(function ($q) use ($kecPlanYear) {
+                    $q->select(\Illuminate\Support\Facades\DB::raw(1))
+                        ->from('customer_plans')
+                        ->whereColumn('customer_plans.customer_id', 'customers.id')
+                        ->where('customer_plans.year', $kecPlanYear);
+                })
+                ->when($filterKecamatan, function ($q) use ($filterKecamatan) {
+                    $q->where('customers.kecamatan_name', $filterKecamatan);
+                })
+                ->groupBy('customers.kecamatan_name')
+                ->select(
+                    'customers.kecamatan_name',
+                    \Illuminate\Support\Facades\DB::raw('SUM(COALESCE(customers.total_student, 0)) as jumlah_siswa')
+                )
+                ->get()
+                ->keyBy('kecamatan_name');
+
+            $listKecamatan->each(function ($k) use ($kecPlanStats, $kecSiswaStats) {
+                $stat = $kecPlanStats->get($k->kecamatan_name);
+                $siswa = $kecSiswaStats->get($k->kecamatan_name);
+                $k->sp_exemplar = (int) ($stat->sp_exemplar ?? 0);
+                $k->real_exemplar = (int) ($stat->real_exemplar ?? 0);
+                $k->potensi = (int) ($stat->potential_exemplar ?? 0);
+                $k->potensi_siswa = (int) ($siswa->jumlah_siswa ?? 0);
+            });
+
             $listSekolah = $listSekolahQuery->orderBy('name')->get();
             
             $targetYear = $filterTahun ?: (int)date('Y');
@@ -3185,11 +6159,17 @@ class MonitoringController extends Controller
             $acCurrCount = 0;
             $acPrevCount = 0;
 
-            $listSekolah->transform(function ($school) use ($targetYear, &$totalRealisasiTargetYear, &$totalRealisasiLaluTargetYear, &$totalRencanaJualTargetYear, &$customerWithRealisasi, &$totalAreaCoverTargetYear, &$acCurrCount, &$acPrevCount, $year) {
+            $gradeThresholds = optional(\App\Models\Configuration::orderBy('id', 'desc')->first())
+                ?->resolvedSchoolGradeThresholds()
+                ?? \App\Models\Configuration::defaultSchoolGradeThresholds();
+
+            $listSekolah->transform(function ($school) use ($targetYear, &$totalRealisasiTargetYear, &$totalRealisasiLaluTargetYear, &$totalRencanaJualTargetYear, &$customerWithRealisasi, &$totalAreaCoverTargetYear, &$acCurrCount, &$acPrevCount, $year, $gradeThresholds) {
                 $plans = $school->customerPlans->groupBy('year')->map(function ($group) {
                     return (object)[
                         'real_exemplar' => $group->sum('real_exemplar'),
                         'target_exemplar' => $group->sum('target_exemplar'),
+                        'sp_exemplar' => $group->sum('sp_exemplar'),
+                        'potential_exemplar' => $group->sum('potential_exemplar'),
                         'is_ac' => $group->max('is_ac')
                     ];
                 });
@@ -3223,15 +6203,58 @@ class MonitoringController extends Controller
                 $school->realisasi_2026 = (isset($plans[2026]) && $plans[2026]->real_exemplar > 0);
                 
                 $school->has_rencana_jual = (isset($plans[$year]) && ($plans[$year]->target_exemplar ?? 0) > 0);
-                $school->target_exemplar_current = $plans[$year]->target_exemplar ?? 0;
-                $school->real_exemplar_current = $plans[$year]->real_exemplar ?? 0;
-                $school->real_exemplar_previous = $plans[$year - 1]->real_exemplar ?? 0;
+                $school->target_exemplar_current = $plans[$targetYear]->target_exemplar ?? 0;
+                $school->real_exemplar_current = $plans[$targetYear]->real_exemplar ?? 0;
+                $school->sp_exemplar_current = $plans[$targetYear]->sp_exemplar ?? 0;
+                $school->potential_exemplar_current = (int) round((float) ($plans[$targetYear]->potential_exemplar ?? 0));
+                $school->real_exemplar_previous = $plans[$targetYear - 1]->real_exemplar ?? 0;
+                $school->target_exemplar_previous = $plans[$targetYear - 1]->target_exemplar ?? 0;
+                $school->potential_exemplar_previous = (int) round((float) ($plans[$targetYear - 1]->potential_exemplar ?? 0));
+                $school->sp_exemplar_previous = $plans[$targetYear - 1]->sp_exemplar ?? 0;
+                // Histori realisasi 3 & 2 tahun sebelum tahun berjalan (untuk tab Prospek)
+                $school->real_exemplar_ym3 = (int) round((float) ($plans[$year - 3]->real_exemplar ?? 0));
+                $school->real_exemplar_ym2 = (int) round((float) ($plans[$year - 2]->real_exemplar ?? 0));
                 // TRLG fields: prev realisasi vs current rencana jual
-                $school->prev_realisasi = ($plans[$year - 1]->real_exemplar ?? 0) > 0;
-                $school->curr_renjual   = (isset($plans[$year]) && ($plans[$year]->target_exemplar ?? 0) > 0);
+                $school->prev_realisasi = ($plans[$targetYear - 1]->real_exemplar ?? 0) > 0;
+                $school->curr_renjual   = (isset($plans[$targetYear]) && ($plans[$targetYear]->target_exemplar ?? 0) > 0);
+                $school->school_grade = \App\Models\Configuration::schoolGradeFromSiswa(
+                    (int) ($school->total_student ?? 0),
+                    $gradeThresholds
+                );
+
+                // Potensi eksemplar tahun berjalan dari RJS2 (kolom P=SWA, Q=BOS)
+                $yearPlanRows = $school->customerPlans->where('year', (int) $targetYear);
+                $school->has_year_plan = $yearPlanRows->isNotEmpty();
+                // Jumlah siswa hanya dihitung jika ada plan di tahun berjalan
+                $school->jumlah_siswa_current = $school->has_year_plan
+                    ? (int) ($school->total_student ?? 0)
+                    : 0;
+                $school->potensi_swa = (int) round((float) $yearPlanRows
+                    ->filter(function ($p) {
+                        $sd = strtoupper(trim((string) ($p->sumber_dana ?? '')));
+                        return str_starts_with($sd, 'SWA');
+                    })
+                    ->sum('potential_exemplar'));
+                $school->potensi_bos = (int) round((float) $yearPlanRows
+                    ->filter(function ($p) {
+                        $sd = strtoupper(trim((string) ($p->sumber_dana ?? '')));
+                        return str_contains($sd, 'BOS');
+                    })
+                    ->sum('potential_exemplar'));
+
                 unset($school->customerPlans);
                 return $school;
             });
+
+            // Base data sales = Area Cover: hilangkan kecamatan tanpa AC tahun target
+            $kecWithAc = $listSekolah
+                ->filter(fn ($s) => (int) ($s->is_active ?? 0) === 1)
+                ->pluck('kecamatan_name')
+                ->unique()
+                ->flip();
+            $listKecamatan = $listKecamatan
+                ->filter(fn ($k) => isset($kecWithAc[$k->kecamatan_name]))
+                ->values();
 
             // Find Non Cover Schools (in same kecamatan, but not handled by this sales)
             $salesKecamatans = \App\Models\Customer::where('sales_id', $id)
@@ -3278,12 +6301,47 @@ class MonitoringController extends Controller
 
             $areaCoverSekolah = $listSekolah->where('is_active', 1);
 
+            $jenjangColorMap = [
+                'SD' => '#1d4ed8',
+                'SMP' => '#8b5cf6',
+                'SMA' => '#eab308',
+                'SMK' => '#f97316',
+                'DLL' => '#10b981',
+            ];
+
             $jenjangBreakdown = $areaCoverSekolah->groupBy(function ($s) {
-                return $s->jenjang ?: 'Lainnya';
+                return strtoupper(trim($s->jenjang ?: 'Lainnya'));
             })
-                ->map(function ($g, $k) {
-                    return ['label' => $k, 'value' => $g->count()];
-                })->values()->toArray();
+                ->map(function ($g, $k) use ($jenjangColorMap) {
+                    $realisasi = (float) $g->sum(function ($s) {
+                        return (float) ($s->real_exemplar_current ?? 0);
+                    });
+                    $sp = (float) $g->sum(function ($s) {
+                        return (float) ($s->sp_exemplar_current ?? 0);
+                    });
+                    $sekolahRealisasi = $g->filter(function ($s) {
+                        return ((float) ($s->real_exemplar_current ?? 0)) > 0;
+                    })->count();
+
+                    return [
+                        'label' => $k,
+                        'value' => $g->count(),
+                        'realisasi' => (int) round($realisasi),
+                        'sp' => (int) round($sp),
+                        'sekolah_realisasi' => $sekolahRealisasi,
+                        'potensi_siswa' => (int) $g->sum(function ($s) {
+                            return (int) ($s->total_student ?? 0);
+                        }),
+                        'color' => $jenjangColorMap[$k] ?? '#64748b',
+                    ];
+                })
+                ->values()
+                ->sortBy(function ($item) {
+                    $order = ['SD' => 1, 'SMP' => 2, 'SMA' => 3, 'SMK' => 4];
+                    return $order[$item['label']] ?? 99;
+                })
+                ->values()
+                ->toArray();
 
             $sumberDanaBreakdown = $areaCoverSekolah->groupBy(function ($s) {
                 return $s->sumber_dana ?: 'Lainnya';
@@ -3314,32 +6372,12 @@ class MonitoringController extends Controller
                 })->count()],
             ];
 
-            $jenjangBreakdown = $assignColor($jenjangBreakdown);
             $sumberDanaBreakdown = $assignColor($sumberDanaBreakdown);
             $segmenBreakdown = $assignColor($segmenBreakdown);
             $siswaBreakdown = $assignColor($siswaBreakdown);
 
-            $activityBreakdown = $kegiatanSales->groupBy('aktivitas')->map(function ($group, $key) {
-                $key = empty($key) ? 'Tidak Diketahui' : $key;
-                return ['label' => $key, 'value' => $group->count()];
-            })->values()->sortByDesc('value')->take(5)->values()->toArray();
-            $colors = ['#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
-            foreach ($activityBreakdown as $index => &$item) {
-                $item['color'] = $colors[$index % count($colors)];
-            }
-
-            $resultBreakdown = $kegiatanSales->groupBy(function ($item) {
-                $aktivitas = empty($item->aktivitas) ? 'Tidak Diketahui' : $item->aktivitas;
-                $hasil = empty($item->hasil) ? 'Belum Ada Hasil' : $item->hasil;
-                return $aktivitas . ' - ' . $hasil;
-            })->map(function ($group, $key) {
-                return ['label' => $key, 'value' => $group->count()];
-            })->values()->sortByDesc('value')->take(5)->values()->toArray();
-
-            $resultColors = ['#10b981', '#8b5cf6', '#f43f5e', '#6366f1', '#eab308'];
-            foreach ($resultBreakdown as $index => &$item) {
-                $item['color'] = $resultColors[$index % count($resultColors)];
-            }
+            $activityBreakdown = $this->buildFixedSalesActivityBreakdown($kegiatanSales, null, true);
+            $resultBreakdown = $this->buildFixedSalesActivityBreakdown($kegiatanSales);
 
             // ══════════════════════════════════════════════
             // KPI SCORE CALCULATION
@@ -3568,37 +6606,8 @@ class MonitoringController extends Controller
                 'monthlyActivities' => $monthlyActivities,
             ];
 
-            // Activity Distribution for Pie Chart
-            $activityDistribution = collect($kegiatanSales)->groupBy('aktivitas')->map(function ($group, $key) {
-                return ['label' => empty($key) ? 'Tidak Diketahui' : $key, 'value' => $group->count()];
-            })->values()->sortByDesc('value')->values()->toArray();
-
-            // SP di Distribusi Aktivitas = jumlah Customer Realisasi (bukan total row kegiatan SP)
-            $spSynced = false;
-            foreach ($activityDistribution as &$item) {
-                if (strtoupper(trim((string) ($item['label'] ?? ''))) === 'SP') {
-                    $item['value'] = (int) $customerWithRealisasi;
-                    $spSynced = true;
-                    break;
-                }
-            }
-            unset($item);
-            if (!$spSynced && (int) $customerWithRealisasi > 0) {
-                $activityDistribution[] = [
-                    'label' => 'SP',
-                    'value' => (int) $customerWithRealisasi,
-                ];
-            }
-            usort($activityDistribution, function ($a, $b) {
-                return ($b['value'] ?? 0) <=> ($a['value'] ?? 0);
-            });
-            $activityDistribution = array_values($activityDistribution);
-
-            $pieColors = ['#1d4ed8', '#0d9488', '#f59e0b', '#dc2626', '#8b5cf6', '#10b981'];
-            foreach ($activityDistribution as $index => &$item) {
-                $item['color'] = $pieColors[$index % count($pieColors)];
-            }
-            unset($item);
+            // Activity Distribution: distinct sekolah per jenis aktivitas (vs Area Cover)
+            $activityDistribution = $this->buildFixedSalesActivityBreakdown($kegiatanSales, null, true);
             $kpiData['activityDistribution'] = $activityDistribution;
             $kpiData['areaCover'] = (int) $acCurr;
 
@@ -3610,9 +6619,15 @@ class MonitoringController extends Controller
                 return [
                     'label' => $key,
                     'value' => $group->count(),
-                    'realisasi' => round((float) $group->sum(function ($s) {
+                    'realisasi' => (int) round((float) $group->sum(function ($s) {
                         return (float) ($s->real_exemplar_current ?? 0);
-                    }), 0),
+                    })),
+                    'sp' => (int) round((float) $group->sum(function ($s) {
+                        return (float) ($s->sp_exemplar_current ?? 0);
+                    })),
+                    'sekolah_realisasi' => $group->filter(function ($s) {
+                        return ((float) ($s->real_exemplar_current ?? 0)) > 0;
+                    })->count(),
                     'potensi_siswa' => (int) $group->sum(function ($s) {
                         return (int) ($s->total_student ?? 0);
                     }),
@@ -3624,6 +6639,39 @@ class MonitoringController extends Controller
                 $item['color'] = $sdColors[$index % count($sdColors)];
             }
             $kpiData['sumberDana'] = $sumberDanaDistribution;
+
+            // Realisasi vs Area Cover & vs Total Sekolah per grade
+            $gradeColors = \App\Models\Configuration::schoolGradeColors();
+            $gradeRealisasiBreakdown = [];
+            foreach (\App\Models\Configuration::schoolGradeOrder() as $grade) {
+                $acGroup = collect($areaCoverSekolah)->filter(
+                    fn ($s) => ($s->school_grade ?? '') === $grade
+                );
+                $acCount = $acGroup->count();
+                if ($acCount <= 0) {
+                    continue;
+                }
+                $allGroup = collect($listSekolah)->filter(
+                    fn ($s) => ($s->school_grade ?? '') === $grade
+                );
+                $totalSekolah = $allGroup->count();
+                $realCount = $acGroup->filter(
+                    fn ($s) => ((float) ($s->real_exemplar_current ?? 0)) > 0
+                )->count();
+                $gradeRealisasiBreakdown[] = [
+                    'label' => $grade,
+                    'value' => $realCount,
+                    'area_cover' => $acCount,
+                    'total_sekolah' => $totalSekolah,
+                    'pct' => round(($realCount / max(1, $acCount)) * 100, 1),
+                    'pct_total' => round(($realCount / max(1, $totalSekolah)) * 100, 1),
+                    'sp' => (int) round((float) $acGroup->sum(fn ($s) => (float) ($s->sp_exemplar_current ?? 0))),
+                    'realisasi' => (int) round((float) $acGroup->sum(fn ($s) => (float) ($s->real_exemplar_current ?? 0))),
+                    'range' => \App\Models\Configuration::schoolGradeRangeLabel($grade, $gradeThresholds),
+                    'color' => $gradeColors[$grade] ?? '#64748b',
+                ];
+            }
+            $kpiData['gradeRealisasi'] = $gradeRealisasiBreakdown;
 
             // Potensi Siswa (Jumlah Siswa) Distribution
             $potensiSiswaDistribution = [
@@ -3669,12 +6717,26 @@ class MonitoringController extends Controller
 
             // Top 10 Priority School
             $prioritySchools = collect($areaCoverSekolah)->sortByDesc('total_student')->take(10)->map(function ($s) {
+                $prevReal = (bool) ($s->prev_realisasi ?? false);
+                $currReal = ((float) ($s->real_exemplar_current ?? 0)) > 0;
+                if ($prevReal && $currReal) {
+                    $status = 'Tahan';
+                } elseif (!$prevReal && $currReal) {
+                    $status = 'Rebut';
+                } else {
+                    $status = 'Belum Terealisasi';
+                }
+
                 return [
+                    'id' => (int) ($s->id ?? 0),
                     'name' => $s->name,
                     'jenjang' => $s->jenjang,
-                    'siswa' => $s->total_student,
-                    'status' => ($s->real_exemplar_current > 0) ? 'Customer' : 'Prospek',
-                    'grade' => $s->potensi_sekolah ?? '-',
+                    'siswa' => (int) ($s->total_student ?? 0),
+                    'potensi_swa' => (int) ($s->potensi_swa ?? 0),
+                    'potensi_bos' => (int) ($s->potensi_bos ?? 0),
+                    'status' => $status,
+                    'sp' => (int) ($s->sp_exemplar_current ?? 0),
+                    'realisasi' => (int) ($s->real_exemplar_current ?? 0),
                 ];
             })->values()->toArray();
             $kpiData['prioritySchools'] = $prioritySchools;
@@ -3694,15 +6756,29 @@ class MonitoringController extends Controller
 
             $trlgPerJenjang = [];
             foreach (['SD', 'SMP', 'SMA', 'SMK'] as $jenjang) {
-                $trlgPerJenjang[$jenjang] = ['tahan' => 0, 'rebut' => 0, 'lepas' => 0, 'gagal' => 0];
+                $trlgPerJenjang[$jenjang] = [
+                    'tahan' => 0,
+                    'rebut' => 0,
+                    'lepas' => 0,
+                    'gagal' => 0,
+                    'ac' => 0,
+                ];
             }
 
             foreach ($areaCoverSekolah as $s) {
                 $jenjang = strtoupper(trim($s->jenjang ?? ''));
                 if (empty($jenjang)) $jenjang = 'LAINNYA';
                 if (!isset($trlgPerJenjang[$jenjang])) {
-                    $trlgPerJenjang[$jenjang] = ['tahan' => 0, 'rebut' => 0, 'lepas' => 0, 'gagal' => 0];
+                    $trlgPerJenjang[$jenjang] = [
+                        'tahan' => 0,
+                        'rebut' => 0,
+                        'lepas' => 0,
+                        'gagal' => 0,
+                        'ac' => 0,
+                    ];
                 }
+
+                $trlgPerJenjang[$jenjang]['ac']++;
 
                 $realCurrVal = (float) ($s->real_exemplar_current ?? 0);
                 $siswaVal = (int) ($s->total_student ?? 0);
@@ -3775,22 +6851,9 @@ class MonitoringController extends Controller
             $kpiData['trlgPerJenjang'] = $trlgTable;
 
             $kpiData['year'] = $currentYear;
-            $kpiData['segmenSekolah'] = [
-                [
-                    'label' => 'Negeri (BOS)',
-                    'value' => $segmentNegeri,
-                    'realisasi' => round($segmentNegeriRealisasi, 0),
-                    'potensi_siswa' => $segmentNegeriSiswa,
-                    'color' => '#1d4ed8',
-                ],
-                [
-                    'label' => 'Swasta',
-                    'value' => $segmentSwasta,
-                    'realisasi' => round($segmentSwastaRealisasi, 0),
-                    'potensi_siswa' => $segmentSwastaSiswa,
-                    'color' => '#f59e0b',
-                ],
-            ];
+            $kpiData['identifikasiJenjang'] = $jenjangBreakdown;
+            // Legacy key (UI diganti ke identifikasijenjang)
+            $kpiData['segmenSekolah'] = $jenjangBreakdown;
 
             return \Inertia\Inertia::render('Monitoring/SalesPerformanceDetail', array_merge($data, [
                 'kpiData' => $kpiData,
@@ -3816,6 +6879,7 @@ class MonitoringController extends Controller
                 'rencanaJualCoverage' => $rencanaJualCoverage,
                 'jenjangBreakdown' => $jenjangBreakdown,
                 'sumberDanaBreakdown' => $sumberDanaBreakdown,
+                'gradeRealisasiBreakdown' => $gradeRealisasiBreakdown,
                 'segmenBreakdown' => $segmenBreakdown,
                 'siswaBreakdown' => $siswaBreakdown,
                 'activityBreakdown' => $activityBreakdown,
@@ -4095,188 +7159,880 @@ class MonitoringController extends Controller
 
     /**
      * API endpoint: Return filtered GeoJSON for kecamatan choropleth map
-     * Merges desa/kelurahan polygons into kecamatan-level MultiPolygons
+     * Uses kecamatan-level boundaries (indonesia-kecamatan-*.json) when available.
+     * Matching by nama + kabupaten/city_code (hindari bentrok nama sama beda kab, mis. Ciawi).
      */
     public function salesPerformanceGeoJson(\Illuminate\Http\Request $request)
     {
         $salesId = $request->input('sales_id');
         $cabangId = $request->input('cabang_id');
+        $areaId = $request->input('area_id');
+        $level = strtolower(trim((string) $request->input('level', 'kecamatan')));
 
-        if (!$salesId) {
+        // Mode area (tanpa cabang): polygon per kota/kab
+        // Mode cabang: default kecamatan (lihat di bawah); level=kota tetap support via buildCabangKotaGeoJson
+        if ($level === 'kota' && !$salesId && ($cabangId || $areaId)) {
+            $cfgYears = \App\Models\Configuration::query()->first(['target_year']);
+            $planYear = (int) ($request->input('tahun') ?: ($cfgYears->target_year ?? date('Y')));
+
+            return $this->buildCabangKotaGeoJson(
+                $cabangId ? (int) $cabangId : null,
+                $planYear,
+                $areaId ? (int) $areaId : null,
+            );
+        }
+
+        // Butuh sales_id atau cabang_id untuk peta kecamatan
+        if (!$salesId && !$cabangId) {
             return response()->json(['type' => 'FeatureCollection', 'features' => []]);
         }
 
-        $sales = \App\Models\Sales::with('cabang')->find($salesId);
-        if (!$sales) {
+        $activeCabangId = $cabangId ? (int) $cabangId : null;
+        if ($salesId) {
+            $sales = \App\Models\Sales::with('cabang')->find($salesId);
+            if (!$sales) {
+                return response()->json(['type' => 'FeatureCollection', 'features' => []]);
+            }
+            $activeCabangId = $activeCabangId ?: (int) $sales->cabang_id;
+        }
+
+        if (!$activeCabangId) {
             return response()->json(['type' => 'FeatureCollection', 'features' => []]);
         }
 
-        $activeCabangId = $cabangId ?: $sales->cabang_id;
+        $normalizeKec = function ($name) {
+            $n = mb_strtolower(trim((string) $name));
+            if ($n === '') {
+                return '';
+            }
+            $parts = array_map('trim', explode(',', $n));
+            $base = $parts[0] ?? $n;
+            $base = preg_replace('/^(kec\.?\s*|kecamatan\s+)/u', '', $base);
+            $base = preg_replace('/\s+/u', ' ', $base);
+            return trim($base);
+        };
 
-        // Get coverage data per kecamatan for this sales
-        $kecamatanData = \App\Models\Customer::where('sales_id', $salesId)
+        $normalizeKab = function ($kabRaw) {
+            $k = mb_strtolower(trim((string) $kabRaw));
+            $k = preg_replace('/\s+/u', ' ', $k);
+            return trim($k);
+        };
+
+        $cities = \DB::table('cities')->get(['city_code', 'city_name']);
+        $cityByName = [];
+        foreach ($cities as $city) {
+            $cityByName[$normalizeKab($city->city_name)] = (int) $city->city_code;
+        }
+
+        $kodeToCityCode = function ($kode) {
+            // "32.01.24" → 3201 ; "32.71.03" → 3271
+            $parts = explode('.', (string) $kode);
+            if (count($parts) < 2) {
+                return null;
+            }
+            return (int) ($parts[0] . str_pad($parts[1], 2, '0', STR_PAD_LEFT));
+        };
+
+        $resolveCityCode = function ($kecamatanName) use ($normalizeKec, $normalizeKab, $cityByName, $activeCabangId) {
+            $full = trim((string) $kecamatanName);
+            $parts = array_map('trim', explode(',', $full));
+            $base = $normalizeKec($parts[0] ?? $full);
+            $kabPart = $normalizeKab($parts[1] ?? '');
+
+            if ($kabPart !== '' && isset($cityByName[$kabPart])) {
+                return [$base, $cityByName[$kabPart]];
+            }
+
+            if ($base !== '') {
+                $kecRow = \DB::table('kecamatans')
+                    ->whereRaw('LOWER(camat_name) = ?', [$base])
+                    ->when($activeCabangId, function ($q) use ($activeCabangId) {
+                        $q->where('cabang_id', $activeCabangId);
+                    })
+                    ->first();
+                if ($kecRow && $kecRow->city_code) {
+                    return [$base, (int) $kecRow->city_code];
+                }
+
+                $candidates = \DB::table('kecamatans')
+                    ->whereRaw('LOWER(camat_name) = ?', [$base])
+                    ->pluck('city_code')
+                    ->unique()
+                    ->values();
+                if ($candidates->count() === 1) {
+                    return [$base, (int) $candidates->first()];
+                }
+            }
+
+            return [$base, null];
+        };
+
+        $cfgYears = \App\Models\Configuration::query()->first(['target_year']);
+        $planYear = (int) ($request->input('tahun') ?: ($cfgYears->target_year ?? date('Y')));
+
+        $customers = \App\Models\Customer::query()
+            ->when($salesId, fn ($q) => $q->where('sales_id', $salesId))
             ->where('cabang_id', $activeCabangId)
             ->whereNotNull('kecamatan_name')
-            ->get(['id', 'kecamatan_name', 'is_active', 'total_student', 'penerbit'])
-            ->groupBy(function ($c) {
-                return mb_strtolower(trim($c->kecamatan_name));
+            ->get(['id', 'kecamatan_name', 'is_active', 'total_student', 'penerbit', 'jenjang', 'sumber_dana']);
+
+        $plansByCustomer = collect();
+        if ($customers->isNotEmpty()) {
+            $plansByCustomer = \DB::table('customer_plans')
+                ->whereIn('customer_id', $customers->pluck('id'))
+                ->where('year', $planYear)
+                ->groupBy('customer_id')
+                ->selectRaw('customer_id, SUM(real_exemplar) as real_eks, SUM(sp_exemplar) as sp_eks, SUM(potential_exemplar) as pot_eks, MAX(is_ac) as is_ac')
+                ->get()
+                ->keyBy('customer_id');
+        }
+
+        $sortJenjangBreakdown = static function (array $jenjangBreakdown): array {
+            $order = ['SD' => 1, 'SMP' => 2, 'SMA' => 3, 'SMK' => 4, 'DLL' => 5];
+            uksort($jenjangBreakdown, static function ($a, $b) use ($order) {
+                return ($order[$a] ?? 99) <=> ($order[$b] ?? 99) ?: strcmp($a, $b);
+            });
+
+            return $jenjangBreakdown;
+        };
+
+        $kecamatanData = $customers
+            ->groupBy(function ($c) use ($resolveCityCode) {
+                [$base, $cityCode] = $resolveCityCode($c->kecamatan_name);
+                if ($base === '') {
+                    return '';
+                }
+                return $base . '|' . ($cityCode ?: 'x');
             })
-            ->map(function ($group) {
+            ->filter(function ($_, $key) {
+                return $key !== '';
+            })
+            ->map(function ($group) use ($resolveCityCode, $plansByCustomer, $sortJenjangBreakdown) {
                 $compCounts = [];
+                $areaCover = 0;
+                $sekolahRealisasi = 0;
+                $realEksemplar = 0;
+                $spEksemplar = 0;
+                $potensiEksemplar = 0;
+                $sekolahBos = 0;
+                $sekolahSwadana = 0;
+                $jenjangBreakdown = [];
+
                 foreach ($group as $c) {
                     $p = $c->penerbit ?: 'Tidak Diketahui';
                     $compCounts[$p] = ($compCounts[$p] ?? 0) + 1;
+
+                    $plan = $plansByCustomer->get($c->id);
+                    $isAc = $plan && (int) ($plan->is_ac ?? 0) === 1;
+                    if ($plan) {
+                        $realEks = (int) ($plan->real_eks ?? 0);
+                        $spEks = (int) ($plan->sp_eks ?? 0);
+                        $potEks = (int) round((float) ($plan->pot_eks ?? 0));
+                        $realEksemplar += $realEks;
+                        $spEksemplar += $spEks;
+                        $potensiEksemplar += $potEks;
+                        if ($isAc) {
+                            $areaCover++;
+                        }
+                        if ($realEks > 0) {
+                            $sekolahRealisasi++;
+                        }
+                    }
+
+                    // Analisa sumber dana & jenjang berbasis Area Cover
+                    if ($isAc) {
+                        $sd = strtoupper(trim((string) ($c->sumber_dana ?? '')));
+                        if (str_contains($sd, 'BOS')) {
+                            $sekolahBos++;
+                        } elseif (str_contains($sd, 'SWA')) {
+                            $sekolahSwadana++;
+                        }
+                        $j = strtoupper(trim((string) ($c->jenjang ?? ''))) ?: 'Lainnya';
+                        $jenjangBreakdown[$j] = ($jenjangBreakdown[$j] ?? 0) + 1;
+                    }
                 }
                 arsort($compCounts);
                 $dominantComp = array_key_first($compCounts);
+                [$base, $cityCode] = $resolveCityCode($group->first()->kecamatan_name);
 
-                return (object)[
+                return (object) [
                     'kecamatan_name' => $group->first()->kecamatan_name,
+                    'base_name' => $base,
+                    'city_code' => $cityCode,
                     'total_sekolah' => $group->count(),
                     'sekolah_aktif' => $group->where('is_active', 1)->count(),
+                    'area_cover' => $areaCover,
+                    'sekolah_realisasi' => $sekolahRealisasi,
+                    'real_exemplar' => $realEksemplar,
+                    'sp_exemplar' => $spEksemplar,
+                    'potensi_exemplar' => $potensiEksemplar,
+                    'sekolah_bos' => $sekolahBos,
+                    'sekolah_swadana' => $sekolahSwadana,
+                    'jenjang_breakdown' => $sortJenjangBreakdown($jenjangBreakdown),
+                    'coverage_pct' => 0, // dihitung ulang vs total AC scope
+                    'tahun' => null, // diisi saat append
                     'potensi_siswa' => $group->sum('total_student'),
                     'dominant_competitor' => $dominantComp,
                     'competitors' => $compCounts,
                 ];
             });
 
+        // Hanya kecamatan yang punya Area Cover (base data sales)
+        $kecamatanData = $kecamatanData
+            ->filter(fn ($r) => (int) ($r->area_cover ?? 0) > 0);
+
+        // Share AC per kecamatan terhadap total AC di scope (sales/cabang/area)
+        $totalAcScope = (int) $kecamatanData->sum(fn ($r) => (int) ($r->area_cover ?? 0));
+        $kecamatanData = $kecamatanData->map(function ($row) use ($totalAcScope) {
+            $ac = (int) ($row->area_cover ?? 0);
+            $row->coverage_pct = $totalAcScope > 0
+                ? (int) round(($ac / $totalAcScope) * 100)
+                : 0;
+            $row->total_area_cover = $totalAcScope;
+
+            return $row;
+        });
+
+        // tempel tahun ke tiap row
+        $kecamatanData = $kecamatanData->map(function ($row) use ($planYear) {
+            $row->tahun = $planYear;
+            return $row;
+        });
+
         if ($kecamatanData->isEmpty()) {
-            return response()->json(['type' => 'FeatureCollection', 'features' => []]);
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => [],
+                'meta' => ['kecamatan_count' => 0, 'matched' => 0],
+            ]);
         }
 
-        $kecamatanNames = $kecamatanData->keys()->toArray();
-
-        // Read GeoJSON file
-        $geojsonPath = base_path('public/geojson/indonesia-districts.json');
-        if (!file_exists($geojsonPath)) {
-            return response()->json(['type' => 'FeatureCollection', 'features' => []]);
+        $cityNameByCode = [];
+        foreach ($cities as $city) {
+            $cityNameByCode[(int) $city->city_code] = $city->city_name;
         }
 
-        $geojsonContent = file_get_contents($geojsonPath);
-        $geojson = json_decode($geojsonContent, true);
-
-        if (!$geojson || !isset($geojson['features'])) {
-            // Try as FeatureCollection wrapper or array of features
-            // The file might be a top-level array of Feature objects
-            if (is_array($geojson) && isset($geojson[0]['type'])) {
-                $features = $geojson;
-            } else {
-                return response()->json(['type' => 'FeatureCollection', 'features' => []]);
-            }
-        } else {
-            $features = $geojson['features'];
-        }
-
-        // Group desa features by kecamatan name (WADMKC)
-        $kecamatanFeatures = [];
-        foreach ($features as $feature) {
-            if (!isset($feature['properties']['WADMKC']) || !$feature['geometry']) {
-                continue;
-            }
-
-            $wadmkc = mb_strtolower(trim($feature['properties']['WADMKC']));
-
-            if (!in_array($wadmkc, $kecamatanNames)) {
-                continue;
-            }
-
-            if (!isset($kecamatanFeatures[$wadmkc])) {
-                $kecamatanFeatures[$wadmkc] = [
-                    'coordinates' => [],
-                    'properties' => $feature['properties'],
-                ];
-            }
-
-            // Collect all polygon coordinates
-            $geom = $feature['geometry'];
-            if ($geom['type'] === 'Polygon') {
-                $kecamatanFeatures[$wadmkc]['coordinates'][] = $geom['coordinates'];
-            } elseif ($geom['type'] === 'MultiPolygon') {
-                foreach ($geom['coordinates'] as $poly) {
-                    $kecamatanFeatures[$wadmkc]['coordinates'][] = $poly;
-                }
-            }
-        }
-
-        // Build merged GeoJSON features (Polygons)
         $mergedFeatures = [];
         $processedKec = [];
-        foreach ($kecamatanFeatures as $kecKey => $kecData) {
-            $processedKec[] = $kecKey;
+        $osmMatched = 0;
+        $localMatched = 0;
+
+        // Alias nama umum (DB vs OSM)
+        $aliasKec = function (string $name) use ($normalizeKec) {
+            $n = $normalizeKec($name);
+            $aliases = [
+                'tanah sereal' => 'tanah sareal',
+                'tanahsereal' => 'tanahsareal',
+                'bojonggede' => 'bojong gede',
+                'tajurhalang' => 'tajurhalang',
+                'tajur halang' => 'tajurhalang',
+            ];
+            return $aliases[$n] ?? $n;
+        };
+        $compactKec = function (string $name) use ($aliasKec) {
+            return str_replace(' ', '', $aliasKec($name));
+        };
+        $kabCore = function (?string $kab) {
+            $k = mb_strtolower(trim((string) $kab));
+            $k = preg_replace('/^(kabupaten|kota|kab\.?|regency)\s+/u', '', $k);
+            return trim(preg_replace('/\s+/u', ' ', $k));
+        };
+
+        $appendMatchedFeature = function (
+            string $kecKey,
+            array $geometry,
+            array $props,
+            string $source
+        ) use (
+            &$mergedFeatures,
+            &$processedKec,
+            &$osmMatched,
+            &$localMatched,
+            $kecamatanData
+        ) {
+            if (in_array($kecKey, $processedKec, true)) {
+                return;
+            }
             $coverageInfo = $kecamatanData->get($kecKey);
+            if (!$coverageInfo) {
+                return;
+            }
+
+            $coords = [];
+            if (($geometry['type'] ?? '') === 'Polygon') {
+                $coords[] = $geometry['coordinates'];
+            } elseif (($geometry['type'] ?? '') === 'MultiPolygon') {
+                foreach ($geometry['coordinates'] as $poly) {
+                    $coords[] = $poly;
+                }
+            }
+            if (empty($coords)) {
+                return;
+            }
+
+            $expectedCity = $coverageInfo->city_code ?? null;
+            $filtered = [];
+            foreach ($coords as $poly) {
+                $pt = $poly[0][0] ?? null;
+                $lng = is_array($pt) ? (float) $pt[0] : null;
+                if ($expectedCity && in_array((int) $expectedCity, [3201, 3271], true) && $lng !== null && $lng > 107.45) {
+                    continue;
+                }
+                $filtered[] = $poly;
+            }
+            if (empty($filtered)) {
+                return;
+            }
+
             $totalSekolah = $coverageInfo->total_sekolah ?? 0;
             $sekolahAktif = $coverageInfo->sekolah_aktif ?? 0;
+            $areaCover = (int) ($coverageInfo->area_cover ?? 0);
+            $sekolahRealisasi = (int) ($coverageInfo->sekolah_realisasi ?? 0);
+            $realExemplar = (int) ($coverageInfo->real_exemplar ?? 0);
+            $spExemplar = (int) ($coverageInfo->sp_exemplar ?? 0);
+            $potensiExemplar = (int) ($coverageInfo->potensi_exemplar ?? 0);
+            $sekolahBos = (int) ($coverageInfo->sekolah_bos ?? 0);
+            $sekolahSwadana = (int) ($coverageInfo->sekolah_swadana ?? 0);
+            $jenjangBreakdown = $coverageInfo->jenjang_breakdown ?? [];
             $belumTercover = max(0, $totalSekolah - $sekolahAktif);
             $potensiSiswa = $coverageInfo->potensi_siswa ?? 0;
-            $coveragePct = $totalSekolah > 0 ? round(($sekolahAktif / $totalSekolah) * 100) : 0;
+            $coveragePct = (int) ($coverageInfo->coverage_pct ?? 0);
+
+            $processedKec[] = $kecKey;
+            if ($source === 'osm') {
+                $osmMatched++;
+            } else {
+                $localMatched++;
+            }
 
             $mergedFeatures[] = [
                 'type' => 'Feature',
                 'geometry' => [
                     'type' => 'MultiPolygon',
-                    'coordinates' => $kecData['coordinates'],
+                    'coordinates' => $filtered,
                 ],
                 'properties' => [
-                    'kecamatan_name' => $coverageInfo->kecamatan_name ?? ucwords($kecKey),
-                    'kabupaten' => $kecData['properties']['WADMKK'] ?? '',
-                    'provinsi' => $kecData['properties']['WADMPR'] ?? '',
+                    'kecamatan_name' => $coverageInfo->kecamatan_name,
+                    'kabupaten' => $props['WADMKK'] ?? $props['kabupaten'] ?? '',
+                    'provinsi' => $props['WADMPR'] ?? 'Jawa Barat',
+                    'city_code' => $coverageInfo->city_code,
+                    'kode' => $props['kode'] ?? null,
+                    'boundary_source' => $source,
+                    'tahun' => $coverageInfo->tahun ?? null,
                     'total_sekolah' => $totalSekolah,
                     'sekolah_aktif' => $sekolahAktif,
+                    'area_cover' => $areaCover,
+                    'sekolah_realisasi' => $sekolahRealisasi,
+                    'real_exemplar' => $realExemplar,
+                    'sp_exemplar' => $spExemplar,
+                    'potensi_exemplar' => $potensiExemplar,
+                    'sekolah_bos' => $sekolahBos,
+                    'sekolah_swadana' => $sekolahSwadana,
+                    'jenjang_breakdown' => $jenjangBreakdown,
                     'belum_tercover' => $belumTercover,
                     'potensi_siswa' => $potensiSiswa,
                     'coverage_pct' => $coveragePct,
+                    'total_area_cover' => (int) ($coverageInfo->total_area_cover ?? 0),
                     'dominant_competitor' => $coverageInfo->dominant_competitor ?? 'Tidak Diketahui',
                     'competitors' => $coverageInfo->competitors ?? [],
+                    'is_sales_coverage' => true,
                 ],
             ];
-        }
+        };
 
-        // Add fallback Point features for kecamatans not found in GeoJSON
-        foreach ($kecamatanData as $kecKey => $coverageInfo) {
-            if (!in_array($kecKey, $processedKec)) {
-                // Try to get lat/lng from kecamatans table
-                $originalName = $coverageInfo->kecamatan_name;
-                $parts = explode(',', $originalName);
-                $kecOnly = trim($parts[0]);
-
-                $kecDb = \DB::table('kecamatans')->whereRaw('LOWER(camat_name) = ?', [mb_strtolower($kecOnly)])->first();
-                if ($kecDb && $kecDb->geomap) {
-                    $geomap = json_decode($kecDb->geomap, true);
-                    if ($geomap && isset($geomap['lat']) && isset($geomap['lng'])) {
-                        $totalSekolah = $coverageInfo->total_sekolah ?? 0;
-                        $sekolahAktif = $coverageInfo->sekolah_aktif ?? 0;
-                        $belumTercover = max(0, $totalSekolah - $sekolahAktif);
-                        $potensiSiswa = $coverageInfo->potensi_siswa ?? 0;
-                        $coveragePct = $totalSekolah > 0 ? round(($sekolahAktif / $totalSekolah) * 100) : 0;
-
-                        $mergedFeatures[] = [
-                            'type' => 'Feature',
-                            'geometry' => [
-                                'type' => 'Point',
-                                'coordinates' => [$geomap['lng'], $geomap['lat']], // GeoJSON uses [lng, lat]
-                            ],
-                            'properties' => [
-                                'kecamatan_name' => $originalName,
-                                'kabupaten' => '',
-                                'provinsi' => '',
-                                'total_sekolah' => $totalSekolah,
-                                'sekolah_aktif' => $sekolahAktif,
-                                'belum_tercover' => $belumTercover,
-                                'potensi_siswa' => $potensiSiswa,
-                                'coverage_pct' => $coveragePct,
-                                'dominant_competitor' => $coverageInfo->dominant_competitor ?? 'Tidak Diketahui',
-                                'competitors' => $coverageInfo->competitors ?? [],
-                            ],
-                        ];
+        $buildLookup = function () use ($kecamatanData, $processedKec, $aliasKec, $compactKec, $kabCore, $cityNameByCode) {
+            $lookup = [];
+            foreach ($kecamatanData as $key => $info) {
+                if (in_array($key, $processedKec, true)) {
+                    continue;
+                }
+                $base = $aliasKec($info->base_name ?? '');
+                $compact = $compactKec($info->base_name ?? '');
+                if ($info->city_code) {
+                    $lookup[$base . '|' . $info->city_code] = $key;
+                    $lookup[$compact . '|' . $info->city_code] = $key;
+                    $kabLabel = $cityNameByCode[(int) $info->city_code] ?? '';
+                    $core = $kabCore($kabLabel);
+                    if ($core !== '') {
+                        $lookup[$base . '|kab:' . $core] = $key;
+                        $lookup[$compact . '|kab:' . $core] = $key;
                     }
                 }
             }
+            return $lookup;
+        };
+
+        $matchFromFiles = function (array $files, string $source) use (
+            $buildLookup,
+            $normalizeKec,
+            $aliasKec,
+            $compactKec,
+            $kabCore,
+            $kodeToCityCode,
+            $appendMatchedFeature,
+            &$processedKec
+        ) {
+            $lookup = $buildLookup();
+            if (empty($lookup)) {
+                return;
+            }
+
+            foreach ($files as $file) {
+                $geojson = json_decode(file_get_contents($file), true);
+                if (!$geojson) {
+                    continue;
+                }
+                $fileFeatures = $geojson['features'] ?? (isset($geojson[0]['type']) ? $geojson : []);
+                foreach ($fileFeatures as $feature) {
+                    if (!isset($feature['geometry'])) {
+                        continue;
+                    }
+                    $props = $feature['properties'] ?? [];
+                    $rawName = $props['WADMKC'] ?? $props['nama'] ?? $props['NAMOBJ'] ?? $props['name'] ?? '';
+                    $wadmkc = $aliasKec($rawName);
+                    if ($wadmkc === '') {
+                        continue;
+                    }
+                    $compact = $compactKec($rawName);
+                    $geoCity = !empty($props['kode']) ? $kodeToCityCode($props['kode']) : null;
+                    $geoKab = $kabCore($props['WADMKK'] ?? $props['kabupaten'] ?? '');
+
+                    $canonical = null;
+                    if ($geoCity) {
+                        $canonical = $lookup[$wadmkc . '|' . $geoCity]
+                            ?? $lookup[$compact . '|' . $geoCity]
+                            ?? null;
+                    }
+                    if (!$canonical && $geoKab !== '') {
+                        $canonical = $lookup[$wadmkc . '|kab:' . $geoKab]
+                            ?? $lookup[$compact . '|kab:' . $geoKab]
+                            ?? null;
+                    }
+                    // OSM tanpa kode: izinkan match nama jika unik di lookup untuk city coverage
+                    if (!$canonical && $source === 'osm') {
+                        $candidates = [];
+                        foreach ($lookup as $lk => $kecKey) {
+                            if (str_starts_with($lk, $wadmkc . '|') || str_starts_with($lk, $compact . '|')) {
+                                $candidates[$kecKey] = true;
+                            }
+                        }
+                        if (count($candidates) === 1) {
+                            $canonical = array_key_first($candidates);
+                        }
+                    }
+                    if (!$canonical) {
+                        continue;
+                    }
+
+                    $appendMatchedFeature($canonical, $feature['geometry'], $props, $source);
+                    // refresh lookup setelah match agar nama kembar tidak double-assign
+                    $lookup = $buildLookup();
+                    if (empty($lookup)) {
+                        return;
+                    }
+                }
+            }
+        };
+
+        // 1) Prioritas: polygon OSM (selaras garis batas basemap Leaflet/Carto)
+        $geoDir = base_path('public/geojson');
+        $osmFiles = array_values(array_filter(
+            glob($geoDir . '/indonesia-kecamatan*-osm-*.json') ?: [],
+            fn ($f) => filesize($f) > 1000
+        ));
+        // juga tangkap pola indonesia-kecamatan-osm-32.json
+        foreach (glob($geoDir . '/indonesia-kecamatan-osm*.json') ?: [] as $f) {
+            if (filesize($f) > 1000 && !in_array($f, $osmFiles, true)) {
+                $osmFiles[] = $f;
+            }
+        }
+        if (!empty($osmFiles)) {
+            $matchFromFiles($osmFiles, 'osm');
+        }
+
+        // 2) Fallback Kepmendagri / lokal non-OSM
+        $localFiles = array_values(array_filter(
+            glob($geoDir . '/indonesia-kecamatan*.json') ?: [],
+            fn ($f) => !str_contains(basename($f), '-osm') && filesize($f) > 1000
+        ));
+        if (empty($localFiles) && file_exists($geoDir . '/indonesia-districts.json')) {
+            $localFiles = [$geoDir . '/indonesia-districts.json'];
+        }
+        if (!empty($localFiles)) {
+            $matchFromFiles($localFiles, 'local');
+        }
+        // Kecamatan tanpa polygon boundary tidak ditampilkan sebagai marker Point
+
+        return response()->json([
+            'type' => 'FeatureCollection',
+            'features' => $mergedFeatures,
+            'meta' => [
+                'kecamatan_count' => $kecamatanData->count(),
+                'matched' => count($processedKec),
+                'version' => 7,
+                'tahun' => $planYear,
+                'osm_matched' => $osmMatched,
+                'local_matched' => $localMatched,
+            ],
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+          ->header('Pragma', 'no-cache');
+    }
+
+    /**
+     * GeoJSON choropleth per kota/kab untuk dashboard cabang.
+     * Boundary = polygon utuh kabupaten/kota (indonesia-kabupaten.json).
+     */
+    private function buildCabangKotaGeoJson(?int $cabangId, int $planYear, ?int $areaId = null)
+    {
+        $normalizeKec = function ($name) {
+            $n = mb_strtolower(trim((string) $name));
+            if ($n === '') {
+                return '';
+            }
+            $parts = array_map('trim', explode(',', $n));
+            $base = $parts[0] ?? $n;
+            $base = preg_replace('/^(kec\.?\s*|kecamatan\s+)/u', '', $base);
+            $base = preg_replace('/\s+/u', ' ', $base);
+
+            return trim($base);
+        };
+
+        $normalizeKab = function ($kabRaw) {
+            $k = mb_strtolower(trim((string) $kabRaw));
+            $k = preg_replace('/\s+/u', ' ', $k);
+
+            return trim($k);
+        };
+
+        $aliasKec = function (string $name) use ($normalizeKec) {
+            $n = $normalizeKec($name);
+            $aliases = [
+                'tanah sereal' => 'tanah sareal',
+                'tanahsereal' => 'tanahsareal',
+                'bojonggede' => 'bojong gede',
+                'tajurhalang' => 'tajurhalang',
+                'tajur halang' => 'tajurhalang',
+                'pelabuhan ratu' => 'palabuhanratu',
+                'palabuhan ratu' => 'palabuhanratu',
+                'bojongpicung' => 'bojong picung',
+            ];
+
+            return $aliases[$n] ?? $n;
+        };
+
+        $compactKec = function (string $name) use ($aliasKec) {
+            return str_replace(' ', '', $aliasKec($name));
+        };
+
+        $cities = \DB::table('cities')->get(['city_code', 'city_name']);
+        $cityByName = [];
+        $cityNameByCode = [];
+        foreach ($cities as $city) {
+            $cityByName[$normalizeKab($city->city_name)] = (int) $city->city_code;
+            $cityNameByCode[(int) $city->city_code] = $city->city_name;
+        }
+
+        $resolveCityCode = function ($kecamatanName, $customerCabangId = null) use ($normalizeKec, $normalizeKab, $cityByName, $cabangId) {
+            $full = trim((string) $kecamatanName);
+            $parts = array_map('trim', explode(',', $full));
+            $base = $normalizeKec($parts[0] ?? $full);
+            $kabPart = $normalizeKab($parts[1] ?? '');
+
+            if ($kabPart !== '' && isset($cityByName[$kabPart])) {
+                return [$base, $cityByName[$kabPart]];
+            }
+
+            $cid = $customerCabangId ?: $cabangId;
+            if ($base !== '' && $cid) {
+                $kecRow = \DB::table('kecamatans')
+                    ->whereRaw('LOWER(camat_name) = ?', [$base])
+                    ->where('cabang_id', $cid)
+                    ->first();
+                if ($kecRow && $kecRow->city_code) {
+                    return [$base, (int) $kecRow->city_code];
+                }
+            }
+
+            return [$base, null];
+        };
+
+        $customerQuery = \App\Models\Customer::whereNotNull('kecamatan_name');
+        if ($cabangId) {
+            $customerQuery->where('cabang_id', $cabangId);
+        } elseif ($areaId) {
+            $customerQuery->where('area_id', $areaId);
+        } else {
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => [],
+                'meta' => ['level' => 'kota', 'kota_count' => 0, 'matched' => 0, 'tahun' => $planYear],
+            ]);
+        }
+
+        $customers = $customerQuery->get(['id', 'kecamatan_name', 'is_active', 'total_student', 'penerbit', 'cabang_id', 'jenjang', 'sumber_dana']);
+
+        if ($customers->isEmpty()) {
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => [],
+                'meta' => ['level' => 'kota', 'kota_count' => 0, 'matched' => 0, 'tahun' => $planYear],
+            ]);
+        }
+
+        $plansByCustomer = \DB::table('customer_plans')
+            ->whereIn('customer_id', $customers->pluck('id'))
+            ->where('year', $planYear)
+            ->groupBy('customer_id')
+            ->selectRaw('customer_id, SUM(real_exemplar) as real_eks, SUM(sp_exemplar) as sp_eks, SUM(potential_exemplar) as pot_eks, MAX(is_ac) as is_ac')
+            ->get()
+            ->keyBy('customer_id');
+
+        $sortJenjangBreakdown = static function (array $jenjangBreakdown): array {
+            $order = ['SD' => 1, 'SMP' => 2, 'SMA' => 3, 'SMK' => 4, 'DLL' => 5];
+            uksort($jenjangBreakdown, static function ($a, $b) use ($order) {
+                return ($order[$a] ?? 99) <=> ($order[$b] ?? 99) ?: strcmp($a, $b);
+            });
+
+            return $jenjangBreakdown;
+        };
+
+        $kotaData = $customers
+            ->groupBy(function ($c) use ($resolveCityCode) {
+                [, $cityCode] = $resolveCityCode($c->kecamatan_name, $c->cabang_id ?? null);
+
+                return $cityCode ?: '';
+            })
+            ->filter(function ($_, $key) {
+                return $key !== '';
+            })
+            ->map(function ($group, $cityCode) use ($plansByCustomer, $cityNameByCode, $planYear, $sortJenjangBreakdown) {
+                $compCounts = [];
+                $areaCover = 0;
+                $sekolahRealisasi = 0;
+                $realEksemplar = 0;
+                $spEksemplar = 0;
+                $potensiEksemplar = 0;
+                $sekolahBos = 0;
+                $sekolahSwadana = 0;
+                $jenjangBreakdown = [];
+
+                foreach ($group as $c) {
+                    $p = $c->penerbit ?: 'Tidak Diketahui';
+                    $compCounts[$p] = ($compCounts[$p] ?? 0) + 1;
+
+                    $plan = $plansByCustomer->get($c->id);
+                    $isAc = $plan && (int) ($plan->is_ac ?? 0) === 1;
+                    if ($plan) {
+                        $realEks = (int) ($plan->real_eks ?? 0);
+                        $spEks = (int) ($plan->sp_eks ?? 0);
+                        $potEks = (int) round((float) ($plan->pot_eks ?? 0));
+                        $realEksemplar += $realEks;
+                        $spEksemplar += $spEks;
+                        $potensiEksemplar += $potEks;
+                        if ($isAc) {
+                            $areaCover++;
+                        }
+                        if ($realEks > 0) {
+                            $sekolahRealisasi++;
+                        }
+                    }
+
+                    if ($isAc) {
+                        $sd = strtoupper(trim((string) ($c->sumber_dana ?? '')));
+                        if (str_contains($sd, 'BOS')) {
+                            $sekolahBos++;
+                        } elseif (str_contains($sd, 'SWA')) {
+                            $sekolahSwadana++;
+                        }
+                        $j = strtoupper(trim((string) ($c->jenjang ?? ''))) ?: 'Lainnya';
+                        $jenjangBreakdown[$j] = ($jenjangBreakdown[$j] ?? 0) + 1;
+                    }
+                }
+                arsort($compCounts);
+                $dominantComp = array_key_first($compCounts);
+                $cc = (int) $cityCode;
+
+                return (object) [
+                    'city_code' => $cc,
+                    'kota_name' => $cityNameByCode[$cc] ?? ('Kota/Kab ' . $cc),
+                    'total_sekolah' => $group->count(),
+                    'sekolah_aktif' => $group->where('is_active', 1)->count(),
+                    'area_cover' => $areaCover,
+                    'sekolah_realisasi' => $sekolahRealisasi,
+                    'real_exemplar' => $realEksemplar,
+                    'sp_exemplar' => $spEksemplar,
+                    'potensi_exemplar' => $potensiEksemplar,
+                    'sekolah_bos' => $sekolahBos,
+                    'sekolah_swadana' => $sekolahSwadana,
+                    'jenjang_breakdown' => $sortJenjangBreakdown($jenjangBreakdown),
+                    'coverage_pct' => 0,
+                    'tahun' => $planYear,
+                    'potensi_siswa' => $group->sum('total_student'),
+                    'dominant_competitor' => $dominantComp,
+                    'competitors' => $compCounts,
+                ];
+            });
+
+        // Hanya kota/kab yang punya Area Cover
+        $kotaData = $kotaData->filter(fn ($r) => (int) ($r->area_cover ?? 0) > 0);
+
+        $totalAcKotaScope = (int) $kotaData->sum(fn ($r) => (int) ($r->area_cover ?? 0));
+        $kotaData = $kotaData->map(function ($row) use ($totalAcKotaScope) {
+            $ac = (int) ($row->area_cover ?? 0);
+            $row->coverage_pct = $totalAcKotaScope > 0
+                ? (int) round(($ac / $totalAcKotaScope) * 100)
+                : 0;
+            $row->total_area_cover = $totalAcKotaScope;
+
+            return $row;
+        });
+
+        // Boundary utuh per kota/kab (bukan merge kecamatan)
+        $kabCore = function (?string $name) {
+            $k = mb_strtolower(trim((string) $name));
+            $k = preg_replace('/^(kabupaten|kota|kotamadya|kab\.?|kota\s+adm\.?)\s+/u', '', $k);
+            $k = preg_replace('/\s+/u', ' ', $k);
+
+            return trim($k);
+        };
+
+        $isKotaLabel = function (?string $name) {
+            $n = mb_strtolower(trim((string) $name));
+
+            return (bool) preg_match('/^(kota|kotamadya)\b/u', $n);
+        };
+
+        $kabFile = base_path('public/geojson/indonesia-kabupaten.json');
+        $kabIndex = []; // key: "kota:bogor" | "kab:bogor" => geometry
+        if (is_file($kabFile) && filesize($kabFile) > 1000) {
+            $kabGeo = json_decode(file_get_contents($kabFile), true);
+            foreach (($kabGeo['features'] ?? []) as $feature) {
+                if (!isset($feature['geometry'])) {
+                    continue;
+                }
+                $props = $feature['properties'] ?? [];
+                $rawName = $props['NAME_2'] ?? $props['name'] ?? $props['NAMOBJ'] ?? $props['kabupaten'] ?? '';
+                $type2 = mb_strtolower((string) ($props['TYPE_2'] ?? $props['ENGTYPE_2'] ?? ''));
+                $core = $kabCore($rawName);
+                if ($core === '') {
+                    continue;
+                }
+                $isKota = $isKotaLabel($rawName)
+                    || str_contains($type2, 'kota')
+                    || str_contains($type2, 'municipality');
+                $key = ($isKota ? 'kota:' : 'kab:') . $core;
+                $kabIndex[$key] = $feature['geometry'];
+                // Juga index nama penuh "kota bogor"
+                $full = $kabCore($isKota ? ('kota ' . $core) : $core);
+                if ($full !== '' && $full !== $core) {
+                    $kabIndex[($isKota ? 'kota:' : 'kab:') . $full] = $feature['geometry'];
+                }
+            }
+        }
+
+        $mergedFeatures = [];
+        $matchedKota = 0;
+
+        foreach ($kotaData as $info) {
+            $cityCode = (int) $info->city_code;
+            $kotaName = (string) $info->kota_name;
+            $core = $kabCore($kotaName);
+            $wantKota = $isKotaLabel($kotaName) || in_array($cityCode, [3271, 3272], true);
+            $geometry = null;
+
+            if ($wantKota) {
+                $geometry = $kabIndex['kota:' . $core]
+                    ?? $kabIndex['kota:kota ' . $core]
+                    ?? null;
+            } else {
+                $geometry = $kabIndex['kab:' . $core] ?? null;
+            }
+
+            // Fallback: coba kedua tipe jika unique core
+            if (!$geometry && $core !== '') {
+                $kotaGeom = $kabIndex['kota:' . $core] ?? null;
+                $kabGeom = $kabIndex['kab:' . $core] ?? null;
+                if ($kotaGeom && !$kabGeom) {
+                    $geometry = $kotaGeom;
+                } elseif ($kabGeom && !$kotaGeom) {
+                    $geometry = $kabGeom;
+                } elseif ($wantKota && $kotaGeom) {
+                    $geometry = $kotaGeom;
+                } elseif (!$wantKota && $kabGeom) {
+                    $geometry = $kabGeom;
+                }
+            }
+
+            if (!$geometry) {
+                continue;
+            }
+
+            $coords = [];
+            if (($geometry['type'] ?? '') === 'Polygon') {
+                $coords[] = $geometry['coordinates'];
+            } elseif (($geometry['type'] ?? '') === 'MultiPolygon') {
+                foreach ($geometry['coordinates'] as $poly) {
+                    $coords[] = $poly;
+                }
+            }
+            if (empty($coords)) {
+                continue;
+            }
+
+            $matchedKota++;
+            $totalSekolah = (int) ($info->total_sekolah ?? 0);
+            $sekolahAktif = (int) ($info->sekolah_aktif ?? 0);
+
+            $mergedFeatures[] = [
+                'type' => 'Feature',
+                'geometry' => [
+                    'type' => 'MultiPolygon',
+                    'coordinates' => $coords,
+                ],
+                'properties' => [
+                    'kecamatan_name' => $info->kota_name,
+                    'kota_name' => $info->kota_name,
+                    'kabupaten' => $info->kota_name,
+                    'provinsi' => 'Jawa Barat',
+                    'city_code' => $cityCode,
+                    'level' => 'kota',
+                    'boundary_source' => 'kabupaten',
+                    'tahun' => $info->tahun,
+                    'total_sekolah' => $totalSekolah,
+                    'sekolah_aktif' => $sekolahAktif,
+                    'area_cover' => (int) $info->area_cover,
+                    'sekolah_realisasi' => (int) $info->sekolah_realisasi,
+                    'real_exemplar' => (int) $info->real_exemplar,
+                    'sp_exemplar' => (int) $info->sp_exemplar,
+                    'potensi_exemplar' => (int) ($info->potensi_exemplar ?? 0),
+                    'sekolah_bos' => (int) ($info->sekolah_bos ?? 0),
+                    'sekolah_swadana' => (int) ($info->sekolah_swadana ?? 0),
+                    'jenjang_breakdown' => $info->jenjang_breakdown ?? [],
+                    'belum_tercover' => max(0, $totalSekolah - $sekolahAktif),
+                    'potensi_siswa' => (int) $info->potensi_siswa,
+                    'coverage_pct' => (int) $info->coverage_pct,
+                    'total_area_cover' => (int) ($info->total_area_cover ?? 0),
+                    'dominant_competitor' => $info->dominant_competitor ?? 'Tidak Diketahui',
+                    'competitors' => $info->competitors ?? [],
+                    'is_sales_coverage' => true,
+                ],
+            ];
         }
 
         return response()->json([
             'type' => 'FeatureCollection',
             'features' => $mergedFeatures,
-        ]);
+            'meta' => [
+                'level' => 'kota',
+                'kota_count' => $kotaData->count(),
+                'kecamatan_count' => $kotaData->count(),
+                'matched' => $matchedKota,
+                'tahun' => $planYear,
+                'version' => 9,
+                'boundary' => 'kabupaten',
+            ],
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+          ->header('Pragma', 'no-cache');
     }
 
     /**
@@ -4883,5 +8639,313 @@ class MonitoringController extends Controller
                 'trl_status' => $filterStatus,
             ],
         ]);
+    }
+
+    /**
+     * TRL detail, scoped to a whole Area — list by Cabang (bukan Sales)
+     * saat user klik jenjang/status dari dashboard area.
+     */
+    public function detailTrlArea($id)
+    {
+        $area = \App\Models\Area::findOrFail($id);
+
+        $user = auth()->user();
+        if ($user) {
+            if ($user->level === 'area' && $user->area_id != $area->id) {
+                abort(403);
+            }
+            if ($user->level === 'cabang') {
+                $cabangUser = \App\Models\Cabang::find($user->cabang_id);
+                if (!$cabangUser || $cabangUser->area_id != $area->id) {
+                    abort(403);
+                }
+            }
+            if ($user->level === 'sales') {
+                $sales = \App\Models\Sales::with('cabang')->find($user->sales_id);
+                if (!$sales || !$sales->cabang || $sales->cabang->area_id != $area->id) {
+                    abort(403);
+                }
+            }
+        }
+
+        $cfg = \App\Models\Configuration::query()->first(['target_year', 'prev_year']);
+        $targetYear = (int) ($cfg->target_year ?? date('Y'));
+        $prevYear = (int) ($cfg->prev_year ?? ($targetYear - 1));
+
+        $filterJenjang = request('jenjang');
+        $filterStatus = request('trl_status'); // tahan|rebut|lepas|gagal
+        $jenjangList = ['SD', 'SMP', 'SMA', 'SMK'];
+
+        $cabangs = \App\Models\Cabang::where('area_id', $area->id)
+            ->orderBy('nama_cabang')
+            ->get(['id', 'nama_cabang']);
+
+        // sales_id → cabang_id (cabang dengan customer terbanyak per sales)
+        $salesCabangMap = \App\Models\Customer::where('area_id', $area->id)
+            ->whereNotNull('sales_id')
+            ->whereNotNull('cabang_id')
+            ->selectRaw('sales_id, cabang_id, COUNT(*) as cnt')
+            ->groupBy('sales_id', 'cabang_id')
+            ->get()
+            ->groupBy('sales_id')
+            ->map(function ($rows) {
+                return (int) $rows->sortByDesc('cnt')->first()->cabang_id;
+            });
+
+        $salesIds = $salesCabangMap->keys()->values();
+
+        // TRL dari SalesPlan, digroup per cabang (+ filter jenjang)
+        $trlAggByCabang = [];
+        if ($salesIds->isNotEmpty()) {
+            $planQuery = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)
+                ->whereNotNull('jenjang')
+                ->selectRaw('sales_id, jenjang,
+                    SUM(tahan_customer) as tahan,
+                    SUM(rebut_customer) as rebut,
+                    SUM(lepas_customer) as lepas,
+                    SUM(gagal_customer) as gagal')
+                ->groupBy('sales_id', 'jenjang');
+
+            if ($filterJenjang) {
+                $planQuery->where('jenjang', $filterJenjang);
+            }
+
+            foreach ($planQuery->get() as $r) {
+                $cabangId = $salesCabangMap[$r->sales_id] ?? null;
+                if (!$cabangId) {
+                    continue;
+                }
+                if (!isset($trlAggByCabang[$cabangId])) {
+                    $trlAggByCabang[$cabangId] = [
+                        'tahan' => 0,
+                        'rebut' => 0,
+                        'lepas' => 0,
+                        'gagal' => 0,
+                    ];
+                }
+                $trlAggByCabang[$cabangId]['tahan'] += (int) $r->tahan;
+                $trlAggByCabang[$cabangId]['rebut'] += (int) $r->rebut;
+                $trlAggByCabang[$cabangId]['lepas'] += (int) $r->lepas;
+                $trlAggByCabang[$cabangId]['gagal'] += (int) $r->gagal;
+            }
+        }
+
+        // Realisasi tahun ini per cabang (+ filter jenjang)
+        $customerBase = \App\Models\Customer::where('area_id', $area->id);
+        if ($filterJenjang) {
+            $customerBase->where('jenjang', $filterJenjang);
+        }
+
+        $realRows = (clone $customerBase)
+            ->leftJoin('customer_plans', function ($join) use ($targetYear) {
+                $join->on('customers.id', '=', 'customer_plans.customer_id')
+                    ->where('customer_plans.year', '=', $targetYear);
+            })
+            ->selectRaw("
+                customers.cabang_id as cabang_id,
+                COALESCE(SUM(customer_plans.real_exemplar), 0) as realisasi_eksemplar,
+                COUNT(DISTINCT CASE WHEN customer_plans.real_exemplar > 0 THEN customers.id END) as realisasi_customer
+            ")
+            ->groupBy('customers.cabang_id')
+            ->get()
+            ->keyBy('cabang_id');
+
+        $trlByCabang = $cabangs->map(function ($cab) use ($trlAggByCabang, $realRows) {
+            $trl = $trlAggByCabang[$cab->id] ?? [
+                'tahan' => 0,
+                'rebut' => 0,
+                'lepas' => 0,
+                'gagal' => 0,
+            ];
+            $lepas = (int) $trl['lepas'] + (int) $trl['gagal']; // samakan dashboard (gagal digabung lepas)
+            $real = $realRows->get($cab->id);
+
+            return [
+                'id' => $cab->id,
+                'nama_cabang' => $cab->nama_cabang,
+                'tahan' => (int) $trl['tahan'],
+                'rebut' => (int) $trl['rebut'],
+                'lepas' => $lepas,
+                'gagal' => (int) $trl['gagal'],
+                'total' => (int) $trl['tahan'] + (int) $trl['rebut'] + $lepas,
+                'realisasi_customer' => (int) ($real->realisasi_customer ?? 0),
+                'realisasi_eksemplar' => (int) ($real->realisasi_eksemplar ?? 0),
+            ];
+        })
+            ->sortByDesc(function ($r) {
+                return $r['tahan'] + $r['rebut'] + $r['lepas'];
+            })
+            ->values()
+            ->map(function ($r, $i) {
+                $r['no'] = $i + 1;
+                return $r;
+            })
+            ->toArray();
+
+        // Summary TRL area (null jenjang = total seperti dashboard)
+        if ($filterJenjang) {
+            $summary = [
+                'tahan' => collect($trlByCabang)->sum('tahan'),
+                'rebut' => collect($trlByCabang)->sum('rebut'),
+                'lepas' => collect($trlByCabang)->sum('lepas'),
+                'gagal' => 0,
+            ];
+        } elseif ($salesIds->isEmpty()) {
+            $summary = ['tahan' => 0, 'rebut' => 0, 'lepas' => 0, 'gagal' => 0];
+        } else {
+            $allPlan = \App\Models\SalesPlan::whereIn('sales_id', $salesIds)->whereNull('jenjang');
+            $summary = [
+                'tahan' => (int) (clone $allPlan)->sum('tahan_customer'),
+                'rebut' => (int) (clone $allPlan)->sum('rebut_customer'),
+                'lepas' => (int) (clone $allPlan)->sum('lepas_customer')
+                    + (int) (clone $allPlan)->sum('gagal_customer'),
+                'gagal' => 0,
+            ];
+        }
+
+        // List sekolah (tetap tersedia di tab kedua)
+        $customerQuery = \App\Models\Customer::where('area_id', $area->id)
+            ->whereNotNull('sales_id')
+            ->with(['sales:id,name', 'cabang:id,nama_cabang']);
+
+        if ($filterJenjang) {
+            $customerQuery->where('jenjang', $filterJenjang);
+        }
+
+        $customerIds = (clone $customerQuery)->pluck('id');
+        $activeLastYear = $customerIds->isEmpty()
+            ? collect()
+            : \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                ->where('year', $prevYear)->where('real_exemplar', '>', 0)
+                ->pluck('customer_id')->flip();
+        $activeThisYear = $customerIds->isEmpty()
+            ? collect()
+            : \App\Models\CustomerPlan::whereIn('customer_id', $customerIds)
+                ->where('year', $targetYear)->where('real_exemplar', '>', 0)
+                ->pluck('customer_id')->flip();
+
+        $mapSekolah = function ($c) use ($activeLastYear, $activeThisYear) {
+            $hadLastYear = isset($activeLastYear[$c->id]);
+            $hadThisYear = isset($activeThisYear[$c->id]);
+            if ($hadLastYear && $hadThisYear) {
+                $status = 'tahan';
+            } elseif (!$hadLastYear && $hadThisYear) {
+                $status = 'rebut';
+            } elseif ($hadLastYear && !$hadThisYear) {
+                $status = 'lepas';
+            } else {
+                $status = 'gagal';
+            }
+
+            return [
+                'id' => $c->id,
+                'nama_sekolah' => $c->name,
+                'kecamatan' => $c->kecamatan_name,
+                'kabupaten' => null,
+                'jenjang' => $c->jenjang,
+                'sumber_dana' => $c->sumber_dana,
+                'is_active' => (bool) $c->is_active,
+                'total_student' => (int) ($c->total_student ?? 0),
+                'sales_name' => $c->sales->name ?? 'Unknown',
+                'sales_id' => $c->sales_id,
+                'cabang_name' => $c->cabang->nama_cabang ?? '-',
+                'cabang_id' => $c->cabang_id,
+                'trl_status' => $status,
+            ];
+        };
+
+        if ($filterStatus) {
+            $filtered = (clone $customerQuery)->orderBy('name')->get()
+                ->map($mapSekolah)
+                ->filter(fn ($s) => $s['trl_status'] === $filterStatus)
+                ->values();
+            $page = (int) request('page', 1);
+            $perPage = 50;
+            $sekolah = new \Illuminate\Pagination\LengthAwarePaginator(
+                $filtered->slice(($page - 1) * $perPage, $perPage)->values(),
+                $filtered->count(),
+                $perPage,
+                $page,
+                ['path' => request()->url(), 'query' => request()->query()]
+            );
+        } else {
+            $sekolah = (clone $customerQuery)
+                ->orderBy('name')
+                ->paginate(50)
+                ->withQueryString()
+                ->through($mapSekolah);
+        }
+
+        return \Inertia\Inertia::render('Monitoring/Detail/TrlDetail', [
+            'activeNav' => 'area',
+            'isAreaDashboard' => true,
+            'areaId' => $area->id,
+            'cabangName' => strtoupper($area->name),
+            'cabangCode' => null,
+            'backUrl' => route('monitoring.area', $area->id),
+            'targetYear' => $targetYear,
+            'prevYear' => $prevYear,
+            'summary' => $summary,
+            'trlByCabang' => $trlByCabang,
+            'trlBySales' => [],
+            'sekolah' => $sekolah,
+            'salesList' => [],
+            'jenjangList' => $jenjangList,
+            'filters' => [
+                'sales_id' => null,
+                'jenjang' => $filterJenjang,
+                'trl_status' => $filterStatus,
+            ],
+        ]);
+    }
+
+    /**
+     * Kumpulkan grade unik sekolah ber-realisasi (real_exemplar > 0) per key.
+     * @param  \Illuminate\Support\Collection<int, object>  $schools  butuh kecamatan_name + total_student (+ optional cabang_id)
+     * @param  callable(object): string  $keyFn
+     * @return array<string, list<string>>
+     */
+    private function collectGradesRealisasiByKey($schools, callable $keyFn, ?array $thresholds = null): array
+    {
+        $thresholds = $thresholds
+            ?: (\App\Models\Configuration::query()->first()?->resolvedSchoolGradeThresholds()
+                ?? \App\Models\Configuration::defaultSchoolGradeThresholds());
+        $order = \App\Models\Configuration::schoolGradeOrder();
+        $map = [];
+
+        foreach ($schools as $s) {
+            $key = (string) $keyFn($s);
+            if ($key === '') {
+                continue;
+            }
+            $grade = \App\Models\Configuration::schoolGradeFromSiswa(
+                (int) ($s->total_student ?? 0),
+                $thresholds
+            );
+            $grade = trim((string) $grade);
+            if ($grade === '' || $grade === '-') {
+                continue;
+            }
+            $map[$key][$grade] = true;
+        }
+
+        $out = [];
+        foreach ($map as $key => $set) {
+            $list = array_keys($set);
+            usort($list, static function ($a, $b) use ($order) {
+                $ia = array_search($a, $order, true);
+                $ib = array_search($b, $order, true);
+                $oa = $ia === false ? 99 : $ia;
+                $ob = $ib === false ? 99 : $ib;
+                if ($oa !== $ob) {
+                    return $oa <=> $ob;
+                }
+
+                return strcmp((string) $a, (string) $b);
+            });
+            $out[$key] = $list;
+        }
+
+        return $out;
     }
 }

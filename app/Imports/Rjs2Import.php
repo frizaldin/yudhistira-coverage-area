@@ -69,6 +69,18 @@ class Rjs2Import implements ToCollection
                 $dana2025 = $getDana($row[9] ?? '');
                 $dana2026 = $getDana($row[10] ?? '');
 
+                $kota = trim((string) ($row[6] ?? ''));
+                $kecamatan = trim((string) ($row[7] ?? ''));
+                if ($kecamatan !== '' && $kota !== '') {
+                    $kecamatanName = $kecamatan . ', ' . $kota;
+                } elseif ($kecamatan !== '') {
+                    $kecamatanName = $kecamatan;
+                } elseif ($kota !== '') {
+                    $kecamatanName = $kota;
+                } else {
+                    $kecamatanName = null;
+                }
+
                 // Match Customer
                 $matchData = [
                     'name' => $customerName,
@@ -79,7 +91,7 @@ class Rjs2Import implements ToCollection
                 ];
 
                 $updateData = [
-                    'kecamatan_name' => trim((string)$row[7]),
+                    'kecamatan_name' => $kecamatanName,
                     'total_student' => $parseExemplar($row[11]),
                     'sumber_dana' => $dana2026,
                     'penerbit' => trim((string)$row[22]) // PESAING 1
@@ -106,40 +118,55 @@ class Rjs2Import implements ToCollection
                 $potensiBos = $parseExemplar($row[16] ?? 0);
                 $rencanaSwa = $parseExemplar($row[17] ?? 0);
                 $rencanaBos = $parseExemplar($row[18] ?? 0);
+                $spSwa = $parseExemplar($row[19] ?? 0);
+                $spBos = $parseExemplar($row[20] ?? 0);
                 $swaFaktur = $parseExemplar($row[26] ?? 0);
                 $bosFaktur = $parseExemplar($row[27] ?? 0);
                 
                 $potensi = $potensiSwa + $potensiBos;
                 $rencana = $rencanaSwa + $rencanaBos;
+                $totalSp = $spSwa + $spBos;
                 $totalRealExemplar = $swaFaktur + $bosFaktur;
 
                 // Update data for 2026 (Split SWA & BOS)
                 CustomerPlan::updateOrCreate(
                     ['customer_id' => $customer->id, 'year' => $year, 'sumber_dana' => 'SWA'],
-                    ['real_exemplar' => $swaFaktur, 'potential_exemplar' => $potensiSwa, 'target_exemplar' => $rencanaSwa]
+                    [
+                        'real_exemplar' => $swaFaktur,
+                        'potential_exemplar' => $potensiSwa,
+                        'target_exemplar' => $rencanaSwa,
+                        'sp_exemplar' => $spSwa,
+                    ]
                 );
 
                 CustomerPlan::updateOrCreate(
                     ['customer_id' => $customer->id, 'year' => $year, 'sumber_dana' => 'BOS'],
-                    ['real_exemplar' => $bosFaktur, 'potential_exemplar' => $potensiBos, 'target_exemplar' => $rencanaBos]
+                    [
+                        'real_exemplar' => $bosFaktur,
+                        'potential_exemplar' => $potensiBos,
+                        'target_exemplar' => $rencanaBos,
+                        'sp_exemplar' => $spBos,
+                    ]
                 );
 
                 // Collect realization for SalesPlan aggregation
                 $sId = $currentSales->id;
                 if (!isset($salesRealizations[$sId])) {
-                    $salesRealizations[$sId] = ['TOTAL' => ['real' => 0, 'potensi' => 0, 'rencana' => 0]];
+                    $salesRealizations[$sId] = ['TOTAL' => ['real' => 0, 'potensi' => 0, 'rencana' => 0, 'sp' => 0]];
                 }
                 if (!isset($salesRealizations[$sId][$currentJenjang])) {
-                    $salesRealizations[$sId][$currentJenjang] = ['real' => 0, 'potensi' => 0, 'rencana' => 0];
+                    $salesRealizations[$sId][$currentJenjang] = ['real' => 0, 'potensi' => 0, 'rencana' => 0, 'sp' => 0];
                 }
                 $salesRealizations[$sId]['TOTAL']['real'] += $totalRealExemplar;
                 $salesRealizations[$sId]['TOTAL']['potensi'] += $potensi;
                 $salesRealizations[$sId]['TOTAL']['rencana'] += $rencana;
+                $salesRealizations[$sId]['TOTAL']['sp'] += $totalSp;
                 
                 if ($currentJenjang) {
                     $salesRealizations[$sId][$currentJenjang]['real'] += $totalRealExemplar;
                     $salesRealizations[$sId][$currentJenjang]['potensi'] += $potensi;
                     $salesRealizations[$sId][$currentJenjang]['rencana'] += $rencana;
+                    $salesRealizations[$sId][$currentJenjang]['sp'] += $totalSp;
                 }
             }
         }
@@ -153,7 +180,7 @@ class Rjs2Import implements ToCollection
                     ['sales_id' => $sId, 'year' => $year, 'jenjang' => $dbJenjang],
                     [
                         'tahan_customer' => 0, 'rebut_customer' => 0, 'lepas_customer' => 0, 'gagal_customer' => 0,
-                        'real_customer' => 0, 'real_exemplar' => 0, 'ac_customer' => 0, 'potential_exemplar' => 0,
+                        'real_customer' => 0, 'real_exemplar' => 0, 'sp_exemplar' => 0, 'ac_customer' => 0, 'potential_exemplar' => 0,
                         'target_customer' => 0, 'target_exemplar' => 0,
                     ]
                 );
@@ -161,7 +188,8 @@ class Rjs2Import implements ToCollection
                 $salesPlan->update([
                     'real_exemplar' => $data['real'],
                     'potential_exemplar' => $data['potensi'],
-                    'target_exemplar' => $data['rencana']
+                    'target_exemplar' => $data['rencana'],
+                    'sp_exemplar' => $data['sp'] ?? 0,
                 ]);
             }
         }

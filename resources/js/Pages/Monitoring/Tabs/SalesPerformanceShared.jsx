@@ -76,6 +76,9 @@ export const S = {
         borderBottom: `1px solid ${T.border}`,
         letterSpacing: "0.3px",
         textTransform: "uppercase",
+        position: "sticky",
+        top: 0,
+        zIndex: 5,
     },
     td: {
         fontSize: 11.5,
@@ -83,6 +86,18 @@ export const S = {
         padding: "7px 10px",
         borderBottom: `1px solid #f4f6f8`,
     },
+};
+
+/** Wrapper scroll + sticky thead untuk tabel panjang di dashboard */
+export const stickyTableWrapStyle = {
+    overflow: "auto",
+    maxHeight: "calc(100vh - 210px)",
+};
+
+export const stickyTableStyle = {
+    width: "100%",
+    borderCollapse: "separate",
+    borderSpacing: 0,
 };
 
 export function Donut({ segments, size = 120, ring = 26, label, sub, onSegmentClick }) {
@@ -121,55 +136,55 @@ export function Donut({ segments, size = 120, ring = 26, label, sub, onSegmentCl
                 />
                 {/* rotate -90 supaya mulai dari atas (12 jam) dan mengisi full 360° */}
                 <g transform={`rotate(-90 ${cx} ${cy})`}>
-                    {segments.map((seg, i) => {
+                {segments.map((seg, i) => {
                         const value = Number(seg.value) || 0;
                         const len = tot > 0 ? (value / tot) * circ : 0;
                         const offset = -cum;
-                        cum += len;
-                        const percent =
+                    cum += len;
+                    const percent =
                             tot > 0 ? ((value / tot) * 100).toFixed(1) : 0;
                         const clickable = typeof onSegmentClick === "function" && seg.label;
-                        return (
-                            <circle
-                                key={i}
-                                cx={cx}
-                                cy={cy}
-                                r={r}
-                                fill="none"
-                                stroke={seg.color}
-                                strokeWidth={ring}
+                    return (
+                        <circle
+                            key={i}
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            fill="none"
+                            stroke={seg.color}
+                            strokeWidth={ring}
                                 strokeDasharray={`${len} ${Math.max(circ - len, 0)}`}
-                                strokeDashoffset={offset}
-                                style={{
+                            strokeDashoffset={offset}
+                            style={{
                                     cursor: clickable || seg.label ? "pointer" : "default",
-                                    transition: "stroke-width 0.2s ease",
-                                }}
+                                transition: "stroke-width 0.2s ease",
+                            }}
                                 onClick={() => {
                                     if (clickable) onSegmentClick(seg, i);
                                 }}
-                                onMouseEnter={() => {
-                                    if (seg.label) {
-                                        setHoveredInfo({
-                                            label: seg.label,
+                            onMouseEnter={() => {
+                                if (seg.label) {
+                                    setHoveredInfo({
+                                        label: seg.label,
                                             value,
-                                            percent,
-                                            color: seg.color,
-                                        });
-                                    }
-                                }}
-                                onMouseOver={(e) => {
-                                    if (seg.label)
-                                        e.target.setAttribute(
-                                            "stroke-width",
-                                            ring + 6,
-                                        );
-                                }}
-                                onMouseOut={(e) => {
-                                    e.target.setAttribute("stroke-width", ring);
-                                }}
-                            />
-                        );
-                    })}
+                                        percent,
+                                        color: seg.color,
+                                    });
+                                }
+                            }}
+                            onMouseOver={(e) => {
+                                if (seg.label)
+                                    e.target.setAttribute(
+                                        "stroke-width",
+                                        ring + 6,
+                                    );
+                            }}
+                            onMouseOut={(e) => {
+                                e.target.setAttribute("stroke-width", ring);
+                            }}
+                        />
+                    );
+                })}
                 </g>
             </svg>
 
@@ -763,6 +778,48 @@ function MultiBarChart({ data }) {
     );
 }
 /* ── MAP LEAFLET (CHOROPLETH KECAMATAN) ── */
+function InvalidateMapSize({ deps = [] }) {
+    const map = useMap();
+    useEffect(() => {
+        if (!map) return undefined;
+
+        const run = () => {
+            try {
+                map.invalidateSize({ pan: false });
+            } catch (e) {
+                /* ignore */
+            }
+        };
+
+        run();
+        const t1 = window.setTimeout(run, 50);
+        const t2 = window.setTimeout(run, 250);
+        const t3 = window.setTimeout(run, 600);
+        const raf = window.requestAnimationFrame(run);
+
+        const container = map.getContainer?.();
+        let ro;
+        if (container && typeof ResizeObserver !== "undefined") {
+            ro = new ResizeObserver(() => run());
+            ro.observe(container);
+            if (container.parentElement) ro.observe(container.parentElement);
+        }
+
+        window.addEventListener("resize", run);
+        return () => {
+            window.clearTimeout(t1);
+            window.clearTimeout(t2);
+            window.clearTimeout(t3);
+            window.cancelAnimationFrame(raf);
+            window.removeEventListener("resize", run);
+            if (ro) ro.disconnect();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [map, ...deps]);
+
+    return null;
+}
+
 function FitGeoJsonBounds({ geojsonData }) {
     const map = useMap();
     useEffect(() => {
@@ -772,11 +829,19 @@ function FitGeoJsonBounds({ geojsonData }) {
             geojsonData.features.length > 0
         ) {
             try {
+                map.invalidateSize({ pan: false });
                 const geoLayer = L.geoJSON(geojsonData);
                 const bounds = geoLayer.getBounds();
                 if (bounds.isValid()) {
                     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
                 }
+                window.setTimeout(() => {
+                    try {
+                        map.invalidateSize({ pan: false });
+                    } catch (e) {
+                        /* ignore */
+                    }
+                }, 150);
             } catch (e) {
                 console.error("Error fitting GeoJSON bounds", e);
             }
@@ -822,7 +887,11 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
     useEffect(() => {
         if (!salesId) return;
         setLoading(true);
-        const params = new URLSearchParams({ sales_id: salesId });
+        const params = new URLSearchParams({
+            sales_id: salesId,
+            _v: "3",
+            _ts: String(Date.now()),
+        });
         if (cabangId) params.append("cabang_id", cabangId);
 
         let fetchUrl = `/system/monitoring/sales-performance/geojson?${params.toString()}`;
@@ -835,7 +904,7 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
             // fallback if route helper fails
         }
 
-        fetch(fetchUrl)
+        fetch(fetchUrl, { cache: "no-store" })
             .then((res) => res.json())
             .then((data) => {
                 setGeojsonData(data);
@@ -1029,6 +1098,29 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
             )}
             <style>{`
                 @keyframes spin { to { transform: rotate(360deg); } }
+                .leaflet-container {
+                    width: 100% !important;
+                    height: 100% !important;
+                    background: #f1f5f9;
+                }
+                .leaflet-pane,
+                .leaflet-tile,
+                .leaflet-marker-icon,
+                .leaflet-marker-shadow,
+                .leaflet-tile-container,
+                .leaflet-pane > svg,
+                .leaflet-pane > canvas,
+                .leaflet-zoom-box,
+                .leaflet-image-layer,
+                .leaflet-layer {
+                    position: absolute !important;
+                    left: 0;
+                    top: 0;
+                }
+                .leaflet-tile {
+                    filter: inherit;
+                    visibility: inherit;
+                }
                 .kecamatan-popup .leaflet-popup-content-wrapper {
                     border-radius: 12px !important;
                     box-shadow: 0 10px 40px rgba(0,0,0,0.15) !important;
@@ -1061,6 +1153,7 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
                 maxBoundsViscosity={1.0}
                 style={{ height: "100%", width: "100%", zIndex: 1 }}
             >
+                <InvalidateMapSize deps={[geoKey, loading]} />
                 <TileLayer
                     attribution='&copy; <a href="https://carto.com/">Carto</a>'
                     url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
@@ -1085,10 +1178,29 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
 }
 
 /* ── MAP LEAFLET (CHOROPLETH COMPETITOR) ── */
-export function CompetitorChoroplethMap({ salesId, cabangId }) {
+export function CompetitorChoroplethMap({
+    salesId,
+    cabangId,
+    areaId,
+    tahun,
+    level,
+    onOpenSekolahByKecamatan,
+}) {
     const [geojsonData, setGeojsonData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [geoKey, setGeoKey] = useState(0);
+    const [meta, setMeta] = useState({ kecamatan_count: 0, matched: 0, level: "kecamatan" });
+
+    const resolvedLevel =
+        level ||
+        (salesId
+            ? "kecamatan"
+            : cabangId
+              ? "kecamatan"
+              : areaId
+                ? "kota"
+                : "kecamatan");
+    const unitLabel = resolvedLevel === "kota" ? "kota/kab" : "kecamatan";
 
     const compColors = {
         "Tidak Diketahui": "#94a3b8",
@@ -1113,10 +1225,22 @@ export function CompetitorChoroplethMap({ salesId, cabangId }) {
     };
 
     useEffect(() => {
-        if (!salesId) return;
+        const canLoadKota =
+            resolvedLevel === "kota" && (cabangId || areaId) && !salesId;
+        const canLoadCabangKecamatan =
+            resolvedLevel === "kecamatan" && !!cabangId && !salesId;
+        if (!salesId && !canLoadKota && !canLoadCabangKecamatan) return;
         setLoading(true);
-        const params = new URLSearchParams({ sales_id: salesId });
-        if (cabangId) params.append("cabang_id", cabangId);
+        const params = new URLSearchParams({
+            _v: resolvedLevel === "kota" ? "9" : "8",
+            _ts: String(Date.now()),
+        });
+        if (salesId) params.append("sales_id", String(salesId));
+        if (cabangId) params.append("cabang_id", String(cabangId));
+        if (areaId && !cabangId) params.append("area_id", String(areaId));
+        if (tahun) params.append("tahun", String(tahun));
+        if (resolvedLevel === "kota") params.append("level", "kota");
+        else params.append("level", "kecamatan");
 
         let fetchUrl = `/system/monitoring/sales-performance/geojson?${params.toString()}`;
         try {
@@ -1126,11 +1250,38 @@ export function CompetitorChoroplethMap({ salesId, cabangId }) {
             );
         } catch (e) {}
 
-        fetch(fetchUrl)
+        fetch(fetchUrl, { cache: "no-store", headers: { Accept: "application/json" } })
             .then((res) => res.json())
             .then((data) => {
-                // Ensure colors are mapped consistently based on most common dominant competitors first
+                // Safety: buang ring/feature yang loncat jauh (mis. Ciawi Bogor ke Tasik)
+                if (data?.features?.length) {
+                    data.features = data.features
+                        .map((f) => {
+                            if (f.geometry?.type === "MultiPolygon" && Array.isArray(f.geometry.coordinates)) {
+                                const city = Number(f.properties?.city_code) || 0;
+                                // Kab/Kota Bogor ≈ 106.2–107.2; tolak ring ke timur (Tasik dll)
+                                if (city === 3201 || city === 3271) {
+                                    f.geometry.coordinates = f.geometry.coordinates.filter((poly) => {
+                                        const pt = poly?.[0]?.[0];
+                                        const lng = Array.isArray(pt) ? Number(pt[0]) : null;
+                                        return lng == null || lng < 107.45;
+                                    });
+                                }
+                            }
+                            return f;
+                        })
+                        .filter((f) => {
+                            if (f.geometry?.type === "MultiPolygon") {
+                                return (f.geometry.coordinates || []).length > 0;
+                            }
+                            return true;
+                        });
+                }
                 if (data && data.features) {
+                    // Jangan tampilkan fallback Point (buletan) — hanya polygon
+                    data.features = data.features.filter(
+                        (f) => f?.geometry?.type && f.geometry.type !== "Point",
+                    );
                     const compSet = new Set();
                     data.features.forEach((f) => {
                         if (
@@ -1148,97 +1299,259 @@ export function CompetitorChoroplethMap({ salesId, cabangId }) {
                     });
                 }
                 setGeojsonData(data);
+                setMeta({
+                    kecamatan_count: data?.meta?.kota_count || data?.meta?.kecamatan_count || data?.features?.length || 0,
+                    matched: data?.meta?.matched || (data?.features || []).filter(
+                        (f) => f.geometry?.type !== "Point",
+                    ).length,
+                    level: data?.meta?.level || resolvedLevel,
+                });
                 setGeoKey((k) => k + 1);
                 setLoading(false);
             })
             .catch(() => setLoading(false));
-    }, [salesId, cabangId]);
+    }, [salesId, cabangId, areaId, tahun, resolvedLevel]);
+
+    // Share AC per wilayah vs total AC scope:
+    // <25% merah · <50% jingga · <75% kuning · ≤100% hijau
+    const getCoverageFill = (pct) => {
+        const n = Number(pct) || 0;
+        if (n < 25) return { fill: "#dc2626", border: "#7f1d1d", label: "Rendah (<25%)" };
+        if (n < 50) return { fill: "#ea580c", border: "#9a3412", label: "Cukup (<50%)" };
+        if (n < 75) return { fill: "#eab308", border: "#854d0e", label: "Sedang (<75%)" };
+        return { fill: "#16a34a", border: "#14532d", label: "Tinggi (≤100%)" };
+    };
+
+    const styleForFeature = (feature) => {
+        if (feature?.geometry?.type === "Point") return {};
+        const pct = feature?.properties?.coverage_pct ?? 0;
+        const c = getCoverageFill(pct);
+        return {
+            fillColor: c.fill,
+            fillOpacity: 0.45,
+            weight: 2.5,
+            opacity: 1,
+            color: c.border,
+            dashArray: null,
+            className: "sales-kec-polygon",
+            lineJoin: "round",
+            lineCap: "round",
+        };
+    };
 
     const onEachFeature = (feature, layer) => {
         const props = feature.properties;
-        const domComp = props.dominant_competitor || "Tidak Diketahui";
-        const color = getColorForCompetitor(domComp);
+        const pct = props.coverage_pct ?? 0;
+        const band = getCoverageFill(pct);
+        const baseStyle = styleForFeature(feature);
+        const areaCover = Number(props.area_cover ?? 0);
+        const totalAreaCover = Number(props.total_area_cover ?? 0);
+        const totalSekolah = Number(props.total_sekolah ?? 0);
+        const sekolahRealisasi = Number(props.sekolah_realisasi ?? 0);
+        const realExemplar = Number(props.real_exemplar ?? 0);
+        const spExemplar = Number(props.sp_exemplar ?? 0);
+        const yearLabel = props.tahun || tahun || "";
+        const titleName = props.kota_name || props.kecamatan_name || "";
+        const kecFilterValue = String(titleName || "")
+            .split(",")[0]
+            .trim()
+            .toUpperCase();
 
         layer.on({
             mouseover: (e) => {
                 if (e.target.setStyle) {
                     e.target.setStyle({
-                        weight: 3,
-                        fillOpacity: 0.85,
-                        dashArray: "",
+                        weight: 3.5,
+                        color: "#000000",
+                        fillOpacity: 0.65,
                     });
                     e.target.bringToFront();
                 }
             },
             mouseout: (e) => {
                 if (e.target.setStyle) {
-                    e.target.setStyle({
-                        weight: 2,
-                        fillOpacity: 0.6,
-                        dashArray: "3",
-                    });
+                    e.target.setStyle(baseStyle);
                 }
             },
         });
 
-        const compListHtml =
-            props.competitors && Object.keys(props.competitors).length > 0
-                ? Object.entries(props.competitors)
-                      .map(
-                          ([name, count]) => `
-                <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;border-bottom:1px solid #e2e8f0;padding-bottom:2px;">
-                    <span>${name}</span>
-                    <span style="font-weight:bold;">${count}</span>
-                </div>
-            `,
-                      )
+        const fmt = (n) => Number(n || 0).toLocaleString("id-ID");
+        const sekolahBos = Number(props.sekolah_bos ?? 0);
+        const sekolahSwadana = Number(props.sekolah_swadana ?? 0);
+        const jenjangRaw = props.jenjang_breakdown || {};
+        const jenjangOrder = ["SD", "SMP", "SMA", "SMK", "DLL"];
+        const jenjangColors = {
+            SD: "#1d4ed8",
+            SMP: "#7c3aed",
+            SMA: "#ca8a04",
+            SMK: "#ea580c",
+            DLL: "#059669",
+        };
+        const jenjangKeys = [
+            ...jenjangOrder.filter((j) => Number(jenjangRaw[j] || 0) > 0),
+            ...Object.keys(jenjangRaw).filter(
+                (j) =>
+                    !jenjangOrder.includes(j) && Number(jenjangRaw[j] || 0) > 0,
+            ),
+        ];
+        const jenjangRows =
+            jenjangKeys.length > 0
+                ? jenjangKeys
+                      .map((j) => {
+                          const v = Number(jenjangRaw[j] || 0);
+                          const c = jenjangColors[j] || "#475569";
+                          return `<tr>
+                                <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:600;color:#334155;">
+                                    <span style="display:inline-flex;align-items:center;gap:6px;">
+                                        <span style="width:7px;height:7px;border-radius:50%;background:${c};display:inline-block;"></span>
+                                        ${j}
+                                    </span>
+                                </td>
+                                <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;text-align:right;">
+                                    <span style="display:inline-block;min-width:28px;padding:2px 8px;border-radius:999px;background:${c}14;color:${c};font-size:12px;font-weight:800;">${fmt(v)}</span>
+                                </td>
+                            </tr>`;
+                      })
                       .join("")
-                : '<div style="font-size:10px;color:#64748b;">Tidak ada data kompetitor</div>';
+                : `<tr><td colspan="2" style="padding:10px 8px;font-size:11px;color:#94a3b8;text-align:center;">Belum ada data</td></tr>`;
+
+        const miniTable = (title, headLeft, headRight, body, accent) => `
+            <div style="min-width:0;background:#fff;border:1px solid #e8eef5;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+                <div style="padding:8px 10px 6px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:6px;">
+                    <span style="width:3px;height:12px;border-radius:2px;background:${accent};display:inline-block;"></span>
+                    <span style="font-size:10px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.45px;">${title}</span>
+                </div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f8fafc;">
+                            <th style="padding:5px 8px;font-size:10px;font-weight:600;color:#94a3b8;text-align:left;">${headLeft}</th>
+                            <th style="padding:5px 8px;font-size:10px;font-weight:600;color:#94a3b8;text-align:right;">${headRight}</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>`;
+
+        const metricCell = (label, value, color, bg, border) => `
+            <td style="padding:10px 8px;text-align:center;background:${bg};border-right:1px solid ${border};">
+                <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:4px;">${label}</div>
+                <div style="font-size:18px;font-weight:800;color:${color};line-height:1;font-variant-numeric:tabular-nums;">${fmt(value)}</div>
+            </td>`;
 
         const popupHtml = `
-            <div style="min-width:220px;font-family:'Inter','Segoe UI',sans-serif;">
-                <div style="background:${color};padding:12px 14px;border-radius:10px 10px 0 0;margin:-8px -20px 0;">
-                    <div style="color:white;font-weight:700;font-size:14px;">${props.kecamatan_name}</div>
-                    <div style="color:rgba(255,255,255,0.9);font-size:10px;">${props.kabupaten || ""}</div>
+            <div style="min-width:330px;max-width:370px;font-family:'Segoe UI',system-ui,sans-serif;color:#0f172a;">
+                <div style="background:linear-gradient(145deg,${band.fill} 0%,${band.border || band.fill} 100%);padding:14px 14px 12px;border-radius:12px 12px 0 0;margin:-8px -20px 0;position:relative;">
+                    <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,0.12),rgba(0,0,0,0.08));pointer-events:none;border-radius:12px 12px 0 0;"></div>
+                    <div style="position:relative;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+                            <div style="min-width:0;">
+                                <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.22);border-radius:999px;padding:2px 8px;margin-bottom:7px;">
+                                    <span style="font-size:10px;font-weight:700;color:#fff;letter-spacing:0.2px;">${band.label}${yearLabel ? ` · ${yearLabel}` : ""}</span>
                 </div>
-                <div style="padding:12px 0 4px;">
-                    <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:#334155;">Dominan: ${domComp}</div>
-                    <div style="background:#f8fafc;border-radius:6px;padding:8px;max-height:100px;overflow-y:auto;">
-                        ${compListHtml}
+                                <div
+                                    class="map-popup-kec-link"
+                                    data-kecamatan="${kecFilterValue.replace(/"/g, "&quot;")}"
+                                    title="Buka tab Sekolah: ${titleName.replace(/"/g, "&quot;")}"
+                                    style="color:white;font-weight:800;font-size:15px;line-height:1.25;text-shadow:0 1px 2px rgba(0,0,0,0.18);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1.5px;"
+                                >${titleName}</div>
+                                <div style="color:rgba(255,255,255,0.85);font-size:10px;margin-top:3px;font-weight:600;">
+                                    Klik nama → tab Sekolah
+                                </div>
+                                <div style="color:rgba(255,255,255,0.9);font-size:11px;margin-top:5px;font-weight:600;">
+                                    Total Sekolah <strong style="color:#fff;">${fmt(totalSekolah)}</strong>
+                                    · Area Cover <strong style="color:#fff;">${fmt(areaCover)}</strong> / ${fmt(totalAreaCover)}
+                                </div>
+                            </div>
+                            <div style="flex-shrink:0;background:rgba(0,0,0,0.22);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:8px 10px;text-align:center;min-width:52px;">
+                                <div style="color:white;font-weight:900;font-size:18px;line-height:1;">${pct}%</div>
+                                <div style="color:rgba(255,255,255,0.8);font-size:9px;font-weight:700;margin-top:2px;">SHARE</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding:12px 2px 6px;background:linear-gradient(180deg,#f8fafc 0%,#ffffff 40%);">
+                    <!-- Row 1: Total Sekolah | SP | Terealisasi | Real Eks -->
+                    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.05);">
+                        <tbody>
+                            <tr>
+                                ${metricCell("Total Sekolah", totalSekolah, "#0f172a", "#f8fafc", "#e2e8f0")}
+                                ${metricCell("SP", spExemplar, "#a16207", "#fffbeb", "#fef3c7")}
+                                ${metricCell("Terealisasi", sekolahRealisasi, "#0f172a", "#f8fafc", "#e2e8f0")}
+                                <td style="padding:10px 8px;text-align:center;background:#eff6ff;">
+                                    <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:4px;">Real Eks</div>
+                                    <div style="font-size:18px;font-weight:800;color:#1d4ed8;line-height:1;font-variant-numeric:tabular-nums;">${fmt(realExemplar)}</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- Row 2: Sumber Dana | Jenjang -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        ${miniTable(
+                            "Sumber Dana",
+                            "Jenis",
+                            "Sekolah",
+                            `
+                                <tr>
+                                    <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;font-size:12px;font-weight:600;color:#334155;">
+                                        <span style="display:inline-flex;align-items:center;gap:6px;">
+                                            <span style="width:7px;height:7px;border-radius:50%;background:#059669;display:inline-block;"></span>
+                                            BOS
+                                        </span>
+                                    </td>
+                                    <td style="padding:7px 8px;border-bottom:1px solid #f1f5f9;text-align:right;">
+                                        <span style="display:inline-block;min-width:28px;padding:2px 8px;border-radius:999px;background:#ecfdf5;color:#047857;font-size:12px;font-weight:800;">${fmt(sekolahBos)}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:7px 8px;font-size:12px;font-weight:600;color:#334155;">
+                                        <span style="display:inline-flex;align-items:center;gap:6px;">
+                                            <span style="width:7px;height:7px;border-radius:50%;background:#2563eb;display:inline-block;"></span>
+                                            Swadana
+                                        </span>
+                                    </td>
+                                    <td style="padding:7px 8px;text-align:right;">
+                                        <span style="display:inline-block;min-width:28px;padding:2px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:800;">${fmt(sekolahSwadana)}</span>
+                                    </td>
+                                </tr>
+                            `,
+                            "#059669",
+                        )}
+                        ${miniTable("Jenjang", "Jenjang", "Sekolah", jenjangRows, "#1d4ed8")}
                     </div>
                 </div>
             </div>
         `;
 
         layer.bindPopup(popupHtml, {
-            maxWidth: 300,
+            maxWidth: 390,
             className: "kecamatan-popup",
+        });
+
+        layer.on("popupopen", () => {
+            const link = document.querySelector(
+                ".kecamatan-popup .map-popup-kec-link",
+            );
+            if (!link || typeof onOpenSekolahByKecamatan !== "function") return;
+            link.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const kec =
+                    link.getAttribute("data-kecamatan") ||
+                    kecFilterValue ||
+                    "";
+                if (!kec) return;
+                onOpenSekolahByKecamatan(kec);
+            };
         });
     };
 
-    const geoStyle = (feature) => ({
-        fillColor: getColorForCompetitor(
-            feature.properties.dominant_competitor,
-        ),
-        weight: 2,
-        opacity: 1,
-        color: "white",
-        dashArray: "3",
-        fillOpacity: 0.6,
-    });
+    const geoStyle = (feature) => styleForFeature(feature);
 
     const pointToLayer = (feature, latlng) => {
-        const color = getColorForCompetitor(
-            feature.properties.dominant_competitor,
-        );
-        return L.marker(latlng, {
-            icon: L.divIcon({
-                html: `<div style="background-color:${color};width:28px;height:28px;border-radius:50%;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);opacity:0.9;"></div>`,
-                className: "custom-circle-marker",
-                iconSize: [28, 28],
-                iconAnchor: [14, 14],
-            }),
-        });
+        // Fallback Point tidak ditampilkan di Map Area Cover
+        return null;
     };
 
     return (
@@ -1269,7 +1582,7 @@ export function CompetitorChoroplethMap({ salesId, cabangId }) {
                                 width: 36,
                                 height: 36,
                                 border: "3px solid #e2e8f0",
-                                borderTopColor: "#ef4444",
+                                borderTopColor: "#64748b",
                                 borderRadius: "50%",
                                 animation: "spin 0.8s linear infinite",
                                 margin: "0 auto 10px",
@@ -1282,16 +1595,152 @@ export function CompetitorChoroplethMap({ salesId, cabangId }) {
                                 fontWeight: 500,
                             }}
                         >
-                            Memuat peta kompetitor...
+                            Memuat peta {unitLabel}...
                         </div>
+                    </div>
+                </div>
+            )}
+            {!loading && meta.kecamatan_count > 0 && (
+                <div
+                    style={{
+                        position: "absolute",
+                        bottom: 10,
+                        left: 10,
+                        zIndex: 500,
+                        background: "rgba(255,255,255,0.95)",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 6,
+                        padding: "5px 8px",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "#334155",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        whiteSpace: "nowrap",
+                    }}
+                >
+                    <span>
+                        <span style={{ color: "#64748b" }}>Share AC:</span>{" "}
+                        {meta.matched}/{meta.kecamatan_count}
+                    </span>
+                    <span style={{ width: 1, height: 12, background: "#e2e8f0" }} />
+                    {[
+                        { c: "#dc2626", t: "<25%" },
+                        { c: "#ea580c", t: "<50%" },
+                        { c: "#eab308", t: "<75%" },
+                        { c: "#16a34a", t: "≤100%" },
+                    ].map((item) => (
+                        <span
+                            key={item.t}
+                            style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                                fontWeight: 500,
+                            }}
+                        >
+                            <span
+                                style={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: 2,
+                                    background: item.c,
+                                    display: "inline-block",
+                                }}
+                            />
+                            {item.t}
+                        </span>
+                    ))}
+                </div>
+            )}
+            {!loading &&
+                meta.kecamatan_count > 0 &&
+                Number(meta.matched || 0) === 0 && (
+                    <div
+                        style={{
+                            position: "absolute",
+                            inset: 0,
+                            zIndex: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            pointerEvents: "none",
+                            padding: 16,
+                        }}
+                    >
+                        <div
+                            style={{
+                                background: "rgba(254,242,242,0.96)",
+                                border: "1px solid #fecaca",
+                                borderRadius: 8,
+                                padding: "10px 14px",
+                                maxWidth: 340,
+                                fontSize: 11,
+                                lineHeight: 1.45,
+                                color: "#991b1b",
+                                fontWeight: 600,
+                                boxShadow: "0 4px 14px rgba(127,29,29,0.12)",
+                            }}
+                        >
+                            Polygon kecamatan tidak ditemukan (0/
+                            {meta.kecamatan_count}). Pastikan file boundary ada di
+                            server:{" "}
+                            <code style={{ fontSize: 10 }}>
+                                public/geojson/indonesia-kecamatan-osm-32.json
+                            </code>
                     </div>
                 </div>
             )}
             <style>{`
                 @keyframes spin { to { transform: rotate(360deg); } }
-                .kecamatan-popup .leaflet-popup-content-wrapper { border-radius:12px!important; box-shadow:0 10px 40px rgba(0,0,0,0.15)!important; padding:0!important; overflow:hidden; }
-                .kecamatan-popup .leaflet-popup-content { margin:8px 20px 12px!important; font-family:'Inter','Segoe UI',sans-serif!important; }
-                .kecamatan-popup .leaflet-popup-close-button { color:white!important; top:6px!important; right:8px!important; z-index:10; }
+                .leaflet-container {
+                    width: 100% !important;
+                    height: 100% !important;
+                    background: #f1f5f9;
+                }
+                .leaflet-pane,
+                .leaflet-tile,
+                .leaflet-marker-icon,
+                .leaflet-marker-shadow,
+                .leaflet-tile-container,
+                .leaflet-pane > svg,
+                .leaflet-pane > canvas,
+                .leaflet-zoom-box,
+                .leaflet-image-layer,
+                .leaflet-layer {
+                    position: absolute !important;
+                    left: 0;
+                    top: 0;
+                }
+                .leaflet-tile {
+                    filter: inherit;
+                    visibility: inherit;
+                }
+                .kecamatan-popup .leaflet-popup-content-wrapper {
+                    border-radius: 14px !important;
+                    box-shadow: 0 16px 40px rgba(15,23,42,0.18) !important;
+                    padding: 0 !important;
+                    overflow: hidden;
+                    border: 1px solid rgba(148,163,184,0.25);
+                }
+                .kecamatan-popup .leaflet-popup-content {
+                    margin: 8px 20px 12px !important;
+                    font-family: 'Segoe UI', system-ui, sans-serif !important;
+                }
+                .kecamatan-popup .leaflet-popup-tip {
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.1) !important;
+                }
+                .kecamatan-popup .leaflet-popup-close-button {
+                    color: white !important;
+                    font-size: 18px !important;
+                    font-weight: 700 !important;
+                    top: 8px !important;
+                    right: 10px !important;
+                    z-index: 10;
+                    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+                }
             `}</style>
             <MapContainer
                 center={[-2.5, 118.0]}
@@ -1304,6 +1753,7 @@ export function CompetitorChoroplethMap({ salesId, cabangId }) {
                 maxBoundsViscosity={1.0}
                 style={{ height: "100%", width: "100%", zIndex: 1 }}
             >
+                <InvalidateMapSize deps={[geoKey, loading, meta.matched]} />
                 <TileLayer
                     attribution='&copy; <a href="https://carto.com/">Carto</a>'
                     url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
@@ -1670,6 +2120,660 @@ export function CompositionCard({ title, data }) {
         </Card>
     );
 }
+
+/* ── TOP 10 PRIORITY SCHOOL / KECAMATAN ── */
+export function PrioritySchoolsCard({
+    schools = [],
+    year,
+    mode = "school",
+    showAktivitas = false,
+    kegiatanSales = [],
+}) {
+    const priorityYear = year || new Date().getFullYear();
+    const isKecamatan = mode === "kecamatan";
+    const isCabang = mode === "cabang";
+    const isAggMode = isKecamatan || isCabang;
+    const [rankBy, setRankBy] = useState("siswa");
+    const statusStyle = (status) => {
+        if (status === "Tahan") return { bg: "#dcfce7", fg: "#16a34a" };
+        if (status === "Rebut") return { bg: "#dbeafe", fg: "#2563eb" };
+        return { bg: "#f1f5f9", fg: "#64748b" };
+    };
+    const activityColor = (label) => {
+        const map = {
+            Pendekatan: "#64748b",
+            Promosi: "#0d9488",
+            SP: "#1d4ed8",
+            Faktur: "#16a34a",
+            Penagihan: "#f59e0b",
+            Gagal: "#dc2626",
+        };
+        return map[label] || "#64748b";
+    };
+    const th = {
+        padding: "4px 6px",
+        color: T.slate,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+    };
+    const tdNum = (color) => ({
+        padding: "4px 6px",
+        textAlign: "right",
+        fontWeight: 700,
+        color: color || T.text,
+        whiteSpace: "nowrap",
+    });
+
+    const normalizeSchoolName = (name) =>
+        String(name || "")
+            .toUpperCase()
+            .replace(/\s+/g, " ")
+            .trim();
+
+    const rankOptions = [
+        { key: "siswa", label: "Siswa Area Cover" },
+        { key: "total_siswa", label: "Total Siswa" },
+        { key: "total_sekolah", label: "Total Sekolah" },
+        { key: "area_cover", label: "Sekolah Area Cover" },
+        { key: "potensi", label: "Potensi" },
+        { key: "kegiatan_count", label: "Jumlah Kegiatan" },
+        { key: "sp", label: `SP ${priorityYear}` },
+        { key: "realisasi", label: `Real ${priorityYear}` },
+    ];
+
+    const enrichedSchools = useMemo(() => {
+        if (!showAktivitas || isAggMode) return schools || [];
+        const nameToActs = {};
+        const idToActs = {};
+
+        (kegiatanSales || []).forEach((k) => {
+            const akt = String(k.aktivitas || "").trim();
+            if (!akt) return;
+            const cid = k.customer_id;
+            if (cid) {
+                if (!idToActs[cid]) idToActs[cid] = {};
+                idToActs[cid][akt] = (idToActs[cid][akt] || 0) + 1;
+            }
+            const n = normalizeSchoolName(k.customer_name);
+            if (n) {
+                if (!nameToActs[n]) nameToActs[n] = {};
+                nameToActs[n][akt] = (nameToActs[n][akt] || 0) + 1;
+            }
+        });
+
+        return (schools || []).map((row) => {
+            if (row.activityList) return row;
+            const byId = row.id ? idToActs[row.id] : null;
+            const byName = nameToActs[normalizeSchoolName(row.name)];
+            const acts = byId || byName || {};
+            const activityList = Object.entries(acts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([label, count]) => ({ label, count }));
+            return { ...row, activityList };
+        });
+    }, [schools, kegiatanSales, showAktivitas, isAggMode]);
+
+    const displaySchools = useMemo(() => {
+        if (!isKecamatan) return enrichedSchools;
+        const key = rankBy;
+        return [...enrichedSchools]
+            .sort(
+                (a, b) =>
+                    (Number(b?.[key]) || 0) - (Number(a?.[key]) || 0) ||
+                    String(a?.name || "").localeCompare(String(b?.name || ""), "id"),
+            )
+            .slice(0, 10);
+    }, [enrichedSchools, isKecamatan, rankBy]);
+
+    const rankLabel =
+        rankOptions.find((o) => o.key === rankBy)?.label || "Siswa Area Cover";
+
+    const title = isCabang
+        ? "Top 10 Cabang"
+        : isKecamatan
+          ? "Top 10 Kecamatan"
+          : "Top 10 Priority School";
+    const subtitle = isCabang
+        ? "Prioritas per cabang (Area Cover BOS)"
+        : isKecamatan
+          ? `Urut: ${rankLabel} terbanyak`
+          : showAktivitas
+            ? "Sekolah Prioritas · dengan ringkasan aktivitas"
+            : "Sekolah Prioritas";
+    const nameHeader = isCabang
+        ? "NAMA CABANG"
+        : isKecamatan
+          ? "NAMA KECAMATAN"
+          : "NAMA SEKOLAH";
+    const emptyLabel = isCabang
+        ? "Belum ada data cabang"
+        : isKecamatan
+          ? "Belum ada data kecamatan"
+          : "Belum ada data priority school";
+    const headerIcon = isCabang
+        ? "bi bi-building"
+        : isKecamatan
+          ? "bi bi-geo-alt-fill"
+          : "bi bi-star-fill";
+
+    return (
+        <div
+            style={{
+                ...S.card,
+                padding: 0,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                flex: 1,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                border: "1px solid #f1f5f9",
+            }}
+        >
+            <div
+                style={{
+                    padding: "12px 14px",
+                    borderBottom: `1px solid ${T.border}`,
+                    background: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                }}
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        minWidth: 0,
+                    }}
+                >
+                    <div
+                        style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: 6,
+                            background: "#fef3c7",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                        }}
+                    >
+                        <i
+                            className={headerIcon}
+                            style={{ fontSize: 12, color: "#f59e0b" }}
+                        />
+                    </div>
+                    <div>
+                        <div
+                            style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: T.text,
+                            }}
+                        >
+                            {title}
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 9.5,
+                                color: T.slate,
+                                marginTop: 1,
+                            }}
+                        >
+                            {subtitle}
+                        </div>
+                    </div>
+                </div>
+                {isKecamatan && (
+                    <label
+                        style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 10,
+                            color: T.slate,
+                            fontWeight: 600,
+                        }}
+                    >
+                        Ranking by
+                        <select
+                            value={rankBy}
+                            onChange={(e) => setRankBy(e.target.value)}
+                            style={{
+                                fontSize: 11,
+                                padding: "5px 28px 5px 8px",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 6,
+                                background: "#f8fafc",
+                                color: T.text,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                outline: "none",
+                            }}
+                        >
+                            {rankOptions.map((o) => (
+                                <option key={o.key} value={o.key}>
+                                    {o.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
+            </div>
+
+            {displaySchools.length > 0 ? (
+                <div style={{ overflowX: "auto" }}>
+                    <table
+                        style={{
+                            width: "100%",
+                            borderCollapse: "collapse",
+                            textAlign: "left",
+                            fontSize: 10,
+                        }}
+                    >
+                        <thead>
+                            {isKecamatan ? (
+                                <>
+                                    <tr
+                                        style={{
+                                            background: "#f8fafc",
+                                            borderBottom: `1px solid ${T.border}`,
+                                        }}
+                                    >
+                                        <th
+                                            rowSpan={2}
+                                            style={{
+                                                ...th,
+                                                width: 36,
+                                                textAlign: "center",
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            NO
+                                        </th>
+                                        <th
+                                            rowSpan={2}
+                                            style={{
+                                                ...th,
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            {nameHeader}
+                                        </th>
+                                        <th
+                                            colSpan={2}
+                                            style={{
+                                                ...th,
+                                                textAlign: "center",
+                                                background: "#f1f5f9",
+                                            }}
+                                        >
+                                            SEKOLAH
+                                        </th>
+                                        <th
+                                            colSpan={3}
+                                            style={{
+                                                ...th,
+                                                textAlign: "center",
+                                                background: "#eff6ff",
+                                                color: T.blue,
+                                            }}
+                                        >
+                                            AREA COVER
+                                        </th>
+                                        <th
+                                            rowSpan={2}
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            JUMLAH
+                                            <br />
+                                            KEGIATAN
+                                        </th>
+                                        <th
+                                            rowSpan={2}
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            SP {priorityYear}
+                                        </th>
+                                        <th
+                                            rowSpan={2}
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                verticalAlign: "middle",
+                                            }}
+                                        >
+                                            REAL {priorityYear}
+                                        </th>
+                                    </tr>
+                                    <tr
+                                        style={{
+                                            background: "#f8fafc",
+                                            borderBottom: `2px solid ${T.border}`,
+                                        }}
+                                    >
+                                        <th
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                background: "#f1f5f9",
+                                            }}
+                                        >
+                                            Sekolah
+                                        </th>
+                                        <th
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                background: "#f1f5f9",
+                                            }}
+                                        >
+                                            Siswa
+                                        </th>
+                                        <th
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                background: "#eff6ff",
+                                            }}
+                                        >
+                                            Sekolah
+                                        </th>
+                                        <th
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                background: "#eff6ff",
+                                            }}
+                                        >
+                                            Siswa
+                                        </th>
+                                        <th
+                                            style={{
+                                                ...th,
+                                                textAlign: "right",
+                                                background: "#eff6ff",
+                                            }}
+                                        >
+                                            Potensi
+                                        </th>
+                                    </tr>
+                                </>
+                            ) : (
+                                <tr
+                                    style={{
+                                        background: "#f8fafc",
+                                        borderBottom: `2px solid ${T.border}`,
+                                    }}
+                                >
+                                    <th
+                                        style={{
+                                            ...th,
+                                            width: 40,
+                                            textAlign: "center",
+                                        }}
+                                    >
+                                        NO
+                                    </th>
+                                    <th style={th}>{nameHeader}</th>
+                                    {!isAggMode && <th style={th}>JENJANG</th>}
+                                    <th style={{ ...th, textAlign: "right" }}>
+                                        JUMLAH SISWA
+                                    </th>
+                                    <th style={{ ...th, textAlign: "right" }}>
+                                        {isAggMode ? "POTENSI" : "POTENSI EKS"}
+                                    </th>
+                                    {!isAggMode && <th style={th}>STATUS</th>}
+                                    {showAktivitas && !isAggMode && (
+                                        <th style={th}>AKTIVITAS</th>
+                                    )}
+                                    <th style={{ ...th, textAlign: "right" }}>
+                                        SP {priorityYear}
+                                    </th>
+                                    <th style={{ ...th, textAlign: "right" }}>
+                                        REAL {priorityYear}
+                                    </th>
+                                </tr>
+                            )}
+                        </thead>
+                        <tbody>
+                            {displaySchools.map((row, idx) => {
+                                const st = statusStyle(row.status);
+                                const potensi = isAggMode
+                                    ? Number(row.potensi || 0)
+                                    : Number(row.potensi_swa || 0) +
+                                      Number(row.potensi_bos || 0);
+                                const activityList = row.activityList || [];
+                                if (isKecamatan) {
+                                    return (
+                                        <tr
+                                            key={row.id || row.name || idx}
+                                            style={{
+                                                borderBottom: `1px solid ${T.border}`,
+                                            }}
+                                        >
+                                            <td
+                                                style={{
+                                                    padding: "4px 6px",
+                                                    textAlign: "center",
+                                                    color: T.slate,
+                                                }}
+                                            >
+                                                {idx + 1}
+                                            </td>
+                                            <td
+                                                style={{
+                                                    padding: "4px 6px",
+                                                    fontWeight: 700,
+                                                    color: T.text,
+                                                }}
+                                            >
+                                                {row.name}
+                                            </td>
+                                            <td style={tdNum()}>
+                                                {Number(
+                                                    row.total_sekolah || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum()}>
+                                                {Number(
+                                                    row.total_siswa || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum(T.blue)}>
+                                                {Number(
+                                                    row.area_cover || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum(T.blue)}>
+                                                {Number(
+                                                    row.siswa || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum("#059669")}>
+                                                {potensi.toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum("#7c3aed")}>
+                                                {Number(
+                                                    row.kegiatan_count || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum("#d97706")}>
+                                                {Number(
+                                                    row.sp || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                            <td style={tdNum("#2563eb")}>
+                                                {Number(
+                                                    row.realisasi || 0,
+                                                ).toLocaleString("id-ID")}
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+                                return (
+                                    <tr
+                                        key={row.id || idx}
+                                        style={{
+                                            borderBottom: `1px solid ${T.border}`,
+                                        }}
+                                    >
+                                        <td
+                                            style={{
+                                                padding: "4px 6px",
+                                                textAlign: "center",
+                                                color: T.slate,
+                                            }}
+                                        >
+                                            {idx + 1}
+                                        </td>
+                                        <td
+                                            style={{
+                                                padding: "4px 6px",
+                                                fontWeight: 700,
+                                                color: T.text,
+                                            }}
+                                        >
+                                            {row.name}
+                                        </td>
+                                        {!isAggMode && (
+                                            <td
+                                                style={{
+                                                    padding: "4px 6px",
+                                                    color: T.slate,
+                                                }}
+                                            >
+                                                {row.jenjang}
+                                            </td>
+                                        )}
+                                        <td style={tdNum()}>
+                                            {Number(
+                                                row.siswa || 0,
+                                            ).toLocaleString("id-ID")}
+                                        </td>
+                                        <td style={tdNum("#059669")}>
+                                            {potensi.toLocaleString("id-ID")}
+                                        </td>
+                                        {!isAggMode && (
+                                            <td style={{ padding: "4px 6px" }}>
+                                                <span
+                                                    style={{
+                                                        padding: "2px 6px",
+                                                        borderRadius: 4,
+                                                        fontSize: 9,
+                                                        fontWeight: 600,
+                                                        background: st.bg,
+                                                        color: st.fg,
+                                                    }}
+                                                >
+                                                    {row.status}
+                                                </span>
+                                            </td>
+                                        )}
+                                        {showAktivitas && !isAggMode && (
+                                            <td
+                                                style={{
+                                                    padding: "4px 6px",
+                                                    maxWidth: 220,
+                                                }}
+                                            >
+                                                {activityList.length > 0 ? (
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            flexWrap: "wrap",
+                                                            gap: 4,
+                                                        }}
+                                                    >
+                                                        {activityList.map(
+                                                            (a) => (
+                                                                <span
+                                                                    key={
+                                                                        a.label
+                                                                    }
+                                                                    style={{
+                                                                        display:
+                                                                            "inline-flex",
+                                                                        alignItems:
+                                                                            "center",
+                                                                        gap: 3,
+                                                                        padding:
+                                                                            "1px 6px",
+                                                                        borderRadius: 4,
+                                                                        fontSize: 9,
+                                                                        fontWeight: 700,
+                                                                        background: `${activityColor(a.label)}18`,
+                                                                        color: activityColor(
+                                                                            a.label,
+                                                                        ),
+                                                                        whiteSpace:
+                                                                            "nowrap",
+                                                                    }}
+                                                                >
+                                                                    {a.label}{" "}
+                                                                    {a.count}
+                                                                </span>
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span
+                                                        style={{
+                                                            color: "#94a3b8",
+                                                        }}
+                                                    >
+                                                        —
+                                                    </span>
+                                                )}
+                                            </td>
+                                        )}
+                                        <td style={tdNum("#d97706")}>
+                                            {Number(row.sp || 0).toLocaleString(
+                                                "id-ID",
+                                            )}
+                                        </td>
+                                        <td style={tdNum("#2563eb")}>
+                                            {Number(
+                                                row.realisasi || 0,
+                                            ).toLocaleString("id-ID")}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div
+                    style={{
+                        flex: 1,
+                        padding: 16,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#94a3b8",
+                        fontSize: 12,
+                        minHeight: 120,
+                    }}
+                >
+                    {emptyLabel}
+                </div>
+            )}
+        </div>
+    );
+}
+
 /* ── BADGE ── */
 export function Badge({ label, bg, color }) {
     return (

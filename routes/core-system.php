@@ -19,9 +19,13 @@ Route::prefix('monitoring')->name('monitoring.')->group(function () {
     Route::get('/peta',                   [MonitoringController::class, 'peta'])->name('peta');
     Route::get('/sekolah',                [MonitoringController::class, 'sekolah'])->name('sekolah');
     Route::get('/sekolah/{id}/detail',    [MonitoringController::class, 'showSekolah'])->name('sekolah.show');
+    Route::get('/dana-bos',               [MonitoringController::class, 'danaBos'])->name('dana-bos');
+    Route::get('/dana-bos/segmen-children', [MonitoringController::class, 'danaBosSegmenChildren'])->name('dana-bos.segmen-children');
+    Route::get('/daftar-isi',             [MonitoringController::class, 'daftarIsi'])->name('daftar-isi');
     
     // Import Routes
     Route::get('/import',                 [ImportController::class, 'index'])->name('import');
+    Route::get('/riwayat-data',           [ImportController::class, 'history'])->name('riwayat-data');
     Route::post('/import',                [ImportController::class, 'store'])->name('import.store');
     Route::post('/import/report',         [ImportController::class, 'storeReport'])->name('import.report.store');
     Route::post('/import/report/bulk',    [ImportController::class, 'storeBulkReport'])->name('import.report.bulk');
@@ -30,6 +34,7 @@ Route::prefix('monitoring')->name('monitoring.')->group(function () {
     // Pengaturan Route
     Route::get('/pengaturan',             [MonitoringController::class, 'pengaturan'])->name('pengaturan');
     Route::put('/pengaturan/sales-score-weights', [MonitoringController::class, 'updateSalesScoreWeights'])->name('pengaturan.sales-score-weights');
+    Route::put('/pengaturan/school-grade-thresholds', [MonitoringController::class, 'updateSchoolGradeThresholds'])->name('pengaturan.school-grade-thresholds');
 
     Route::get('/uncovered-customers',    [MonitoringController::class, 'uncoveredCustomers'])->name('uncovered-customers');
     Route::get('/area-kosong',            [MonitoringController::class, 'areaKosong'])->name('area-kosong');
@@ -76,6 +81,7 @@ Route::prefix('monitoring')->name('monitoring.')->group(function () {
         Route::get('/sales-jenjang-kecamatan', [MonitoringController::class, 'detailSalesJenjangKecamatanArea'])->name('sales-jenjang-kecamatan');
         Route::get('/komposisi-jenjang',  [MonitoringController::class, 'detailKomposisiJenjangArea'])->name('komposisi-jenjang');
         Route::get('/kompetitor',         [MonitoringController::class, 'detailKompetitorArea'])->name('kompetitor');
+        Route::get('/trl-detail',         [MonitoringController::class, 'detailTrlArea'])->name('trl-detail');
     });
 
     // Detail Routes (per Cabang)

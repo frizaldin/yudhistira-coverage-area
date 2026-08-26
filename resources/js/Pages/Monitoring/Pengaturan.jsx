@@ -575,12 +575,319 @@ function SalesScoreWeightsForm({
     );
 }
 
+function SchoolGradeThresholdsForm({ initialThresholds, canEdit, status }) {
+    const defaults = {
+        D: { min: 0, max: 100 },
+        C: { min: 101, max: 300 },
+        B: { min: 301, max: 500 },
+        A: { min: 501, max: 1000 },
+    };
+    const initial = { ...defaults };
+    ["D", "C", "B", "A"].forEach((grade) => {
+        if (initialThresholds?.[grade]) {
+            initial[grade] = {
+                min: initialThresholds[grade].min ?? defaults[grade].min,
+                max: initialThresholds[grade].max ?? defaults[grade].max,
+            };
+        }
+    });
+
+    const { data, setData, put, errors, processing, recentlySuccessful } =
+        useForm({
+            thresholds: initial,
+        });
+
+    const setRange = (grade, field, value) => {
+        setData("thresholds", {
+            ...data.thresholds,
+            [grade]: {
+                ...data.thresholds[grade],
+                [field]: value === "" ? "" : value,
+            },
+        });
+    };
+
+    const resetDefault = () => {
+        setData("thresholds", { ...defaults });
+    };
+
+    const submit = (e) => {
+        e.preventDefault();
+        if (!canEdit) return;
+        put(route("monitoring.pengaturan.school-grade-thresholds"), {
+            preserveScroll: true,
+        });
+    };
+
+    const aMax = parseInt(data.thresholds?.A?.max, 10);
+    const aPlusLabel = Number.isFinite(aMax)
+        ? `> ${aMax.toLocaleString("id-ID")} siswa`
+        : "> max Grade A";
+
+    const rows = [
+        { grade: "D", hint: "Paling kecil" },
+        { grade: "C", hint: "Harus mulai max D + 1" },
+        { grade: "B", hint: "Harus mulai max C + 1" },
+        { grade: "A", hint: "Harus mulai max B + 1" },
+    ];
+
+    return (
+        <div style={{ ...S.card, padding: "20px" }}>
+            <div
+                style={{
+                    marginBottom: "16px",
+                    paddingBottom: "12px",
+                    borderBottom: `1px solid ${T.border}`,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
+                }}
+            >
+                <div>
+                    <h2
+                        style={{
+                            fontSize: "15px",
+                            fontWeight: 700,
+                            color: T.text,
+                            margin: 0,
+                        }}
+                    >
+                        Grade Sekolah (berdasarkan Total Siswa)
+                    </h2>
+                    <p
+                        style={{
+                            fontSize: "11px",
+                            color: T.slate,
+                            margin: "4px 0 0 0",
+                        }}
+                    >
+                        Rentang min–max inklusif, tanpa overlap. Grade{" "}
+                        <strong>A+</strong> otomatis untuk sekolah dengan siswa
+                        di atas max Grade A.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={resetDefault}
+                    disabled={!canEdit || processing}
+                    style={{
+                        ...S.button,
+                        background: "#f1f5f9",
+                        color: T.text,
+                        border: `1px solid ${T.border}`,
+                        opacity: !canEdit ? 0.5 : 1,
+                    }}
+                >
+                    Reset default
+                </button>
+            </div>
+
+            {!canEdit && (
+                <div
+                    style={{
+                        marginBottom: 12,
+                        padding: "8px 12px",
+                        background: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: 8,
+                        fontSize: 11,
+                        color: "#92400e",
+                    }}
+                >
+                    Hanya user level nasional yang dapat mengubah ketentuan
+                    grade.
+                </div>
+            )}
+
+            <form
+                onSubmit={submit}
+                style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                            "repeat(auto-fit, minmax(200px, 1fr))",
+                        gap: 12,
+                    }}
+                >
+                    {rows.map(({ grade, hint }) => (
+                        <div
+                            key={grade}
+                            style={{
+                                padding: 12,
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 8,
+                                background: "#f8fafc",
+                            }}
+                        >
+                            <div
+                                style={{
+                                    fontSize: 13,
+                                    fontWeight: 800,
+                                    color: T.text,
+                                    marginBottom: 4,
+                                }}
+                            >
+                                Grade {grade}
+                            </div>
+                            <div
+                                style={{
+                                    fontSize: 10,
+                                    color: T.slate,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                {hint}
+                            </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                }}
+                            >
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    style={{ ...S.input, flex: 1 }}
+                                    value={data.thresholds[grade]?.min ?? ""}
+                                    disabled={!canEdit || processing}
+                                    onChange={(e) =>
+                                        setRange(grade, "min", e.target.value)
+                                    }
+                                    required
+                                />
+                                <span
+                                    style={{
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: T.slate,
+                                    }}
+                                >
+                                    –
+                                </span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    style={{ ...S.input, flex: 1 }}
+                                    value={data.thresholds[grade]?.max ?? ""}
+                                    disabled={!canEdit || processing}
+                                    onChange={(e) =>
+                                        setRange(grade, "max", e.target.value)
+                                    }
+                                    required
+                                />
+                            </div>
+                            {(errors[`thresholds.${grade}.min`] ||
+                                errors[`thresholds.${grade}.max`]) && (
+                                <div
+                                    style={{
+                                        fontSize: 11,
+                                        color: T.red,
+                                        marginTop: 4,
+                                    }}
+                                >
+                                    {errors[`thresholds.${grade}.min`] ||
+                                        errors[`thresholds.${grade}.max`]}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+
+                    <div
+                        style={{
+                            padding: 12,
+                            border: "1px solid #ddd6fe",
+                            borderRadius: 8,
+                            background: "#f5f3ff",
+                        }}
+                    >
+                        <div
+                            style={{
+                                fontSize: 13,
+                                fontWeight: 800,
+                                color: "#5b21b6",
+                                marginBottom: 4,
+                            }}
+                        >
+                            Grade A+
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 10,
+                                color: T.slate,
+                                marginBottom: 8,
+                            }}
+                        >
+                            Otomatis (tidak diedit)
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 14,
+                                fontWeight: 800,
+                                color: "#5b21b6",
+                            }}
+                        >
+                            {aPlusLabel}
+                        </div>
+                    </div>
+                </div>
+
+                {errors.thresholds && (
+                    <div style={{ fontSize: 11, color: T.red }}>
+                        {errors.thresholds}
+                    </div>
+                )}
+
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        marginTop: 4,
+                    }}
+                >
+                    <button
+                        type="submit"
+                        style={{
+                            ...S.button,
+                            background: T.purple,
+                            opacity: processing || !canEdit ? 0.6 : 1,
+                        }}
+                        disabled={processing || !canEdit}
+                    >
+                        <i className="bi bi-save" /> Simpan Grade
+                    </button>
+                    {recentlySuccessful &&
+                        status === "school-grade-thresholds-updated" && (
+                            <span
+                                style={{
+                                    fontSize: 11,
+                                    color: T.green,
+                                    fontWeight: 600,
+                                }}
+                            >
+                                Ketentuan grade berhasil disimpan.
+                            </span>
+                        )}
+                </div>
+            </form>
+        </div>
+    );
+}
+
 export default function Pengaturan({
     activeNav = "setting",
     status,
     salesScoreWeights = {},
     salesScoreWeightLabels = {},
     canEditSalesScoreWeights = false,
+    schoolGradeThresholds = {},
+    canEditSchoolGradeThresholds = false,
 }) {
     const { auth } = usePage().props;
     const user = auth.user;
@@ -648,6 +955,12 @@ export default function Pengaturan({
                     initialWeights={salesScoreWeights}
                     labels={salesScoreWeightLabels}
                     canEdit={canEditSalesScoreWeights}
+                    status={status}
+                />
+
+                <SchoolGradeThresholdsForm
+                    initialThresholds={schoolGradeThresholds}
+                    canEdit={canEditSchoolGradeThresholds}
                     status={status}
                 />
             </div>

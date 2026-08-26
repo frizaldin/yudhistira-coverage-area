@@ -16,6 +16,15 @@ class ImportController extends Controller
         ]);
     }
 
+    public function history()
+    {
+        return Inertia::render('Monitoring/RiwayatData', [
+            'activeNav' => 'riwayat-data',
+            'imports' => \App\Services\ImportHistoryService::paginate(40),
+            'lastImport' => \App\Services\ImportHistoryService::latest(),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -84,6 +93,16 @@ class ImportController extends Controller
                 }
             }
             DB::commit();
+            try {
+                \App\Services\ImportHistoryService::record(
+                    $file->getClientOriginalName(),
+                    $type,
+                    'yearly',
+                    'success'
+                );
+            } catch (\Throwable $logEx) {
+                Log::warning('Gagal mencatat riwayat import CSV: ' . $logEx->getMessage());
+            }
             return back()->with('success', "Berhasil memproses $insertedCount baris data $type.");
         } catch (\Exception $e) {
             DB::rollBack();
@@ -95,7 +114,7 @@ class ImportController extends Controller
     public function storeReport(Request $request)
     {
         $request->validate([
-            'type' => 'required|in:rekap_kota,rekap_ac,rjs,rjs2,tar,marketshare_kota,marketshare_kec,data_cabang,data_customer_cabang,aktivitas_sales',
+            'type' => 'required|in:rekap_kota,rekap_ac,rjs,rjs2,tar,marketshare_kota,marketshare_kec,data_cabang,data_customer_cabang,aktivitas_sales,master_dapodik',
             'file' => 'required|file|mimes:xls,xlsx|max:20480' // 20MB max
         ]);
 
@@ -162,6 +181,8 @@ class ImportController extends Controller
                 \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\DataCabangImport($batch), $file);
             } elseif ($type === 'data_customer_cabang') {
                 \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\DataCustomerCabangImport($batch, $cabangId, $areaId), $file);
+            } elseif ($type === 'master_dapodik') {
+                \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\MasterDapodikImport($batch), $file);
             } elseif ($type === 'aktivitas_sales') {
                 \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\AktivitasSalesPerCustomerImport(), $file);
             }

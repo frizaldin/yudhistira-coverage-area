@@ -576,6 +576,14 @@ export default function Import() {
                             routeStore={route('monitoring.import.report.store')}
                             accept=".xls, .xlsx"
                         />
+                        <ImportCard 
+                            title="Master Dapodik (Semua Sekolah)" 
+                            type="master_dapodik" 
+                            description="File: m_dapodik.xlsx — master seluruh sekolah" 
+                            columns="Import ke customers (is_active=0 untuk sekolah baru)"
+                            routeStore={route('monitoring.import.report.store')}
+                            accept=".xls, .xlsx"
+                        />
                     </div>
                 </div>
             </div>

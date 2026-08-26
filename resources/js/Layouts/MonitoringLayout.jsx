@@ -55,6 +55,20 @@ const NAV_ITEMS = [
         icon: "bi-mortarboard-fill",
         routeName: "monitoring.sekolah",
     },
+    {
+        key: "dana-bos",
+        top: "Data",
+        bottom: "Dana BOS",
+        icon: "bi-cash-coin",
+        routeName: "monitoring.dana-bos",
+    },
+    {
+        key: "daftar-isi",
+        top: "Panduan",
+        bottom: "Daftar Isi",
+        icon: "bi-journal-bookmark-fill",
+        routeName: "monitoring.daftar-isi",
+    },
     /*
     {
         key: "uncovered-customers",
@@ -88,6 +102,14 @@ const NAV_ITEMS = [
         hideForLevels: ["area", "cabang", "sales"],
     },
     {
+        key: "riwayat-data",
+        top: "Data",
+        bottom: "Riwayat",
+        icon: "bi-clock-history",
+        routeName: "monitoring.riwayat-data",
+        hideForLevels: ["area", "cabang", "sales"],
+    },
+    {
         key: "report",
         top: "Report",
         bottom: "Sales Score",
@@ -104,7 +126,7 @@ const NAV_ITEMS = [
 ];
 
 export default function MonitoringLayout({ children, activeNav = "area" }) {
-    const { auth } = usePage().props;
+    const { auth, lastImport } = usePage().props;
     const userLevel = auth?.user?.level || "nasional";
 
     // Filter nav items based on user level
@@ -315,7 +337,53 @@ export default function MonitoringLayout({ children, activeNav = "area" }) {
             </aside>
 
             {/* ── MAIN ── */}
-            <main style={{ flex: 1, minWidth: 0, overflowX: "hidden" }}>
+            <main style={{ flex: 1, minWidth: 0, overflowX: "clip" }}>
+                {lastImport?.imported_at_label && (
+                    <div
+                        style={{
+                            background: "#eff6ff",
+                            borderBottom: "1px solid #bfdbfe",
+                            padding: "7px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            fontSize: 11.5,
+                            color: "#1e3a8a",
+                        }}
+                    >
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
+                            }}
+                        >
+                            <i
+                                className="bi bi-database-check"
+                                style={{ fontSize: 13, flexShrink: 0 }}
+                            />
+                            <span style={{ lineHeight: 1.35 }}>
+                                <strong>Data terbaru:</strong>{" "}
+                                {lastImport.imported_at_label}
+                            </span>
+                        </div>
+                        <Link
+                            href={route("monitoring.riwayat-data")}
+                            style={{
+                                color: "#1d4ed8",
+                                fontWeight: 700,
+                                textDecoration: "none",
+                                whiteSpace: "nowrap",
+                                fontSize: 11,
+                            }}
+                        >
+                            Lihat riwayat →
+                        </Link>
+                    </div>
+                )}
                 {children}
             </main>
         </div>

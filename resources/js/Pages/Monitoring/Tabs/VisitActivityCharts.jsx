@@ -1,33 +1,79 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { T, S, ConcentricActivityDonut, Donut } from "./SalesPerformanceShared";
+
+/** Warna + urutan tetap — sama di Grafik Kunjungan, Distribusi, Hasil Kunjungan */
+const ACTIVITY_ORDER = [
+    "Pendekatan",
+    "Promosi",
+    "SP",
+    "Faktur",
+    "Penagihan",
+    "Gagal",
+];
+const ACTIVITY_COLORS = {
+    Pendekatan: "#64748b",
+    Promosi: "#0d9488",
+    SP: "#1d4ed8",
+    Faktur: "#16a34a",
+    Penagihan: "#f59e0b",
+    Gagal: "#dc2626",
+};
+
+function normalizeActivityLabel(label) {
+    const raw = String(label || "").trim();
+    if (!raw) return "";
+    const hit = ACTIVITY_ORDER.find(
+        (k) => k.toLowerCase() === raw.toLowerCase(),
+    );
+    return hit || raw;
+}
 
 export default function VisitActivityCharts({
     kpiData,
     insights,
     openKegiatanFromChart,
     resultBreakdown = [],
+    listSekolah = [],
+    kegiatanSales = [],
+    activeAktivitasFilter = "",
 }) {
     const [visitHover, setVisitHover] = useState(null);
 
-    const activityColorMap = {
-        Pendekatan: "#1d4ed8",
-        SP: "#0d9488",
-        Faktur: "#f59e0b",
-        Gagal: "#dc2626",
-        Promosi: "#8b5cf6",
-        Penagihan: "#06b6d4",
-        "Tidak Diketahui": "#94a3b8",
-    };
-
     const monthlyActivities = kpiData?.monthlyActivities || [];
+
+    const activitySeries = useMemo(() => {
+        return ACTIVITY_ORDER.map((label) => ({
+            label,
+            color: ACTIVITY_COLORS[label],
+            values: monthlyActivities.map((m) => {
+                const hit = (m.breakdown || []).find(
+                    (x) =>
+                        normalizeActivityLabel(x.label) === label,
+                );
+                return Number(hit?.value) || 0;
+            }),
+        }));
+    }, [monthlyActivities]);
+
     const maxActivity = Math.max(
-        ...monthlyActivities.map((m) => m.count || 0),
         1,
+        ...activitySeries.flatMap((s) => s.values),
+        ...monthlyActivities.map((m) => m.count || 0),
     );
 
     const handleAktivitasClick = (item) => {
-        if (!item?.label || item.label === "Belum Ada") return;
-        openKegiatanFromChart?.(item.label);
+        const label =
+            typeof item === "string"
+                ? item
+                : String(item?.label || "").trim();
+        if (!label || label === "Belum Ada") return;
+        openKegiatanFromChart?.(label);
+        // Scroll ke tabel sekolah setelah filter diterapkan
+        requestAnimationFrame(() => {
+            document
+                .getElementById("sekolah-aktivitas-table")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
     };
 
     const totalVisits = monthlyActivities.reduce(
@@ -38,12 +84,108 @@ export default function VisitActivityCharts({
     const areaCover = Number(
         kpiData?.areaCover ?? insights?.totalAreaCover ?? 0,
     );
-    const activities = kpiData?.activityDistribution || [];
+
+    const activities = useMemo(() => {
+        // Samakan dengan tabel Sekolah & Aktivitas:
+        // distinct sekolah Area Cover per jenis aktivitas (customer_id atau nama)
+        const acSchools = (listSekolah || []).filter((s) => !!s.is_active);
+        if (acSchools.length > 0 && (kegiatanSales || []).length > 0) {
+            const normalizeSchoolName = (name) =>
+                String(name || "")
+                    .toUpperCase()
+                    .replace(/\s+/g, " ")
+                    .trim();
+            const rowsById = {};
+            const nameToId = {};
+            acSchools.forEach((s) => {
+                rowsById[s.id] = {};
+                const n = normalizeSchoolName(s.name);
+                if (n && nameToId[n] == null) nameToId[n] = s.id;
+            });
+
+            (kegiatanSales || []).forEach((k) => {
+                let schoolId = null;
+                const cid = k.customer_id;
+                if (cid && rowsById[cid]) {
+                    schoolId = cid;
+                } else {
+                    const n = normalizeSchoolName(k.customer_name);
+                    if (n && nameToId[n] != null) schoolId = nameToId[n];
+                }
+                if (!schoolId) return;
+                const akt = normalizeActivityLabel(k.aktivitas);
+                if (!akt || !ACTIVITY_ORDER.includes(akt)) return;
+                rowsById[schoolId][akt] = true;
+            });
+
+            return ACTIVITY_ORDER.map((label) => ({
+                label,
+                value: Object.values(rowsById).filter((m) => !!m[label])
+                    .length,
+                color: ACTIVITY_COLORS[label],
+            }));
+        }
+
+        const raw = kpiData?.activityDistribution || [];
+        return ACTIVITY_ORDER.map((label) => {
+            const hit = raw.find(
+                (a) => normalizeActivityLabel(a.label) === label,
+            );
+            return {
+                label,
+                value: Number(hit?.value) || 0,
+                color: ACTIVITY_COLORS[label],
+            };
+        });
+    }, [kpiData?.activityDistribution, listSekolah, kegiatanSales]);
+
+    const hasilBreakdown = useMemo(() => {
+        const raw = resultBreakdown || [];
+        return ACTIVITY_ORDER.map((label) => {
+            const hit = raw.find(
+                (a) => normalizeActivityLabel(a.label) === label,
+            );
+            return {
+                label,
+                value: Number(hit?.value) || 0,
+                color: ACTIVITY_COLORS[label],
+            };
+        });
+    }, [resultBreakdown]);
+
     const totalAkt = activities.reduce(
         (a, c) => a + (Number(c.value) || 0),
         0,
     );
     const hasActivityData = activities.length > 0;
+
+    // SVG chart geometry
+    const chartW = 320;
+    const chartH = 88;
+    const padL = 4;
+    const padR = 4;
+    const padT = 10;
+    const padB = 4;
+    const plotW = chartW - padL - padR;
+    const plotH = chartH - padT - padB;
+    const n = monthlyActivities.length;
+    const xAt = (i) =>
+        n <= 1 ? padL + plotW / 2 : padL + (i / (n - 1)) * plotW;
+    const yAt = (v) => padT + plotH - (v / maxActivity) * plotH;
+
+    /** Line chart tegak lurus (polyline), tanpa kurva */
+    const buildPath = (values) => {
+        if (!values.length) return "";
+        const pts = values.map((v, i) => ({
+            x: xAt(i),
+            y: yAt(v),
+        }));
+        return pts
+            .map((p, i) =>
+                `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`,
+            )
+            .join(" ");
+    };
 
     return (
         <div
@@ -92,7 +234,7 @@ export default function VisitActivityCharts({
                                     }}
                                 >
                                     <i
-                                        className="bi bi-bar-chart-fill"
+                                        className="bi bi-graph-up"
                                         style={{
                                             fontSize: 12,
                                             color: "#4f46e5",
@@ -116,8 +258,8 @@ export default function VisitActivityCharts({
                                             marginTop: 1,
                                         }}
                                     >
-                                        Tren kunjungan (aktivitas sales)
-                                        bulanan di tahun{" "}
+                                        Tren per aktivitas sales bulanan di
+                                        tahun{" "}
                                         {kpiData?.year ||
                                             new Date().getFullYear()}
                                     </div>
@@ -136,214 +278,358 @@ export default function VisitActivityCharts({
 
                         <div
                             style={{
-                                padding: "14px 16px 10px",
-                                display: "flex",
-                                alignItems: "flex-end",
-                                gap: 6,
+                                padding: "10px 12px 6px",
                                 position: "relative",
                                 overflow: "visible",
                             }}
                         >
-                            {monthlyActivities.map((m, i) => {
-                                const barH =
-                                    maxActivity > 0
-                                        ? Math.max(
-                                              (m.count / maxActivity) * 60,
-                                              m.count > 0 ? 6 : 2,
-                                          )
-                                        : 2;
-                                const isCurrentMonth =
-                                    i === new Date().getMonth();
-                                const isHovered = visitHover?.index === i;
-
-                                return (
+                            {activitySeries.length > 0 ? (
+                                <>
                                     <div
-                                        key={i}
                                         style={{
-                                            flex: 1,
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            alignItems: "center",
-                                            gap: 4,
                                             position: "relative",
-                                            cursor: "pointer",
+                                            width: "100%",
                                         }}
-                                        onMouseEnter={() =>
-                                            setVisitHover({
-                                                index: i,
-                                                month: m.month,
-                                                year: m.year,
-                                                count: m.count,
-                                                breakdown: m.breakdown || [],
-                                            })
-                                        }
-                                        onMouseLeave={() => setVisitHover(null)}
                                     >
-                                        {isHovered && (
-                                            <div
-                                                style={{
-                                                    position: "absolute",
-                                                    bottom: "100%",
-                                                    left: "50%",
-                                                    transform:
-                                                        "translateX(-50%)",
-                                                    marginBottom: 8,
-                                                    zIndex: 40,
-                                                    minWidth: 140,
-                                                    background: "#0f172a",
-                                                    color: "#fff",
-                                                    borderRadius: 8,
-                                                    padding: "8px 10px",
-                                                    boxShadow:
-                                                        "0 10px 25px rgba(15,23,42,0.25)",
-                                                    pointerEvents: "none",
-                                                    whiteSpace: "nowrap",
-                                                }}
-                                            >
+                                        <svg
+                                            viewBox={`0 0 ${chartW} ${chartH}`}
+                                            width="100%"
+                                            height={88}
+                                            style={{ display: "block", overflow: "visible" }}
+                                        >
+                                            {/* grid lines */}
+                                            {[0, 0.5, 1].map((t) => {
+                                                const y = yAt(maxActivity * t);
+                                                return (
+                                                    <line
+                                                        key={t}
+                                                        x1={padL}
+                                                        x2={chartW - padR}
+                                                        y1={y}
+                                                        y2={y}
+                                                        stroke="#e2e8f0"
+                                                        strokeWidth={1}
+                                                    />
+                                                );
+                                            })}
+                                            {activitySeries.map((series) => (
+                                                <path
+                                                    key={series.label}
+                                                    d={buildPath(series.values)}
+                                                    fill="none"
+                                                    stroke={series.color}
+                                                    strokeWidth={2}
+                                                    strokeLinejoin="round"
+                                                    strokeLinecap="round"
+                                                />
+                                            ))}
+                                            {activitySeries.map((series) =>
+                                                series.values.map((v, i) => (
+                                                    <circle
+                                                        key={`${series.label}-${i}`}
+                                                        cx={xAt(i)}
+                                                        cy={yAt(v)}
+                                                        r={
+                                                            visitHover?.index === i
+                                                                ? 3.5
+                                                                : 2.2
+                                                        }
+                                                        fill={series.color}
+                                                        stroke="#fff"
+                                                        strokeWidth={1}
+                                                    />
+                                                )),
+                                            )}
+                                        </svg>
+
+                                        {/* hover hit areas per month */}
+                                        <div
+                                            style={{
+                                                position: "absolute",
+                                                inset: 0,
+                                                display: "flex",
+                                            }}
+                                        >
+                                            {monthlyActivities.map((m, i) => {
+                                                const isHovered =
+                                                    visitHover?.index === i;
+                                                return (
+                                                    <div
+                                                        key={i}
+                                                        style={{
+                                                            flex: 1,
+                                                            position: "relative",
+                                                            cursor: "pointer",
+                                                        }}
+                                                        onMouseEnter={() =>
+                                                            setVisitHover({
+                                                                index: i,
+                                                                month: m.month,
+                                                                year: m.year,
+                                                                count: m.count,
+                                                                breakdown:
+                                                                    m.breakdown ||
+                                                                    [],
+                                                            })
+                                                        }
+                                                        onMouseLeave={() =>
+                                                            setVisitHover(null)
+                                                        }
+                                                    >
+                                                        {isHovered && (
+                                                            <div
+                                                                style={{
+                                                                    position:
+                                                                        "absolute",
+                                                                    bottom:
+                                                                        "100%",
+                                                                    left: "50%",
+                                                                    transform:
+                                                                        "translateX(-50%)",
+                                                                    marginBottom: 4,
+                                                                    zIndex: 40,
+                                                                    minWidth: 140,
+                                                                    background:
+                                                                        "#0f172a",
+                                                                    color: "#fff",
+                                                                    borderRadius: 8,
+                                                                    padding:
+                                                                        "8px 10px",
+                                                                    boxShadow:
+                                                                        "0 10px 25px rgba(15,23,42,0.25)",
+                                                                    pointerEvents:
+                                                                        "none",
+                                                                    whiteSpace:
+                                                                        "nowrap",
+                                                                }}
+                                                            >
+                                                                <div
+                                                                    style={{
+                                                                        fontSize: 10,
+                                                                        fontWeight: 700,
+                                                                        marginBottom: 6,
+                                                                        color: "#e2e8f0",
+                                                                    }}
+                                                                >
+                                                                    {m.month}
+                                                                    {m.year
+                                                                        ? ` ${m.year}`
+                                                                        : ""}{" "}
+                                                                    · Total{" "}
+                                                                    {m.count}
+                                                                </div>
+                                                                {(m.breakdown ||
+                                                                    [])
+                                                                    .length >
+                                                                0 ? (
+                                                                    (
+                                                                        m.breakdown ||
+                                                                        []
+                                                                    ).map(
+                                                                        (
+                                                                            b,
+                                                                            bi,
+                                                                        ) => {
+                                                                            const seriesColor =
+                                                                                activitySeries.find(
+                                                                                    (s) =>
+                                                                                        s.label ===
+                                                                                        b.label,
+                                                                                )
+                                                                                    ?.color ||
+                                                                                "#94a3b8";
+                                                                            return (
+                                                                                <div
+                                                                                    key={
+                                                                                        bi
+                                                                                    }
+                                                                                    style={{
+                                                                                        display:
+                                                                                            "flex",
+                                                                                        alignItems:
+                                                                                            "center",
+                                                                                        justifyContent:
+                                                                                            "space-between",
+                                                                                        gap: 12,
+                                                                                        fontSize: 10,
+                                                                                        marginBottom: 3,
+                                                                                    }}
+                                                                                >
+                                                                                    <span
+                                                                                        style={{
+                                                                                            display:
+                                                                                                "inline-flex",
+                                                                                            alignItems:
+                                                                                                "center",
+                                                                                            gap: 6,
+                                                                                        }}
+                                                                                    >
+                                                                                        <span
+                                                                                            style={{
+                                                                                                width: 7,
+                                                                                                height: 7,
+                                                                                                borderRadius: 2,
+                                                                                                background:
+                                                                                                    seriesColor,
+                                                                                                flexShrink: 0,
+                                                                                            }}
+                                                                                        />
+                                                                                        {
+                                                                                            b.label
+                                                                                        }
+                                                                                    </span>
+                                                                                    <strong>
+                                                                                        {
+                                                                                            b.value
+                                                                                        }
+                                                                                    </strong>
+                                                                                </div>
+                                                                            );
+                                                                        },
+                                                                    )
+                                                                ) : (
+                                                                    <div
+                                                                        style={{
+                                                                            fontSize: 10,
+                                                                            color: "#94a3b8",
+                                                                        }}
+                                                                    >
+                                                                        Tidak
+                                                                        ada
+                                                                        aktivitas
+                                                                    </div>
+                                                                )}
+                                                                <div
+                                                                    style={{
+                                                                        position:
+                                                                            "absolute",
+                                                                        left: "50%",
+                                                                        bottom: -5,
+                                                                        transform:
+                                                                            "translateX(-50%) rotate(45deg)",
+                                                                        width: 10,
+                                                                        height: 10,
+                                                                        background:
+                                                                            "#0f172a",
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* month labels */}
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            marginTop: 2,
+                                        }}
+                                    >
+                                        {monthlyActivities.map((m, i) => {
+                                            const isCurrentMonth =
+                                                i === new Date().getMonth();
+                                            const isHovered =
+                                                visitHover?.index === i;
+                                            return (
                                                 <div
+                                                    key={i}
                                                     style={{
-                                                        fontSize: 10,
-                                                        fontWeight: 700,
-                                                        marginBottom: 6,
-                                                        color: "#e2e8f0",
+                                                        flex: 1,
+                                                        textAlign: "center",
+                                                        fontSize: 9,
+                                                        color:
+                                                            isCurrentMonth ||
+                                                            isHovered
+                                                                ? "#4f46e5"
+                                                                : T.slate,
+                                                        fontWeight:
+                                                            isCurrentMonth ||
+                                                            isHovered
+                                                                ? 700
+                                                                : 500,
+                                                        borderTop: isCurrentMonth
+                                                            ? "2px solid #4f46e5"
+                                                            : "2px solid transparent",
+                                                        paddingTop: 2,
                                                     }}
                                                 >
                                                     {m.month}
-                                                    {m.year
-                                                        ? ` ${m.year}`
-                                                        : ""}{" "}
-                                                    · Total {m.count}
                                                 </div>
-                                                {(m.breakdown || []).length >
-                                                0 ? (
-                                                    (m.breakdown || []).map(
-                                                        (b, bi) => (
-                                                            <div
-                                                                key={bi}
-                                                                style={{
-                                                                    display:
-                                                                        "flex",
-                                                                    alignItems:
-                                                                        "center",
-                                                                    justifyContent:
-                                                                        "space-between",
-                                                                    gap: 12,
-                                                                    fontSize: 10,
-                                                                    marginBottom: 3,
-                                                                }}
-                                                            >
-                                                                <span
-                                                                    style={{
-                                                                        display:
-                                                                            "inline-flex",
-                                                                        alignItems:
-                                                                            "center",
-                                                                        gap: 6,
-                                                                    }}
-                                                                >
-                                                                    <span
-                                                                        style={{
-                                                                            width: 7,
-                                                                            height: 7,
-                                                                            borderRadius: 2,
-                                                                            background:
-                                                                                activityColorMap[
-                                                                                    b
-                                                                                        .label
-                                                                                ] ||
-                                                                                "#94a3b8",
-                                                                            flexShrink: 0,
-                                                                        }}
-                                                                    />
-                                                                    {b.label}
-                                                                </span>
-                                                                <strong>
-                                                                    {b.value}
-                                                                </strong>
-                                                            </div>
-                                                        ),
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* legend */}
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            flexWrap: "wrap",
+                                            gap: "6px 10px",
+                                            marginTop: 8,
+                                            paddingTop: 6,
+                                            borderTop: `1px solid ${T.border}`,
+                                        }}
+                                    >
+                                        {activitySeries.map((s) => (
+                                            <div
+                                                key={s.label}
+                                                onClick={() =>
+                                                    handleAktivitasClick(s)
+                                                }
+                                                title={`Filter sekolah: ${s.label}`}
+                                                style={{
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    gap: 5,
+                                                    fontSize: 9.5,
+                                                    color: T.text,
+                                                    fontWeight: 600,
+                                                    cursor: "pointer",
+                                                    borderRadius: 4,
+                                                    padding: "1px 3px",
+                                                    opacity: s.values.some(
+                                                        (v) => v > 0,
                                                     )
-                                                ) : (
-                                                    <div
-                                                        style={{
-                                                            fontSize: 10,
-                                                            color: "#94a3b8",
-                                                        }}
-                                                    >
-                                                        Tidak ada aktivitas
-                                                    </div>
-                                                )}
-                                                <div
+                                                        ? 1
+                                                        : 0.5,
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.background =
+                                                        "#f1f5f9";
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.background =
+                                                        "transparent";
+                                                }}
+                                            >
+                                                <span
                                                     style={{
-                                                        position: "absolute",
-                                                        left: "50%",
-                                                        bottom: -5,
-                                                        transform:
-                                                            "translateX(-50%) rotate(45deg)",
-                                                        width: 10,
-                                                        height: 10,
-                                                        background: "#0f172a",
+                                                        width: 14,
+                                                        height: 2.5,
+                                                        borderRadius: 2,
+                                                        background: s.color,
                                                     }}
                                                 />
+                                                {s.label}
                                             </div>
-                                        )}
-
-                                        <span
-                                            style={{
-                                                fontSize: 9.5,
-                                                fontWeight: 800,
-                                                color:
-                                                    m.count > 0
-                                                        ? isCurrentMonth ||
-                                                          isHovered
-                                                            ? "#4f46e5"
-                                                            : T.text
-                                                        : T.slate,
-                                            }}
-                                        >
-                                            {m.count > 0 ? m.count : ""}
-                                        </span>
-                                        <div
-                                            style={{
-                                                width: "100%",
-                                                maxWidth: 28,
-                                                height: barH,
-                                                borderRadius: "4px 4px 0 0",
-                                                background:
-                                                    isCurrentMonth || isHovered
-                                                        ? "linear-gradient(180deg, #4f46e5, #818cf8)"
-                                                        : m.count > 0
-                                                          ? "linear-gradient(180deg, #3b82f6, #93c5fd)"
-                                                          : "#f1f5f9",
-                                                transition:
-                                                    "height 0.6s ease, filter 0.2s",
-                                                filter: isHovered
-                                                    ? "brightness(1.12)"
-                                                    : "none",
-                                            }}
-                                        />
-                                        <span
-                                            style={{
-                                                fontSize: 9,
-                                                color:
-                                                    isCurrentMonth || isHovered
-                                                        ? "#4f46e5"
-                                                        : T.slate,
-                                                fontWeight:
-                                                    isCurrentMonth || isHovered
-                                                        ? 700
-                                                        : 500,
-                                                paddingTop: 2,
-                                                borderTop: isCurrentMonth
-                                                    ? "2px solid #4f46e5"
-                                                    : "2px solid transparent",
-                                            }}
-                                        >
-                                            {m.month}
-                                        </span>
+                                        ))}
                                     </div>
-                                );
-                            })}
+                                </>
+                            ) : (
+                                <div
+                                    style={{
+                                        padding: "24px 8px",
+                                        textAlign: "center",
+                                        fontSize: 11,
+                                        color: T.slate,
+                                    }}
+                                >
+                                    Belum ada breakdown aktivitas
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -408,7 +694,8 @@ export default function VisitActivityCharts({
                                         marginTop: 1,
                                     }}
                                 >
-                                    Tiap ring = aktivitas vs Area Cover
+                                    Tiap ring = sekolah unik Area Cover vs total AC
+                                    (aktivitas berulang di sekolah yang sama = 1)
                                 </div>
                             </div>
                         </div>
@@ -428,7 +715,7 @@ export default function VisitActivityCharts({
                                 size={110}
                                 ringWidth={11}
                                 gap={3}
-                                maxRings={5}
+                                maxRings={6}
                                 label={areaCover}
                                 sub="Area Cover"
                                 onRingClick={handleAktivitasClick}
@@ -438,7 +725,7 @@ export default function VisitActivityCharts({
                                     display: "flex",
                                     flexDirection: "column",
                                     gap: 6,
-                                    maxHeight: 110,
+                                    maxHeight: 140,
                                     overflowY: "auto",
                                     paddingRight: 4,
                                     flex: 1,
@@ -446,7 +733,7 @@ export default function VisitActivityCharts({
                                 }}
                             >
                                 {hasActivityData ? (
-                                    activities.slice(0, 5).map((item, idx) => {
+                                    activities.map((item, idx) => {
                                         const pct =
                                             areaCover > 0
                                                 ? (
@@ -456,11 +743,15 @@ export default function VisitActivityCharts({
                                                 : 0;
                                         return (
                                             <div
-                                                key={idx}
+                                                key={item.label || idx}
                                                 onClick={() =>
                                                     handleAktivitasClick(item)
                                                 }
-                                                title="Klik untuk lihat detail kegiatan"
+                                                title={
+                                                    Number(item.value) > 0
+                                                        ? `Filter sekolah: ${item.label}`
+                                                        : item.label
+                                                }
                                                 style={{
                                                     display: "flex",
                                                     alignItems: "center",
@@ -468,14 +759,38 @@ export default function VisitActivityCharts({
                                                     cursor: "pointer",
                                                     borderRadius: 4,
                                                     padding: "1px 2px",
+                                                    background:
+                                                        String(
+                                                            activeAktivitasFilter ||
+                                                                "",
+                                                        ).toLowerCase() ===
+                                                        String(
+                                                            item.label || "",
+                                                        ).toLowerCase()
+                                                            ? "#dbeafe"
+                                                            : "transparent",
+                                                    opacity:
+                                                        Number(item.value) > 0
+                                                            ? 1
+                                                            : 0.55,
                                                 }}
                                                 onMouseEnter={(e) => {
                                                     e.currentTarget.style.background =
                                                         "#f1f5f9";
                                                 }}
                                                 onMouseLeave={(e) => {
+                                                    const active =
+                                                        String(
+                                                            activeAktivitasFilter ||
+                                                                "",
+                                                        ).toLowerCase() ===
+                                                        String(
+                                                            item.label || "",
+                                                        ).toLowerCase();
                                                     e.currentTarget.style.background =
-                                                        "transparent";
+                                                        active
+                                                            ? "#dbeafe"
+                                                            : "transparent";
                                                 }}
                                             >
                                                 <div
@@ -622,14 +937,15 @@ export default function VisitActivityCharts({
                         }}
                     >
                         <Donut
-                            segments={resultBreakdown}
+                            segments={hasilBreakdown}
                             size={70}
                             ring={12}
-                            label={resultBreakdown.reduce(
+                            label={hasilBreakdown.reduce(
                                 (a, c) => a + (c.value || 0),
                                 0,
                             )}
                             sub="Aktivitas"
+                            onSegmentClick={handleAktivitasClick}
                         />
                         <div
                             style={{
@@ -640,16 +956,33 @@ export default function VisitActivityCharts({
                                 paddingRight: 4,
                             }}
                         >
-                            {(resultBreakdown || []).length > 0 ? (
-                                resultBreakdown.map((s, i) => (
+                            {hasilBreakdown.length > 0 ? (
+                                hasilBreakdown.map((s, i) => (
                                     <div
-                                        key={i}
+                                        key={s.label || i}
+                                        onClick={() =>
+                                            handleAktivitasClick(s)
+                                        }
+                                        title={`Filter sekolah: ${s.label}`}
                                         style={{
                                             display: "flex",
                                             justifyContent: "space-between",
                                             marginBottom: 6,
                                             fontSize: 11,
                                             gap: 8,
+                                            cursor: "pointer",
+                                            borderRadius: 4,
+                                            padding: "1px 2px",
+                                            opacity:
+                                                Number(s.value) > 0 ? 1 : 0.55,
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background =
+                                                "#f1f5f9";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background =
+                                                "transparent";
                                         }}
                                     >
                                         <div

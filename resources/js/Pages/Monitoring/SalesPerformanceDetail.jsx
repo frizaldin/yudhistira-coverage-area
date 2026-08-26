@@ -7,12 +7,12 @@ import {
     T, S, Card, Badge, Donut, StatCard, KecamatanChoroplethMap,
     CompetitorChoroplethMap, Bar, CompositionCard, FitBounds
 } from "./Tabs/SalesPerformanceShared";
-import DashboardTab from "./Tabs/DashboardTab";
+import DashboardTabSales from "./Tabs/DashboardTabSales";
 import CompetitorTab from "./Tabs/CompetitorTab";
-import KecamatanTab from "./Tabs/KecamatanTab";
-import SekolahTab from "./Tabs/SekolahTab";
+import KecamatanSalesTab from "./Tabs/KecamatanSalesTab";
+import SekolahTabSales from "./Tabs/SekolahTabSales";
 import KegiatanTab from "./Tabs/KegiatanTab";
-import AnalisisTab from "./Tabs/AnalisisTab";
+import ProspekTab from "./Tabs/ProspekTab";
 import { MapContainer, TileLayer, Marker, Popup, useMap, GeoJSON } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -45,7 +45,7 @@ function openSalesPageGuide() {
                         ["isi-halaman", "Isi Halaman"],
                         ["kpi-cards", "Kartu KPI"],
                         ["sales-score", "Sales Score (AI)"],
-                        ["trl", "Tahan–Rebut–Lepas"],
+                        ["trl", "Tahan–Rebut–Belum Terealisasi"],
                         ["segmen", "Segmen & Sumber Dana"],
                         ["tabs", "Tab Lain"],
                         ["catatan", "Catatan"],
@@ -72,8 +72,8 @@ function openSalesPageGuide() {
                     <li><strong>Dashboard Utama</strong> — skor, KPI, TRL, segmen, chart distribusi</li>
                     <li><strong>Kecamatan</strong> — daftar kecamatan coverage sales</li>
                     <li><strong>Sekolah</strong> — daftar sekolah + kolom realisasi</li>
-                    <li><strong>Kegiatan Sales</strong> — grafik kunjungan, distribusi aktivitas, riwayat kegiatan</li>
-                    <li><strong>Rekomendasi</strong> — analisis / rekomendasi area cover</li>
+                    <li><strong>Aktivitas Sales</strong> — grafik kunjungan, distribusi aktivitas, riwayat kegiatan</li>
+                    <li><strong>Prospek</strong> — analisis / prospek area cover</li>
                 </ul>
                 `,
             )}
@@ -89,7 +89,8 @@ function openSalesPageGuide() {
                     <li><strong>Potensi Eksemplar (Area Cover)</strong> — total rencana jual / target eksemplar di AC</li>
                     <li><strong>Realisasi Sekolah</strong> — jumlah sekolah yang punya realisasi &gt; 0</li>
                     <li><strong>Realisasi Eksemplar</strong> — total volume realisasi tahun berjalan</li>
-                    <li><strong>Achievement Target</strong> — Realisasi Eksemplar ÷ Potensi Eksemplar × 100%</li>
+                    <li><strong>Achievement Target — Eksemplar</strong> — Realisasi Eksemplar ÷ Potensi Eksemplar × 100%</li>
+                    <li><strong>Achievement Target — Area Cover</strong> — Customer Terealisasi ÷ Area Cover × 100%</li>
                 </ul>
                 `,
             )}
@@ -123,13 +124,13 @@ function openSalesPageGuide() {
 
             ${section(
                 "trl",
-                "4. Tahan – Rebut – Lepas",
+                "4. Tahan – Rebut – Belum Terealisasi",
                 `
-                <p style="margin:0 0 8px;">Dihitung dari sekolah <strong>Area Cover</strong> saja. Total Tahan + Rebut + Lepas = Area Cover.</p>
+                <p style="margin:0 0 8px;">Dihitung dari sekolah <strong>Area Cover</strong> saja. Total Tahan + Rebut + Belum Terealisasi = Area Cover.</p>
                 <ul style="margin:0; padding-left:18px;">
                     <li><strong>Tahan</strong> — tahun lalu ada realisasi <strong>dan</strong> tahun ini ada realisasi</li>
                     <li><strong>Rebut</strong> — tahun lalu tidak realisasi <strong>dan</strong> tahun ini ada realisasi</li>
-                    <li><strong>Lepas</strong> — tahun ini <strong>tidak</strong> ada realisasi (termasuk yang belum pernah realisasi)</li>
+                    <li><strong>Belum Terealisasi</strong> — tahun ini <strong>tidak</strong> ada realisasi (termasuk yang belum pernah realisasi)</li>
                 </ul>
                 `,
             )}
@@ -149,11 +150,11 @@ function openSalesPageGuide() {
 
             ${section(
                 "tabs",
-                "6. Tab Sekolah & Kegiatan Sales",
+                "6. Tab Sekolah & Aktivitas Sales",
                 `
                 <ul style="margin:0; padding-left:18px;">
                     <li><strong>Sekolah</strong> — daftar sekolah sales + kolom Realisasi (tahun filter)</li>
-                    <li><strong>Kegiatan Sales</strong> — Grafik Kunjungan bulanan, Distribusi Aktivitas (vs Area Cover), coverage kunjungan, riwayat kegiatan</li>
+                    <li><strong>Aktivitas Sales</strong> — Grafik Kunjungan bulanan, Distribusi Aktivitas (vs Area Cover), coverage kunjungan, riwayat kegiatan</li>
                     <li>Nilai <strong>SP</strong> di distribusi aktivitas disetel sama dengan jumlah Customer Realisasi</li>
                 </ul>
                 `,
@@ -227,6 +228,7 @@ export default function SalesPerformanceDetail({
     rencanaJualCoverage = [],
     jenjangBreakdown = [],
     sumberDanaBreakdown = [],
+    gradeRealisasiBreakdown = [],
     segmenBreakdown = [],
     siswaBreakdown = [],
     activityBreakdown = [],
@@ -340,14 +342,41 @@ export default function SalesPerformanceDetail({
     const openSekolahFromChart = (filter) => {
         setSekolahSearch("");
         setSekolahJenjang("");
-        setSekolahStatus("1");
+        // Area cover default; realisasi = semua status lalu filter chart
+        if (filter?.type === "realisasi" || filter?.type === "kecamatan") {
+            setSekolahStatus("");
+        } else if (filter?.type === "area_cover") {
+            setSekolahStatus("1");
+        } else {
+            setSekolahStatus("1");
+        }
         setSekolahChartFilter(filter || null);
         setSekolahPage(1);
         setActiveTab("sekolah");
     };
 
+    const openSekolahFromKecamatanJenjang = (kecamatan, jenjang) => {
+        const kec = String(kecamatan || "").trim();
+        const j = String(jenjang || "").trim().toUpperCase();
+        setSekolahSearch("");
+        setSekolahJenjang(j);
+        setSekolahStatus("");
+        setSekolahChartFilter({
+            type: "kecamatan",
+            value: kec,
+            label: `${kec}${j ? ` · ${j}` : ""}`,
+        });
+        setSekolahPage(1);
+        setActiveTab("sekolah");
+    };
+
     const openKegiatanFromChart = (aktivitas) => {
-        setKegiatanAktivitasFilter(aktivitas || "");
+        const next = String(aktivitas || "").trim();
+        setKegiatanAktivitasFilter((prev) => {
+            const p = String(prev || "").trim();
+            if (p && p.toLowerCase() === next.toLowerCase()) return "";
+            return next;
+        });
         setKegiatanPage(1);
         setActiveTab("kegiatan");
     };
@@ -622,8 +651,12 @@ export default function SalesPerformanceDetail({
             {n}
         </span>
     );
-    // Filter & Sort Daftar Sekolah
-    let filteredListSekolah = [...(listSekolah || [])];
+    // Filter & Sort Daftar Sekolah (sales: hanya Area Cover)
+    const isAreaCoverSchool = (s) => {
+        const v = s?.is_active;
+        return v === true || v === 1 || v === "1";
+    };
+    let filteredListSekolah = [...(listSekolah || [])].filter(isAreaCoverSchool);
     if (sekolahSearch) {
         const query = sekolahSearch.toLowerCase();
         filteredListSekolah = filteredListSekolah.filter(
@@ -636,12 +669,6 @@ export default function SalesPerformanceDetail({
     if (sekolahJenjang) {
         filteredListSekolah = filteredListSekolah.filter(
             (s) => s.jenjang === sekolahJenjang,
-        );
-    }
-    if (sekolahStatus !== "") {
-        const isActive = sekolahStatus === "1";
-        filteredListSekolah = filteredListSekolah.filter(
-            (s) => !!s.is_active === isActive,
         );
     }
     if (sekolahChartFilter) {
@@ -693,6 +720,17 @@ export default function SalesPerformanceDetail({
                         .toLowerCase()
                 );
             });
+        } else if (type === "kecamatan") {
+            const target = String(value || "")
+                .toUpperCase()
+                .trim();
+            filteredListSekolah = filteredListSekolah.filter((s) => {
+                const raw = String(s.kecamatan_name || "")
+                    .toUpperCase()
+                    .trim();
+                const base = raw.split(",")[0].trim();
+                return base === target || raw.includes(target);
+            });
         } else if (type === "customer_status") {
             filteredListSekolah = filteredListSekolah.filter((s) => {
                 const prevReal = !!s.prev_realisasi;
@@ -702,13 +740,37 @@ export default function SalesPerformanceDetail({
                 if (value === "loss") return !currReal;
                 return true;
             });
+        } else if (type === "area_cover") {
+            filteredListSekolah = filteredListSekolah.filter(
+                (s) => !!s.is_active,
+            );
+        } else if (type === "realisasi") {
+            filteredListSekolah = filteredListSekolah.filter(
+                (s) =>
+                    !!s.is_active &&
+                    (Number(s.real_exemplar_current) || 0) > 0,
+            );
         }
     }
     filteredListSekolah.sort((a, b) => {
+        const jenjangOrder = { SD: 1, SMP: 2, SMA: 3, SMK: 4, DLL: 5, Lainnya: 6 };
+        const normKec = (v) => {
+            const raw = String(v || "").trim() || "Tanpa Kecamatan";
+            return raw.split(",")[0].trim().toUpperCase();
+        };
+        const kecA = normKec(a.kecamatan_name);
+        const kecB = normKec(b.kecamatan_name);
+        if (kecA !== kecB) return kecA.localeCompare(kecB, "id");
+
+        const jA = jenjangOrder[a.jenjang] || 99;
+        const jB = jenjangOrder[b.jenjang] || 99;
+        if (jA !== jB) return jA - jB;
+
         let valA = a[sekolahSort.key];
         let valB = b[sekolahSort.key];
         if (
             sekolahSort.key === "real_exemplar_current" ||
+            sekolahSort.key === "sp_exemplar_current" ||
             sekolahSort.key === "total_student"
         ) {
             valA = Number(valA) || 0;
@@ -725,7 +787,7 @@ export default function SalesPerformanceDetail({
         const propsToPass = {
         activityBreakdown, resultBreakdown, insights, filterOptions, filters, isFromSalesPerformance, salesPerformanceFilterOptions, salesPerformanceFilters, nonCoverSchools,
         activeNav, pageTitle, cabangName, areaName, description, areas, cabangs, selectedCabang, provinceCode, cabangCode,
-        realStats, trl, trlJenjang, salesPerformance, rankingKecamatan, top10Schools, mapMarkers, schools, dana, jenjang, trend, areaCovers, competitors, leaderboard, salesJenjangData, salesJenjangTotal, uncovered, uncoveredDana, hideFilters, backUrl, isSalesDetail, timSalesPerformance, timSalesPerformanceWorst, listKecamatan, listSekolah, kegiatanSales, visitCoverage, rencanaJualCoverage, jenjangBreakdown, sumberDanaBreakdown, segmenBreakdown, siswaBreakdown,
+        realStats, trl, trlJenjang, salesPerformance, rankingKecamatan, top10Schools, mapMarkers, schools, dana, jenjang, trend, areaCovers, competitors, leaderboard, salesJenjangData, salesJenjangTotal, uncovered, uncoveredDana, hideFilters, backUrl, isSalesDetail, timSalesPerformance, timSalesPerformanceWorst, listKecamatan, listSekolah, kegiatanSales, visitCoverage, rencanaJualCoverage, jenjangBreakdown, sumberDanaBreakdown, gradeRealisasiBreakdown, segmenBreakdown, siswaBreakdown,
         activeTab, setActiveTab,
         spFilterData, setSpFilterData,
         isFilterOpen, setIsFilterOpen,
@@ -743,6 +805,7 @@ export default function SalesPerformanceDetail({
         sekolahChartFilter, setSekolahChartFilter,
         clearSekolahChartFilter,
         openSekolahFromChart,
+        openSekolahFromKecamatanJenjang,
         openKegiatanFromChart,
         kegiatanAktivitasFilter, setKegiatanAktivitasFilter,
         filteredListSekolah
@@ -769,29 +832,26 @@ export default function SalesPerformanceDetail({
                 <div>
                     <div
                         style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: T.slate,
-                            letterSpacing: "1px",
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: T.text,
+                            letterSpacing: "0.2px",
                             textTransform: "uppercase",
                         }}
                     >
                         {pageTitle}
                     </div>
-                    <div
-                        style={{
-                            fontSize: 22,
-                            fontWeight: 900,
-                            color: T.text,
-                            letterSpacing: "-0.5px",
-                            lineHeight: 1.15,
-                        }}
-                    >
-                        {cabangName}
-                    </div>
-                    <div style={{ fontSize: 11, color: T.slate, marginTop: 2 }}>
-                        {description}
-                    </div>
+                    {description ? (
+                        <div
+                            style={{
+                                fontSize: 11,
+                                color: T.slate,
+                                marginTop: 2,
+                            }}
+                        >
+                            {description}
+                        </div>
+                    ) : null}
                 </div>
                 <div
                     style={{
@@ -1012,8 +1072,8 @@ export default function SalesPerformanceDetail({
                               { id: "dashboard", label: "Dashboard Utama" },
                               { id: "kecamatan", label: "Kecamatan" },
                               { id: "sekolah", label: "Sekolah" },
-                              { id: "kegiatan", label: "Kegiatan Sales" },
-                              { id: "analisis", label: `Rekomendasi ${predictionYear}` },
+                              { id: "kegiatan", label: "Aktivitas Sales" },
+                              { id: "analisis", label: `Prospek ${predictionYear}` },
                           ]
                         : [
                               { id: "dashboard", label: "Dashboard Utama" },
@@ -1120,12 +1180,12 @@ export default function SalesPerformanceDetail({
                     gap: 12,
                 }}
             >
-                {activeTab === "dashboard" && <DashboardTab {...propsToPass} />}
+                {activeTab === "dashboard" && <DashboardTabSales {...propsToPass} />}
                 {activeTab === "competitor" && <CompetitorTab {...propsToPass} />}
-                {activeTab === "kecamatan" && isSalesDetail && <KecamatanTab {...propsToPass} />}
-                {activeTab === "sekolah" && isSalesDetail && <SekolahTab {...propsToPass} />}
+                {activeTab === "kecamatan" && isSalesDetail && <KecamatanSalesTab {...propsToPass} />}
+                {activeTab === "sekolah" && isSalesDetail && <SekolahTabSales {...propsToPass} />}
                 {activeTab === "kegiatan" && isSalesDetail && <KegiatanTab {...propsToPass} />}
-                {activeTab === "analisis" && <AnalisisTab {...propsToPass} />}
+                {activeTab === "analisis" && <ProspekTab {...propsToPass} />}
                 {/* NOTE */}
                 <div
                     style={{
