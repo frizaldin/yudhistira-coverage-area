@@ -1,4 +1,5 @@
 import { Link, usePage } from "@inertiajs/react";
+import Copyright from "@/Components/Copyright";
 
 const NAV_ITEMS = [
     {
@@ -18,6 +19,14 @@ const NAV_ITEMS = [
         hideForLevels: ["area", "cabang", "sales"],
     },*/
     {
+        key: "cabang",
+        top: "Dashboard",
+        bottom: "Cabang",
+        icon: "bi-building-fill",
+        routeName: "monitoring.cabang.select",
+        hideForLevels: ["sales"],
+    },
+    {
         key: "area",
         top: "Dashboard",
         bottom: "Area",
@@ -26,19 +35,18 @@ const NAV_ITEMS = [
         hideForLevels: ["cabang", "sales"],
     },
     {
-        key: "cabang",
-        top: "Dashboard",
-        bottom: "Cabang",
-        icon: "bi-building-fill",
-        routeName: "monitoring.area.select", // for cabang, clicking this brings them to their cabang
-        hideForLevels: ["nasional", "area", "sales"],
+        key: "dana-bos",
+        top: "Data",
+        bottom: "Dana BOS",
+        icon: "bi-cash-coin",
+        routeName: "monitoring.dana-bos",
     },
     {
         key: "sales",
         top: "Dashboard",
         bottom: "Sales",
         icon: "bi-graph-up-arrow",
-        routeName: "monitoring.area.select", // for sales, clicking this brings them to their sales area
+        routeName: "monitoring.area.select",
         hideForLevels: ["nasional", "area", "cabang"],
     },
     {
@@ -54,13 +62,6 @@ const NAV_ITEMS = [
         bottom: "Sekolah",
         icon: "bi-mortarboard-fill",
         routeName: "monitoring.sekolah",
-    },
-    {
-        key: "dana-bos",
-        top: "Data",
-        bottom: "Dana BOS",
-        icon: "bi-cash-coin",
-        routeName: "monitoring.dana-bos",
     },
     {
         key: "daftar-isi",
@@ -337,7 +338,15 @@ export default function MonitoringLayout({ children, activeNav = "area" }) {
             </aside>
 
             {/* ── MAIN ── */}
-            <main style={{ flex: 1, minWidth: 0, overflowX: "clip" }}>
+            <main
+                style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflowX: "clip",
+                    display: "flex",
+                    flexDirection: "column",
+                }}
+            >
                 {lastImport?.imported_at_label && (
                     <div
                         style={{
@@ -384,7 +393,20 @@ export default function MonitoringLayout({ children, activeNav = "area" }) {
                         </Link>
                     </div>
                 )}
-                {children}
+                <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+
+                <footer
+                    style={{
+                        background: "white",
+                        borderTop: "1px solid #e2e8f0",
+                        padding: "10px 14px",
+                        textAlign: "center",
+                        fontSize: 10.5,
+                        color: "#64748b",
+                    }}
+                >
+                    <Copyright />
+                </footer>
             </main>
         </div>
     );

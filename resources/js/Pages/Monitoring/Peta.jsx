@@ -1,7 +1,8 @@
 import React, { useEffect } from "react";
 import MonitoringLayout from "../../Layouts/MonitoringLayout";
 import { Head } from "@inertiajs/react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
+import MapTileLayer from "@/Components/Map/MapTileLayer";
 import "leaflet/dist/leaflet.css";
 
 // Fix leaflet marker icon issues in React
@@ -36,10 +37,7 @@ export default function Peta({ mapMarkers }) {
                         zoom={5}
                         style={{ height: "100%", width: "100%", zIndex: 1 }}
                     >
-                        <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                        />
+                        <MapTileLayer />
                         {mapMarkers &&
                             mapMarkers.map((marker, index) => (
                                 <Marker

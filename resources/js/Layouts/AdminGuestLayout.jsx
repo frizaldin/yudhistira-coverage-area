@@ -1,6 +1,7 @@
 import ApplicationLogo from "@/Components/ApplicationLogo";
 import MetaTags from "@/Components/MetaTags";
 import { Link } from "@inertiajs/react";
+import Copyright from "@/Components/Copyright";
 
 export default function AdminGuestLayout({
     children,
@@ -63,6 +64,13 @@ export default function AdminGuestLayout({
                         </div>
 
                         {children}
+
+                        <footer
+                            className="mt-8 text-center text-xs"
+                            style={{ color: "var(--color-text-muted)" }}
+                        >
+                            <Copyright />
+                        </footer>
                     </div>
                 </div>
             </div>

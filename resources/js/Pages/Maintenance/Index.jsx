@@ -1,4 +1,5 @@
 import MetaTags from '@/Components/MetaTags';
+import Copyright from '@/Components/Copyright';
 
 export default function Maintenance() {
     return (
@@ -28,6 +29,10 @@ export default function Maintenance() {
                         Kami sedang melakukan perbaikan sistem.
                         Silakan kembali beberapa saat lagi.
                     </p>
+
+                    <footer className="text-muted mt-5 small">
+                        <Copyright />
+                    </footer>
                 </div>
             </div>
         </>

@@ -1,6 +1,7 @@
 import ApplicationLogo from "@/Components/ApplicationLogo";
 import { usePage, Link } from "@inertiajs/react";
 import MetaTags from '@/Components/MetaTags';
+import Copyright from "@/Components/Copyright";
 
 export default function GuestLayout({ children, title }) {
     return (
@@ -21,6 +22,10 @@ export default function GuestLayout({ children, title }) {
                         </div>
                     </div>
                 </div>
+
+                <footer className="pb-6 text-center text-xs text-gray-500">
+                    <Copyright />
+                </footer>
             </div>
         </>
     );

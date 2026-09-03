@@ -1,98 +1,97 @@
-import { Head, Link } from '@inertiajs/react';
-import MonitoringLayout from '@/Layouts/MonitoringLayout';
+import { useState } from "react";
+import { Head, router } from "@inertiajs/react";
+import MonitoringLayout from "@/Layouts/MonitoringLayout";
+import SelectReact from "@/Components/Element/SelectReact";
 
 const T = {
-    blue:    '#1d4ed8',
-    blueSoft:'#3b82f6',
-    slate:   '#64748b',
-    text:    '#0f172a',
-    border:  '#e2e8f0',
-    card:    '#ffffff',
+    blue: "#1d4ed8",
+    slate: "#64748b",
+    text: "#0f172a",
+    border: "#e2e8f0",
 };
 
-export default function AreaSelect({ activeNav = 'area', areas = [] }) {
+export default function AreaSelect({ activeNav = "area", areas = [] }) {
+    const [areaId, setAreaId] = useState("");
+
+    const applyFilter = (e) => {
+        e.preventDefault();
+        if (!areaId) return;
+        router.get(route("monitoring.area", areaId));
+    };
+
     return (
         <MonitoringLayout activeNav={activeNav}>
-            <Head title="Pilih Area" />
+            <Head title="Pilih Parameter - Dashboard Area" />
 
-            {/* HEADER */}
-            <div style={{
-                background: 'white', padding: '14px 20px',
-                borderBottom: `1px solid ${T.border}`,
-            }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.slate, letterSpacing: '1px', textTransform: 'uppercase' }}>
+            <div
+                style={{
+                    background: "white",
+                    padding: "14px 20px",
+                    borderBottom: `1px solid ${T.border}`,
+                }}
+            >
+                <div
+                    style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: T.slate,
+                        letterSpacing: "1px",
+                        textTransform: "uppercase",
+                    }}
+                >
                     Dashboard Area
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 900, color: T.text, letterSpacing: '-0.5px', lineHeight: 1.15 }}>
-                    PILIH AREA
+                <div
+                    style={{
+                        fontSize: 22,
+                        fontWeight: 900,
+                        color: T.text,
+                        letterSpacing: "-0.5px",
+                        lineHeight: 1.15,
+                    }}
+                >
+                    PILIH PARAMETER
                 </div>
                 <div style={{ fontSize: 11, color: T.slate, marginTop: 2 }}>
-                    Silakan pilih area untuk melihat dashboard coverage area tersebut.
+                    Silakan pilih Area untuk melihat dashboard coverage area.
                 </div>
             </div>
 
-            {/* CONTENT */}
-            <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                    gap: '16px'
-                }}>
-                    {areas.map(area => (
-                        <Link
-                            key={area.id}
-                            href={route('monitoring.area', area.id)}
-                            style={{
-                                background: T.card,
-                                border: `1px solid ${T.border}`,
-                                borderRadius: '12px',
-                                padding: '16px 20px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                textDecoration: 'none',
-                                color: T.text,
-                                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                                transition: 'all 0.2s ease',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = T.blueSoft;
-                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
-                                e.currentTarget.style.transform = 'translateY(-2px)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = T.border;
-                                e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)';
-                                e.currentTarget.style.transform = 'none';
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{
-                                    width: '36px', height: '36px',
-                                    borderRadius: '8px',
-                                    background: '#eff6ff',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    color: T.blue
-                                }}>
-                                    <i className="bi bi-geo-alt-fill" style={{ fontSize: '16px' }}></i>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: '14px', fontWeight: 700, lineHeight: 1.2 }}>
-                                        {area.name}
-                                    </div>
-                                </div>
-                            </div>
-                            <i className="bi bi-chevron-right" style={{ color: T.slate, fontSize: '12px' }}></i>
-                        </Link>
-                    ))}
+            <div
+                style={{
+                    padding: "14px 14px",
+                    maxWidth: "100%",
+                    margin: "0 auto",
+                }}
+            >
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <form
+                        onSubmit={applyFilter}
+                        className="flex flex-col md:flex-row items-end gap-4"
+                    >
+                        <div className="flex-1 w-full">
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">
+                                Area
+                            </label>
+                            <SelectReact
+                                collection={areas}
+                                value={areaId}
+                                onChange={(val) => setAreaId(val || "")}
+                                placeholder="Pilih Area"
+                            />
+                        </div>
+
+                        <div className="w-full md:w-auto">
+                            <button
+                                type="submit"
+                                disabled={!areaId}
+                                className="w-full flex items-center justify-center h-[40px] px-6 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Tampilkan Dashboard
+                            </button>
+                        </div>
+                    </form>
                 </div>
-                
-                {areas.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '40px', color: T.slate }}>
-                        <i className="bi bi-inbox" style={{ fontSize: '32px', marginBottom: '10px', display: 'block' }}></i>
-                        Data area belum tersedia di database.
-                    </div>
-                )}
             </div>
         </MonitoringLayout>
     );

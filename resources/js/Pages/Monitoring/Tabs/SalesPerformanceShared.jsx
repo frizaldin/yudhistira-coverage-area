@@ -5,12 +5,12 @@ import MonitoringLayout from "@/Layouts/MonitoringLayout";
 import SelectReact from "@/Components/Element/SelectReact";
 import {
     MapContainer,
-    TileLayer,
     Marker,
     Popup,
     useMap,
     GeoJSON,
 } from "react-leaflet";
+import MapTileLayer from "@/Components/Map/MapTileLayer";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -850,11 +850,90 @@ function FitGeoJsonBounds({ geojsonData }) {
     return null;
 }
 
+// Ziggy dipakai lebih dulu; fallback memakai APP_URL supaya tetap benar saat
+// aplikasi dideploy di subdirektori (mis. /coverage-area).
+function geoJsonEndpoint(params) {
+    let url = "";
+    try {
+        if (typeof route === "function") {
+            url = route(
+                "monitoring.sales-performance.geojson",
+                Object.fromEntries(params),
+            );
+        }
+    } catch (e) {
+        // abaikan, pakai fallback di bawah
+    }
+    if (!url) {
+        const base = String(
+            (typeof window !== "undefined" && window.APP_URL) || "",
+        ).replace(/\/+$/, "");
+        url = `${base}/system/monitoring/sales-performance/geojson?${params.toString()}`;
+    }
+
+    // APP_URL yang masih http:// (mis. di belakang proxy) bikin request diblokir
+    // sebagai mixed content saat halaman diakses via https.
+    try {
+        const parsed = new URL(url, window.location.origin);
+        parsed.protocol = window.location.protocol;
+        parsed.host = window.location.host;
+
+        return parsed.toString();
+    } catch (e) {
+        return url;
+    }
+}
+
+/** Tunda fetch berat (GeoJSON) sampai UI dashboard selesai first paint. */
+function useDeferredMapLoad(delayMs = 350) {
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        const activate = () => {
+            if (!cancelled) setReady(true);
+        };
+
+        if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+            const id = window.requestIdleCallback(activate, { timeout: delayMs });
+            return () => {
+                cancelled = true;
+                window.cancelIdleCallback(id);
+            };
+        }
+
+        const timer = window.setTimeout(activate, delayMs);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [delayMs]);
+
+    return ready;
+}
+
+async function fetchGeoJson(url) {
+    const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+    });
+    const body = await res.text();
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText || ""}`.trim());
+    }
+    try {
+        return JSON.parse(body);
+    } catch (e) {
+        throw new Error("Respons bukan JSON (error server / redirect login)");
+    }
+}
+
 export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }) {
     const [geojsonData, setGeojsonData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [selectedKec, setSelectedKec] = useState(null);
     const [geoKey, setGeoKey] = useState(0);
+    const mapLoadReady = useDeferredMapLoad(350);
 
     const getColor = (pct) => {
         if (pct >= 70) return "#10b981";
@@ -885,37 +964,27 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
     };
 
     useEffect(() => {
-        if (!salesId) return;
+        if (!salesId || !mapLoadReady) return;
         setLoading(true);
         const params = new URLSearchParams({
             sales_id: salesId,
             _v: "3",
-            _ts: String(Date.now()),
         });
         if (cabangId) params.append("cabang_id", cabangId);
 
-        let fetchUrl = `/system/monitoring/sales-performance/geojson?${params.toString()}`;
-        try {
-            fetchUrl = route(
-                "monitoring.sales-performance.geojson",
-                Object.fromEntries(params),
-            );
-        } catch (e) {
-            // fallback if route helper fails
-        }
+        const fetchUrl = geoJsonEndpoint(params);
 
-        fetch(fetchUrl, { cache: "no-store" })
-            .then((res) => res.json())
+        fetchGeoJson(fetchUrl)
             .then((data) => {
                 setGeojsonData(data);
                 setGeoKey((k) => k + 1);
                 setLoading(false);
             })
             .catch((err) => {
-                console.error("Error fetching GeoJSON:", err);
+                console.error("Error fetching GeoJSON:", fetchUrl, err);
                 setLoading(false);
             });
-    }, [salesId, cabangId]);
+    }, [salesId, cabangId, mapLoadReady]);
 
     const onEachFeature = (feature, layer) => {
         const props = feature.properties;
@@ -1154,10 +1223,7 @@ export function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }
                 style={{ height: "100%", width: "100%", zIndex: 1 }}
             >
                 <InvalidateMapSize deps={[geoKey, loading]} />
-                <TileLayer
-                    attribution='&copy; <a href="https://carto.com/">Carto</a>'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                />
+                <MapTileLayer />
                 {geojsonData &&
                     geojsonData.features &&
                     geojsonData.features.length > 0 && (
@@ -1189,7 +1255,9 @@ export function CompetitorChoroplethMap({
     const [geojsonData, setGeojsonData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [geoKey, setGeoKey] = useState(0);
+    const [loadError, setLoadError] = useState(null);
     const [meta, setMeta] = useState({ kecamatan_count: 0, matched: 0, level: "kecamatan" });
+    const mapLoadReady = useDeferredMapLoad(350);
 
     const resolvedLevel =
         level ||
@@ -1225,15 +1293,16 @@ export function CompetitorChoroplethMap({
     };
 
     useEffect(() => {
+        if (!mapLoadReady) return;
         const canLoadKota =
             resolvedLevel === "kota" && (cabangId || areaId) && !salesId;
         const canLoadCabangKecamatan =
             resolvedLevel === "kecamatan" && !!cabangId && !salesId;
         if (!salesId && !canLoadKota && !canLoadCabangKecamatan) return;
         setLoading(true);
+        setLoadError(null);
         const params = new URLSearchParams({
             _v: resolvedLevel === "kota" ? "9" : "8",
-            _ts: String(Date.now()),
         });
         if (salesId) params.append("sales_id", String(salesId));
         if (cabangId) params.append("cabang_id", String(cabangId));
@@ -1242,16 +1311,9 @@ export function CompetitorChoroplethMap({
         if (resolvedLevel === "kota") params.append("level", "kota");
         else params.append("level", "kecamatan");
 
-        let fetchUrl = `/system/monitoring/sales-performance/geojson?${params.toString()}`;
-        try {
-            fetchUrl = route(
-                "monitoring.sales-performance.geojson",
-                Object.fromEntries(params),
-            );
-        } catch (e) {}
+        const fetchUrl = geoJsonEndpoint(params);
 
-        fetch(fetchUrl, { cache: "no-store", headers: { Accept: "application/json" } })
-            .then((res) => res.json())
+        fetchGeoJson(fetchUrl)
             .then((data) => {
                 // Safety: buang ring/feature yang loncat jauh (mis. Ciawi Bogor ke Tasik)
                 if (data?.features?.length) {
@@ -1305,12 +1367,17 @@ export function CompetitorChoroplethMap({
                         (f) => f.geometry?.type !== "Point",
                     ).length,
                     level: data?.meta?.level || resolvedLevel,
+                    boundary_files: data?.meta?.boundary_files,
                 });
                 setGeoKey((k) => k + 1);
                 setLoading(false);
             })
-            .catch(() => setLoading(false));
-    }, [salesId, cabangId, areaId, tahun, resolvedLevel]);
+            .catch((err) => {
+                console.error("Error fetching GeoJSON:", fetchUrl, err);
+                setLoadError(err?.message || "Gagal memuat peta");
+                setLoading(false);
+            });
+    }, [mapLoadReady, salesId, cabangId, areaId, tahun, resolvedLevel]);
 
     // Share AC per wilayah vs total AC scope:
     // <25% merah · <50% jingga · <75% kuning · ≤100% hijau
@@ -1625,6 +1692,27 @@ export function CompetitorChoroplethMap({
                         <span style={{ color: "#64748b" }}>Share AC:</span>{" "}
                         {meta.matched}/{meta.kecamatan_count}
                     </span>
+                    {Number(meta.matched || 0) > 0 &&
+                        Number(meta.matched || 0) <
+                            Number(meta.kecamatan_count || 0) && (
+                            <span
+                                title={`${Number(meta.kecamatan_count) - Number(meta.matched)} ${unitLabel} belum punya data boundary sehingga tidak tergambar di peta`}
+                                style={{
+                                    color: "#b45309",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 3,
+                                }}
+                            >
+                                <i
+                                    className="bi bi-exclamation-triangle-fill"
+                                    style={{ fontSize: 9 }}
+                                />
+                                {Number(meta.kecamatan_count) -
+                                    Number(meta.matched)}{" "}
+                                tanpa boundary
+                            </span>
+                        )}
                     <span style={{ width: 1, height: 12, background: "#e2e8f0" }} />
                     {[
                         { c: "#dc2626", t: "<25%" },
@@ -1655,7 +1743,41 @@ export function CompetitorChoroplethMap({
                     ))}
                 </div>
             )}
+            {!loading && loadError && (
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        zIndex: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none",
+                        padding: 16,
+                    }}
+                >
+                    <div
+                        style={{
+                            background: "rgba(254,242,242,0.96)",
+                            border: "1px solid #fecaca",
+                            borderRadius: 8,
+                            padding: "10px 14px",
+                            maxWidth: 360,
+                            fontSize: 11,
+                            lineHeight: 1.45,
+                            color: "#991b1b",
+                            fontWeight: 600,
+                            boxShadow: "0 4px 14px rgba(127,29,29,0.12)",
+                        }}
+                    >
+                        Gagal memuat data peta: {loadError}. Cek tab Network /
+                        <code style={{ fontSize: 10 }}> storage/logs</code> untuk
+                        detailnya.
+                    </div>
+                </div>
+            )}
             {!loading &&
+                !loadError &&
                 meta.kecamatan_count > 0 &&
                 Number(meta.matched || 0) === 0 && (
                     <div
@@ -1684,12 +1806,28 @@ export function CompetitorChoroplethMap({
                                 boxShadow: "0 4px 14px rgba(127,29,29,0.12)",
                             }}
                         >
-                            Polygon kecamatan tidak ditemukan (0/
-                            {meta.kecamatan_count}). Pastikan file boundary ada di
-                            server:{" "}
-                            <code style={{ fontSize: 10 }}>
-                                public/geojson/indonesia-kecamatan-osm-32.json
-                            </code>
+                            {Number(meta.boundary_files || 0) === 0 ? (
+                                <>
+                                    File boundary tidak ada di server. Pastikan
+                                    folder ini ikut ter-deploy:{" "}
+                                    <code style={{ fontSize: 10 }}>
+                                        public/geojson/
+                                    </code>
+                                </>
+                            ) : (
+                                <>
+                                    Data boundary {unitLabel} untuk wilayah ini
+                                    belum tersedia (0/{meta.kecamatan_count}),
+                                    jadi peta belum bisa digambar.
+                                    {meta.level !== "kota" && (
+                                        <>
+                                            {" "}
+                                            Saat ini boundary kecamatan baru
+                                            mencakup Jawa Barat.
+                                        </>
+                                    )}
+                                </>
+                            )}
                     </div>
                 </div>
             )}
@@ -1754,10 +1892,7 @@ export function CompetitorChoroplethMap({
                 style={{ height: "100%", width: "100%", zIndex: 1 }}
             >
                 <InvalidateMapSize deps={[geoKey, loading, meta.matched]} />
-                <TileLayer
-                    attribution='&copy; <a href="https://carto.com/">Carto</a>'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                />
+                <MapTileLayer />
                 {geojsonData &&
                     geojsonData.features &&
                     geojsonData.features.length > 0 && (

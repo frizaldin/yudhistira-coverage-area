@@ -16,6 +16,8 @@ Route::prefix('monitoring')->name('monitoring.')->group(function () {
     Route::get('/nasional',               [MonitoringController::class, 'nasional'])->name('nasional');
     Route::get('/area',                   [MonitoringController::class, 'areaSelect'])->name('area.select');
     Route::get('/area/{id}',              [MonitoringController::class, 'area'])->name('area');
+    Route::get('/cabang',                 [MonitoringController::class, 'cabangSelect'])->name('cabang.select');
+    Route::get('/dashboard-data',         [MonitoringController::class, 'dashboardData'])->name('dashboard-data');
     Route::get('/peta',                   [MonitoringController::class, 'peta'])->name('peta');
     Route::get('/sekolah',                [MonitoringController::class, 'sekolah'])->name('sekolah');
     Route::get('/sekolah/{id}/detail',    [MonitoringController::class, 'showSekolah'])->name('sekolah.show');

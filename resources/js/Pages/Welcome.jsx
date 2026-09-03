@@ -1,4 +1,5 @@
 import MetaTags from "@/Components/MetaTags";
+import Copyright from "@/Components/Copyright";
 import { Link, router } from "@inertiajs/react";
 
 export default function Welcome({
@@ -142,7 +143,7 @@ export default function Welcome({
                 <footer className="footer">
                     <div className="container">
                         © {new Date().getFullYear()}{" "}
-                        {configuration.title}
+                        {configuration.title} — <Copyright />
                     </div>
                 </footer>
             </div>

@@ -13,12 +13,12 @@ import ListCabangAreaTab from "./Tabs/ListCabangAreaTab";
 import Swal from "sweetalert2";
 import {
     MapContainer,
-    TileLayer,
     Marker,
     Popup,
     useMap,
     GeoJSON,
 } from "react-leaflet";
+import MapTileLayer from "@/Components/Map/MapTileLayer";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -585,10 +585,7 @@ function LeafletMap({ markers = [] }) {
                 maxBoundsViscosity={1.0}
                 style={{ height: "100%", width: "100%", zIndex: 1 }}
             >
-                <TileLayer
-                    attribution='&copy; <a href="https://carto.com/">Carto</a>'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                />
+                <MapTileLayer />
 
                 <FitBounds markers={markers} />
 
@@ -1166,6 +1163,7 @@ export default function Cabang({
     sumberDanaBreakdown = [],
     gradeRealisasiBreakdown = [],
     listCabangArea = [],
+    dashboardDataPending = false,
 }) {
     const { configuration } = usePage().props;
     const prevYear = configuration?.prev_year || "2025";
@@ -1177,6 +1175,11 @@ export default function Cabang({
         tahun: filters.tahun || "",
         sumber_dana: filters.sumber_dana || "",
     });
+
+    const [dashLoading, setDashLoading] = useState(
+        !!(useSalesStyleDashboard && dashboardDataPending),
+    );
+    const [asyncDash, setAsyncDash] = useState(null);
 
     const activeFiltersCount = Object.values(filters).filter(
         (v) => v !== null && v !== "",
@@ -1212,8 +1215,8 @@ export default function Cabang({
         setIsFilterOpen(false);
     };
     const targetYear = configuration?.target_year || "2026";
-    const yearLabel = cabangInsights?.targetYear || filters?.tahun || targetYear;
-    const prevYearLabel = cabangInsights?.prevYear || prevYear;
+    const yearLabel = filters?.tahun || targetYear;
+    const prevYearLabel = prevYear;
 
     const openSalesDetail = (salesId) => {
         if (!salesId) return;
@@ -1271,7 +1274,7 @@ export default function Cabang({
     };
 
     const showCabangScoreDetail = () => {
-        const comps = cabangInsights?.components || [];
+        const comps = resolvedCabangInsights?.components || [];
         if (!comps.length) return;
 
         const renderItem = (c) => {
@@ -1315,7 +1318,7 @@ export default function Cabang({
                         ${main}
                     </div>
                     <div style="padding: 10px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; font-size: 12px; color: #1e3a8a;">
-                        <strong>Total Score:</strong> ${cabangInsights?.totalScore ?? 0} / 100 · <strong>${cabangInsights?.grade ?? "-"}</strong>
+                        <strong>Total Score:</strong> ${resolvedCabangInsights?.totalScore ?? 0} / 100 · <strong>${resolvedCabangInsights?.grade ?? "-"}</strong>
                         <span style="display:block; margin-top: 4px; color:#334155; font-size: 11.5px;">
                             Rumus sama dengan Sales Score: rata-rata berbobot 5 indikator, dikurangi Lepas eksternal.
                         </span>
@@ -1371,6 +1374,133 @@ export default function Cabang({
     useEffect(() => {
         setNonAcPage(1);
     }, [nonAcSearch, nonAcJenjang, nonAcGrade, nonAcSort]);
+
+    useEffect(() => {
+        if (!useSalesStyleDashboard || !dashboardDataPending || !provinceCode) {
+            setDashLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setDashLoading(true);
+        setAsyncDash(null);
+
+        const buildUrl = (section) => {
+            const params = new URLSearchParams({
+                area_id: String(provinceCode),
+                section,
+            });
+            if (cabangCode) params.set("cabang_id", String(cabangCode));
+            if (filters?.tahun) params.set("tahun", String(filters.tahun));
+
+            try {
+                return route(
+                    "monitoring.dashboard-data",
+                    Object.fromEntries(params),
+                );
+            } catch (e) {
+                return `/system/monitoring/dashboard-data?${params.toString()}`;
+            }
+        };
+
+        const fetchJson = (section) =>
+            fetch(buildUrl(section), {
+                headers: { Accept: "application/json" },
+                credentials: "same-origin",
+            }).then(async (res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            });
+
+        // 1) Kartu dashboard dulu (lite / Area Cover saja)
+        fetchJson("dashboard")
+            .then((data) => {
+                if (cancelled) return null;
+                setAsyncDash(data);
+                setDashLoading(false);
+                return true;
+            })
+            .catch((err) => {
+                console.error("dashboard-data", err);
+                if (!cancelled) {
+                    setAsyncDash({ _error: err.message });
+                    setDashLoading(false);
+                }
+                return false;
+            })
+            .then((ok) => {
+                if (!ok || cancelled) return;
+                // 2) List sekolah / non-AC / kegiatan di background
+                // Gagal lists tidak boleh menghapus dashboard yang sudah tampil
+                return fetchJson("lists")
+                    .then((lists) => {
+                        if (cancelled) return;
+                        setAsyncDash((prev) => ({
+                            ...(prev || {}),
+                            ...lists,
+                            listsReady: true,
+                        }));
+                    })
+                    .catch((err) => {
+                        console.error("dashboard-data lists", err);
+                        if (!cancelled) {
+                            setAsyncDash((prev) => ({
+                                ...(prev || {}),
+                                listsReady: false,
+                                listsError: err.message,
+                            }));
+                        }
+                    });
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        useSalesStyleDashboard,
+        dashboardDataPending,
+        provinceCode,
+        cabangCode,
+        filters?.tahun,
+    ]);
+
+    const resolvedKpiData = asyncDash?.kpiData ?? kpiData;
+    const resolvedInsights = asyncDash?.insights ?? insights;
+    const resolvedJenjangBreakdown =
+        asyncDash?.jenjangBreakdown ?? jenjangBreakdown;
+    const resolvedSumberDanaBreakdown =
+        asyncDash?.sumberDanaBreakdown ?? sumberDanaBreakdown;
+    const resolvedGradeRealisasi =
+        asyncDash?.gradeRealisasiBreakdown ?? gradeRealisasiBreakdown;
+    const resolvedActivityBreakdown =
+        asyncDash?.activityBreakdown ?? activityBreakdown;
+    const resolvedResultBreakdown =
+        asyncDash?.resultBreakdown ?? resultBreakdown;
+    const resolvedCabangInsights =
+        asyncDash?.cabangInsights ?? cabangInsights;
+    const resolvedListSalesCabang =
+        asyncDash?.listSalesCabang ?? listSalesCabang;
+    const resolvedListSekolah = asyncDash?.listSekolah ?? listSekolah;
+    const resolvedListNonAreaCover =
+        asyncDash?.listNonAreaCover ?? listNonAreaCover;
+    const resolvedKegiatanSales =
+        asyncDash?.kegiatanSales ?? kegiatanSales;
+    const resolvedListCabangArea =
+        asyncDash?.listCabangArea ?? listCabangArea;
+    const resolvedSalesProfile = asyncDash?.salesProfile ?? salesProfile;
+    const dashBusy = dashLoading || (dashboardDataPending && !asyncDash);
+    const listsLoading =
+        !!(
+            useSalesStyleDashboard &&
+            dashboardDataPending &&
+            asyncDash &&
+            !asyncDash._error &&
+            !asyncDash.listsReady &&
+            !asyncDash.listsError
+        );
+    const liveYearLabel =
+        resolvedCabangInsights?.targetYear || yearLabel;
+    const livePrevYearLabel =
+        resolvedCabangInsights?.prevYear || prevYearLabel;
 
     const schoolMatchesComponent = (s, filter) => {
         if (!filter?.type || !s) return false;
@@ -1428,10 +1558,10 @@ export default function Cabang({
 
     const componentMatchedSchools = useMemo(() => {
         if (!componentNavFilter) return null;
-        return (listSekolah || []).filter((s) =>
+        return (resolvedListSekolah || []).filter((s) =>
             schoolMatchesComponent(s, componentNavFilter),
         );
-    }, [listSekolah, componentNavFilter]);
+    }, [resolvedListSekolah, componentNavFilter]);
 
     const componentMatchedSalesIds = useMemo(() => {
         if (
@@ -1550,7 +1680,7 @@ export default function Cabang({
     const sortedSalesCabang = useMemo(() => {
         const dir = salesSort.dir === "asc" ? 1 : -1;
         const key = salesSort.key;
-        let rows = [...(listSalesCabang || [])];
+        let rows = [...(resolvedListSalesCabang || [])];
         if (componentMatchedSalesIds) {
             rows = rows.filter((r) =>
                 componentMatchedSalesIds.has(Number(r.id)),
@@ -1573,12 +1703,12 @@ export default function Cabang({
             }
             return (av - bv) * dir;
         });
-    }, [listSalesCabang, salesSort, componentMatchedSalesIds]);
+    }, [resolvedListSalesCabang, salesSort, componentMatchedSalesIds]);
 
     const jenjangBySalesId = useMemo(() => {
         const order = { SD: 1, SMP: 2, SMA: 3, SMK: 4, DLL: 5 };
         const map = {};
-        (listSekolah || []).forEach((s) => {
+        (resolvedListSekolah || []).forEach((s) => {
             if (!s?.is_active) return;
             const sid = Number(s.sales_id);
             if (!sid) return;
@@ -1628,7 +1758,7 @@ export default function Cabang({
                 );
         });
         return out;
-    }, [listSekolah]);
+    }, [resolvedListSekolah]);
 
     const salesCabangSubtotal = useMemo(() => {
         const rows = sortedSalesCabang || [];
@@ -1847,8 +1977,8 @@ export default function Cabang({
             };
         }).filter((d) => d.label);
         if (fromTrend.length > 0) return fromTrend;
-        const curr = Number(cabangInsights?.totalRealisasiTargetYear) || 0;
-        const prev = Number(cabangInsights?.totalRealisasiLaluTargetYear) || 0;
+        const curr = Number(resolvedCabangInsights?.totalRealisasiTargetYear) || 0;
+        const prev = Number(resolvedCabangInsights?.totalRealisasiLaluTargetYear) || 0;
         if (!curr && !prev) return [];
         return [
             { label: String(prevYearLabel), v: prev },
@@ -1867,16 +1997,16 @@ export default function Cabang({
             }),
         );
         const prev =
-            Number(cabangInsights?.totalRealisasiLaluTargetYear) ||
+            Number(resolvedCabangInsights?.totalRealisasiLaluTargetYear) ||
             byYear[String(prevYearLabel)] ||
             0;
         const curr =
-            Number(cabangInsights?.totalRealisasiTargetYear) ||
+            Number(resolvedCabangInsights?.totalRealisasiTargetYear) ||
             byYear[String(yearLabel)] ||
             0;
         const yoyPct =
-            cabangInsights?.yoyPct != null
-                ? Number(cabangInsights.yoyPct)
+            resolvedCabangInsights?.yoyPct != null
+                ? Number(resolvedCabangInsights.yoyPct)
                 : prev > 0
                   ? Math.round(((curr - prev) / prev) * 1000) / 10
                   : curr > 0
@@ -1995,7 +2125,7 @@ export default function Cabang({
     );
 
     // Filter & Sort Daftar Sekolah
-    let filteredListSekolah = [...(listSekolah || [])];
+    let filteredListSekolah = [...(resolvedListSekolah || [])];
 
     if (sekolahSearch) {
         const query = sekolahSearch.toLowerCase();
@@ -2163,7 +2293,7 @@ export default function Cabang({
     });
 
     // Non Area Cover: dari backend (customer_plans is_ac distinct → customers not in set)
-    let filteredListNonAreaCover = [...(listNonAreaCover || [])];
+    let filteredListNonAreaCover = [...(resolvedListNonAreaCover || [])];
     if (nonAcSearch) {
         const query = nonAcSearch.toLowerCase();
         filteredListNonAreaCover = filteredListNonAreaCover.filter(
@@ -2381,8 +2511,8 @@ export default function Cabang({
                     )}
                     {!hideFilters && (
                         <>
-                            {/* Select Area */}
-                            {areas && areas.length > 0 && (
+                            {/* Select Area — Dashboard Area */}
+                            {isAreaDashboard && areas && areas.length > 0 && (
                                 <div
                                     style={{
                                         display: "flex",
@@ -2408,19 +2538,27 @@ export default function Cabang({
                                             style={sel}
                                             value={provinceCode || ""}
                                             onChange={(e) => {
-                                                const urlParams = new URLSearchParams(window.location.search);
-                                                urlParams.delete('cabang');
+                                                const urlParams =
+                                                    new URLSearchParams(
+                                                        window.location.search,
+                                                    );
+                                                urlParams.delete("cabang");
                                                 router.get(
                                                     route(
                                                         "monitoring.area",
                                                         e.target.value,
                                                     ),
-                                                    Object.fromEntries(urlParams.entries())
+                                                    Object.fromEntries(
+                                                        urlParams.entries(),
+                                                    ),
                                                 );
                                             }}
                                         >
                                             {areas.map((a) => (
-                                                <option key={a.id} value={a.id}>
+                                                <option
+                                                    key={a.id}
+                                                    value={a.id}
+                                                >
                                                     {a.name}
                                                 </option>
                                             ))}
@@ -2429,8 +2567,8 @@ export default function Cabang({
                                 </div>
                             )}
 
-                            {/* Select Cabang */}
-                            {cabangs && cabangs.length > 0 && (
+                            {/* Select Area + Cabang — Dashboard Cabang */}
+                            {!isAreaDashboard && areas && areas.length > 0 && (
                                 <div
                                     style={{
                                         display: "flex",
@@ -2439,7 +2577,58 @@ export default function Cabang({
                                     }}
                                 >
                                     <i
-                                        className="bi bi-geo-alt-fill"
+                                        className="bi bi-geo-alt"
+                                        style={{ color: T.blue, fontSize: 14 }}
+                                    />
+                                    <div>
+                                        <div
+                                            style={{
+                                                fontSize: 9,
+                                                color: T.slate,
+                                                marginBottom: 2,
+                                            }}
+                                        >
+                                            Area
+                                        </div>
+                                        <select
+                                            style={sel}
+                                            value={provinceCode || ""}
+                                            onChange={(e) => {
+                                                router.get(
+                                                    route(
+                                                        "monitoring.cabang.select",
+                                                    ),
+                                                    {
+                                                        area_id: e.target.value,
+                                                    },
+                                                );
+                                            }}
+                                        >
+                                            {areas.map((a) => (
+                                                <option
+                                                    key={a.id}
+                                                    value={a.id}
+                                                >
+                                                    {a.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!isAreaDashboard &&
+                                cabangs &&
+                                cabangs.length > 0 && (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 7,
+                                    }}
+                                >
+                                    <i
+                                        className="bi bi-building"
                                         style={{ color: T.blue, fontSize: 14 }}
                                     />
                                     <div>
@@ -2454,30 +2643,57 @@ export default function Cabang({
                                         </div>
                                         <select
                                             style={sel}
-                                            value={selectedCabang || cabangCode || ""}
+                                            value={
+                                                selectedCabang ||
+                                                cabangCode ||
+                                                ""
+                                            }
                                             onChange={(e) => {
-                                                const urlParams = new URLSearchParams(window.location.search);
-                                                if (e.target.value) {
-                                                    urlParams.set('cabang', e.target.value);
-                                                } else {
-                                                    urlParams.delete('cabang');
+                                                if (!e.target.value) {
+                                                    router.get(
+                                                        route(
+                                                            "monitoring.cabang.select",
+                                                        ),
+                                                        provinceCode
+                                                            ? {
+                                                                  area_id:
+                                                                      provinceCode,
+                                                              }
+                                                            : {},
+                                                    );
+                                                    return;
                                                 }
+                                                const urlParams =
+                                                    new URLSearchParams(
+                                                        window.location.search,
+                                                    );
+                                                urlParams.set(
+                                                    "cabang",
+                                                    e.target.value,
+                                                );
                                                 router.get(
                                                     route(
                                                         "monitoring.area",
                                                         provinceCode,
                                                     ),
-                                                    Object.fromEntries(urlParams.entries()),
+                                                    Object.fromEntries(
+                                                        urlParams.entries(),
+                                                    ),
                                                     {
                                                         preserveState: true,
                                                         preserveScroll: true,
-                                                    }
+                                                    },
                                                 );
                                             }}
                                         >
-                                            <option value="">Pilih Cabang</option>
+                                            <option value="">
+                                                Pilih Cabang
+                                            </option>
                                             {cabangs.map((c) => (
-                                                <option key={c.id} value={c.id}>
+                                                <option
+                                                    key={c.id}
+                                                    value={c.id}
+                                                >
                                                     {c.nama_cabang}
                                                 </option>
                                             ))}
@@ -2485,59 +2701,6 @@ export default function Cabang({
                                     </div>
                                 </div>
                             )}
-
-                            {/* Select Sumber Dana */}
-                            <div
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 7,
-                                }}
-                            >
-                                <i
-                                    className="bi bi-wallet2"
-                                    style={{ color: T.blue, fontSize: 14 }}
-                                />
-                                <div>
-                                    <div
-                                        style={{
-                                            fontSize: 9,
-                                            color: T.slate,
-                                            marginBottom: 2,
-                                        }}
-                                    >
-                                        Sumber Dana
-                                    </div>
-                                    <select
-                                        style={sel}
-                                        value={filterData.sumber_dana}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setFilterData(prev => ({ ...prev, sumber_dana: val }));
-                                            
-                                            const urlParams = new URLSearchParams(window.location.search);
-                                            if (val) {
-                                                urlParams.set('sumber_dana', val);
-                                            } else {
-                                                urlParams.delete('sumber_dana');
-                                            }
-                                            
-                                            router.get(
-                                                window.location.pathname,
-                                                Object.fromEntries(urlParams.entries()),
-                                                {
-                                                    preserveState: true,
-                                                    preserveScroll: true,
-                                                }
-                                            );
-                                        }}
-                                    >
-                                        <option value="">Semua Dana</option>
-                                        <option value="BOS">BOS</option>
-                                        <option value="SWA">Swadana</option>
-                                    </select>
-                                </div>
-                            </div>
                         </>
                     )}
 
@@ -2640,24 +2803,77 @@ export default function Cabang({
                 }}
             >
                 {activeTab === "dashboard" && useSalesStyleDashboard && (
+                    dashBusy ? (
+                        <div
+                            style={{
+                                background: "white",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 12,
+                                padding: "48px 24px",
+                                textAlign: "center",
+                                color: T.slate,
+                            }}
+                        >
+                            <div
+                                style={{
+                                    width: 36,
+                                    height: 36,
+                                    border: "3px solid #e2e8f0",
+                                    borderTopColor: T.blue,
+                                    borderRadius: "50%",
+                                    margin: "0 auto 14px",
+                                    animation: "spin 0.8s linear infinite",
+                                }}
+                            />
+                            <div
+                                style={{
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: T.text,
+                                    marginBottom: 4,
+                                }}
+                            >
+                                Sedang Memuat Data
+                            </div>
+                            <div style={{ fontSize: 12 }}>
+                                Menyiapkan kartu dashboard{" "}
+                                {isAreaDashboard ? "area" : "cabang"}…
+                            </div>
+                            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                        </div>
+                    ) : asyncDash?._error ? (
+                        <div
+                            style={{
+                                background: "#fef2f2",
+                                border: "1px solid #fecaca",
+                                borderRadius: 12,
+                                padding: "20px",
+                                color: "#991b1b",
+                                fontSize: 13,
+                                fontWeight: 600,
+                            }}
+                        >
+                            Gagal memuat data dashboard: {asyncDash._error}
+                        </div>
+                    ) : (
                     <DashboardTabArea
                         activeTab={activeTab}
                         setActiveTab={setActiveTab}
                         isSalesDetail={true}
-                        kpiData={kpiData}
-                        insights={insights}
-                        salesProfile={salesProfile}
-                        listSekolah={listSekolah}
-                        jenjangBreakdown={jenjangBreakdown}
-                        sumberDanaBreakdown={sumberDanaBreakdown}
+                        kpiData={resolvedKpiData || {}}
+                        insights={resolvedInsights || {}}
+                        salesProfile={resolvedSalesProfile}
+                        listSekolah={resolvedListSekolah}
+                        jenjangBreakdown={resolvedJenjangBreakdown}
+                        sumberDanaBreakdown={resolvedSumberDanaBreakdown}
                         gradeRealisasiBreakdown={
-                            gradeRealisasiBreakdown?.length
-                                ? gradeRealisasiBreakdown
-                                : kpiData?.gradeRealisasi || []
+                            resolvedGradeRealisasi?.length
+                                ? resolvedGradeRealisasi
+                                : resolvedKpiData?.gradeRealisasi || []
                         }
-                        activityBreakdown={activityBreakdown}
-                        resultBreakdown={resultBreakdown}
-                        kegiatanSales={kegiatanSales}
+                        activityBreakdown={resolvedActivityBreakdown}
+                        resultBreakdown={resolvedResultBreakdown}
+                        kegiatanSales={resolvedKegiatanSales}
                         cabangCode={cabangCode}
                         provinceCode={provinceCode}
                         filters={{
@@ -2684,6 +2900,7 @@ export default function Cabang({
                         areaName={areaName}
                         pageTitle={pageTitle}
                     />
+                    )
                 )}
 
                 {activeTab === "dashboard" && !useSalesStyleDashboard && (
@@ -2760,7 +2977,7 @@ export default function Cabang({
                         )}
 
                         {/* ── R1: STATS ── */}
-                        {!isSalesDetail && cabangInsights ? (
+                        {!isSalesDetail && resolvedCabangInsights ? (
                             <div
                                 className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-[6px]"
                                 style={{ alignItems: "stretch" }}
@@ -2788,7 +3005,7 @@ export default function Cabang({
                                 >
                                     {(() => {
                                         const score = Number(
-                                            cabangInsights.totalScore ?? 0,
+                                            resolvedCabangInsights.totalScore ?? 0,
                                         );
                                         const starValue = Math.min(
                                             5,
@@ -2819,7 +3036,7 @@ export default function Cabang({
                                                         color: "#fff",
                                                     }}
                                                 >
-                                                    {cabangInsights.totalScore ??
+                                                    {resolvedCabangInsights.totalScore ??
                                                         0}
                                                 </div>
                                                 <div
@@ -2867,7 +3084,7 @@ export default function Cabang({
                                                         color: gradeColor,
                                                     }}
                                                 >
-                                                    {cabangInsights.grade ||
+                                                    {resolvedCabangInsights.grade ||
                                                         "-"}
                                                 </div>
                                             </div>
@@ -2900,7 +3117,7 @@ export default function Cabang({
                                                 }}
                                             >
                                                 {formatNumber(
-                                                    cabangInsights.totalAreaCover,
+                                                    resolvedCabangInsights.totalAreaCover,
                                                 )}
                                             </div>
                                             <div
@@ -2928,7 +3145,7 @@ export default function Cabang({
                                                 }}
                                             >
                                                 {formatNumber(
-                                                    cabangInsights.totalRencanaJualTargetYear,
+                                                    resolvedCabangInsights.totalRencanaJualTargetYear,
                                                 )}
                                             </div>
                                             <div
@@ -2969,7 +3186,7 @@ export default function Cabang({
                                                 }}
                                             >
                                                 {formatNumber(
-                                                    cabangInsights.customerWithRealisasi,
+                                                    resolvedCabangInsights.customerWithRealisasi,
                                                 )}
                                             </div>
                                             <div
@@ -2997,7 +3214,7 @@ export default function Cabang({
                                                 }}
                                             >
                                                 {formatNumber(
-                                                    cabangInsights.totalRealisasiTargetYear,
+                                                    resolvedCabangInsights.totalRealisasiTargetYear,
                                                 )}
                                             </div>
                                             <div
@@ -3037,7 +3254,7 @@ export default function Cabang({
                                                     lineHeight: 1.1,
                                                 }}
                                             >
-                                                {cabangInsights.achievementEksPct}%
+                                                {resolvedCabangInsights.achievementEksPct}%
                                             </div>
                                             <div
                                                 style={{
@@ -3063,7 +3280,7 @@ export default function Cabang({
                                                     lineHeight: 1.1,
                                                 }}
                                             >
-                                                {cabangInsights.achievementAcPct}%
+                                                {resolvedCabangInsights.achievementAcPct}%
                                             </div>
                                             <div
                                                 style={{
@@ -3101,13 +3318,13 @@ export default function Cabang({
                                                     fontWeight: 800,
                                                     lineHeight: 1.1,
                                                     color:
-                                                        (cabangInsights.salesNeedReview ||
+                                                        (resolvedCabangInsights.salesNeedReview ||
                                                             0) > 0
                                                             ? "#fca5a5"
                                                             : "#86efac",
                                                 }}
                                             >
-                                                {cabangInsights.salesNeedReview}
+                                                {resolvedCabangInsights.salesNeedReview}
                                                 <span
                                                     style={{
                                                         fontSize: 12,
@@ -3116,7 +3333,7 @@ export default function Cabang({
                                                         marginLeft: 4,
                                                     }}
                                                 >
-                                                    / {cabangInsights.salesCount}
+                                                    / {resolvedCabangInsights.salesCount}
                                                 </span>
                                             </div>
                                             <div
@@ -3142,17 +3359,17 @@ export default function Cabang({
                                                     fontWeight: 800,
                                                     lineHeight: 1.1,
                                                     color:
-                                                        (cabangInsights.yoyPct ||
+                                                        (resolvedCabangInsights.yoyPct ||
                                                             0) >= 0
                                                             ? "#86efac"
                                                             : "#fca5a5",
                                                 }}
                                             >
-                                                {(cabangInsights.yoyPct || 0) >=
+                                                {(resolvedCabangInsights.yoyPct || 0) >=
                                                 0
                                                     ? "+"
                                                     : ""}
-                                                {cabangInsights.yoyPct}%
+                                                {resolvedCabangInsights.yoyPct}%
                                             </div>
                                             <div
                                                 style={{
@@ -4742,17 +4959,46 @@ export default function Cabang({
                 )}
 
                 {activeTab === "cabang" && isAreaDashboard && (
+                    listsLoading ? (
+                        <div
+                            style={{
+                                background: "#fff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                padding: "40px 20px",
+                                textAlign: "center",
+                                color: T.slate,
+                            }}
+                        >
+                            Sedang Memuat Data
+                        </div>
+                    ) : (
                     <ListCabangAreaTab
-                        listCabangArea={listCabangArea}
+                        listCabangArea={resolvedListCabangArea}
                         areaId={provinceCode}
                         tahun={filters?.tahun || yearLabel}
                     />
+                    )
                 )}
 
                 {activeTab === "jenjang" && (
+                    listsLoading ? (
+                        <div
+                            style={{
+                                background: "#fff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                padding: "40px 20px",
+                                textAlign: "center",
+                                color: T.slate,
+                            }}
+                        >
+                            Sedang Memuat Data
+                        </div>
+                    ) : (
                     <JenjangFocusTab
-                        listSekolah={listSekolah}
-                        insights={insights}
+                        listSekolah={resolvedListSekolah}
+                        insights={resolvedInsights || {}}
                         configuration={configuration}
                         filters={{
                             ...filters,
@@ -4761,6 +5007,7 @@ export default function Cabang({
                         groupByCabang={isAreaDashboard}
                         focusFilter={jenjangFocusFilter}
                     />
+                    )
                 )}
 
                 {activeTab === "sales" && !isSalesDetail && (
@@ -5522,9 +5769,9 @@ export default function Cabang({
                             componentNavFilter?.target === "kecamatan" &&
                             componentMatchedSchools
                                 ? componentMatchedSchools
-                                : listSekolah
+                                : resolvedListSekolah
                         }
-                        insights={insights}
+                        insights={resolvedInsights || {}}
                         filters={{
                             ...filters,
                             tahun: filters?.tahun || yearLabel,
@@ -5543,13 +5790,26 @@ export default function Cabang({
                 )}
 
                 {activeTab === "sekolah" && !isSalesDetail && (
-                    isAreaDashboard ? (
+                    listsLoading ? (
+                        <div
+                            style={{
+                                background: "#fff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                padding: "40px 20px",
+                                textAlign: "center",
+                                color: T.slate,
+                            }}
+                        >
+                            Sedang Memuat Data
+                        </div>
+                    ) : isAreaDashboard ? (
                     <SekolahTabArea
                         activeTab="sekolah"
                         isSalesDetail={true}
-                        listSekolah={listSekolah}
+                        listSekolah={resolvedListSekolah}
                         filteredListSekolah={filteredListSekolah}
-                        insights={insights}
+                        insights={resolvedInsights || {}}
                         filters={filters}
                         sekolahPage={sekolahPage}
                         setSekolahPage={setSekolahPage}
@@ -5572,9 +5832,9 @@ export default function Cabang({
                     <SekolahTabCabang
                         activeTab="sekolah"
                         isSalesDetail={true}
-                        listSekolah={listSekolah}
+                        listSekolah={resolvedListSekolah}
                         filteredListSekolah={filteredListSekolah}
-                        insights={insights}
+                        insights={resolvedInsights || {}}
                         filters={filters}
                         sekolahPage={sekolahPage}
                         setSekolahPage={setSekolahPage}
@@ -5597,13 +5857,27 @@ export default function Cabang({
                 )}
 
                 {activeTab === "non-area-cover" && !isSalesDetail && (
+                    listsLoading ? (
+                        <div
+                            style={{
+                                background: "#fff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                padding: "40px 20px",
+                                textAlign: "center",
+                                color: T.slate,
+                            }}
+                        >
+                            Sedang Memuat Data
+                        </div>
+                    ) : (
                     <NonAreaCoverTab
                         activeTab="sekolah"
                         isSalesDetail={true}
                         sekolahTitle={`Non Area Cover (${filteredListNonAreaCover.length.toLocaleString("id-ID")})`}
-                        listSekolah={listNonAreaCover}
+                        listSekolah={resolvedListNonAreaCover}
                         filteredListSekolah={filteredListNonAreaCover}
-                        insights={insights}
+                        insights={resolvedInsights || {}}
                         filters={filters}
                         sekolahPage={nonAcPage}
                         setSekolahPage={setNonAcPage}
@@ -5621,6 +5895,7 @@ export default function Cabang({
                         sekolahChartFilter={null}
                         clearSekolahChartFilter={() => {}}
                     />
+                    )
                 )}
 
                 {activeTab === "competitor" && (
@@ -6632,15 +6907,15 @@ export default function Cabang({
                                     }}
                                 >
                                     <Donut
-                                        segments={activityBreakdown}
-                                        label={activityBreakdown.reduce(
+                                        segments={resolvedActivityBreakdown}
+                                        label={resolvedActivityBreakdown.reduce(
                                             (a, c) => a + c.value,
                                             0,
                                         )}
                                         sub="Total Aktv"
                                     />
                                     <div style={{ flex: 1 }}>
-                                        {activityBreakdown.map((s, i) => (
+                                        {resolvedActivityBreakdown.map((s, i) => (
                                             <div
                                                 key={i}
                                                 style={{
@@ -6837,9 +7112,9 @@ export default function Cabang({
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {kegiatanSales &&
-                                                kegiatanSales.length > 0 ? (
-                                                kegiatanSales
+                                            {resolvedKegiatanSales &&
+                                                resolvedKegiatanSales.length > 0 ? (
+                                                resolvedKegiatanSales
                                                     .slice(
                                                         (kegiatanPage - 1) *
                                                         kegiatanPerPage,
@@ -6948,8 +7223,8 @@ export default function Cabang({
                                 </div>
 
                                 {/* Pagination Controls */}
-                                {kegiatanSales &&
-                                    kegiatanSales.length > kegiatanPerPage && (
+                                {resolvedKegiatanSales &&
+                                    resolvedKegiatanSales.length > kegiatanPerPage && (
                                         <div
                                             style={{
                                                 display: "flex",
@@ -6973,9 +7248,9 @@ export default function Cabang({
                                                 {Math.min(
                                                     kegiatanPage *
                                                     kegiatanPerPage,
-                                                    kegiatanSales.length,
+                                                    resolvedKegiatanSales.length,
                                                 )}{" "}
-                                                dari {kegiatanSales.length}
+                                                dari {resolvedKegiatanSales.length}
                                             </div>
                                             <div
                                                 style={{
@@ -7018,7 +7293,7 @@ export default function Cabang({
                                                         setKegiatanPage((p) =>
                                                             Math.min(
                                                                 Math.ceil(
-                                                                    kegiatanSales.length /
+                                                                    resolvedKegiatanSales.length /
                                                                     kegiatanPerPage,
                                                                 ),
                                                                 p + 1,
@@ -7028,7 +7303,7 @@ export default function Cabang({
                                                     disabled={
                                                         kegiatanPage ===
                                                         Math.ceil(
-                                                            kegiatanSales.length /
+                                                            resolvedKegiatanSales.length /
                                                             kegiatanPerPage,
                                                         )
                                                     }
@@ -7040,7 +7315,7 @@ export default function Cabang({
                                                         backgroundColor:
                                                             kegiatanPage ===
                                                                 Math.ceil(
-                                                                    kegiatanSales.length /
+                                                                    resolvedKegiatanSales.length /
                                                                     kegiatanPerPage,
                                                                 )
                                                                 ? "#f8fafc"
@@ -7048,7 +7323,7 @@ export default function Cabang({
                                                         color:
                                                             kegiatanPage ===
                                                                 Math.ceil(
-                                                                    kegiatanSales.length /
+                                                                    resolvedKegiatanSales.length /
                                                                     kegiatanPerPage,
                                                                 )
                                                                 ? "#cbd5e1"
@@ -7056,7 +7331,7 @@ export default function Cabang({
                                                         cursor:
                                                             kegiatanPage ===
                                                                 Math.ceil(
-                                                                    kegiatanSales.length /
+                                                                    resolvedKegiatanSales.length /
                                                                     kegiatanPerPage,
                                                                 )
                                                                 ? "not-allowed"

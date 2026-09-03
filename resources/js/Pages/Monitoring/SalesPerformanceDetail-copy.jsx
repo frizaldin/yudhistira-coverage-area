@@ -5,12 +5,12 @@ import MonitoringLayout from "@/Layouts/MonitoringLayout";
 import SelectReact from "@/Components/Element/SelectReact";
 import {
     MapContainer,
-    TileLayer,
     Marker,
     Popup,
     useMap,
     GeoJSON,
 } from "react-leaflet";
+import MapTileLayer from "@/Components/Map/MapTileLayer";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -761,10 +761,7 @@ function KecamatanChoroplethMap({ salesId, cabangId, listKecamatan = [] }) {
                 maxBoundsViscosity={1.0}
                 style={{ height: "100%", width: "100%", zIndex: 1 }}
             >
-                <TileLayer
-                    attribution='&copy; <a href="https://carto.com/">Carto</a>'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                />
+                <MapTileLayer />
                 {geojsonData &&
                     geojsonData.features &&
                     geojsonData.features.length > 0 && (
